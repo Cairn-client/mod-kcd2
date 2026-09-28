@@ -1,7 +1,7 @@
 # The next two-player session: the combined checklist
 
-One list for the host and the partner, built up by WO-136 to WO-140 (WO-141
-adds its own section and turns the whole thing into `docs/TEST-0.41.7.md`).
+One list for the host and the partner, built up by WO-136 to WO-141. The same
+list, with what is new, is the tester page for 0.41.7: `docs/TEST-0.41.7.md`.
 Tick what you saw, write the time next to anything odd, and send the logs
 listed at the end.
 
@@ -90,8 +90,8 @@ about (bandits, or wolves at night).
     * Partner: the loading screen ends normally — no red "Loading screen
       timeouted", no long wait after the world appears; note the load time.
 11. **Animals.** Wolves (or dogs, boars) attack the host. Marker: `mark_animals`.
-    * Partner: sees them too, running with the host's; say whether they look
-      frozen while biting (their bite animation is not shown yet).
+    * Partner: sees them too, running with the host's, and **biting** (a lunge
+      and a bite; WO-141, item 50).
 12. **Outfits.** Each of you changes clothes. Marker: `mark_outfit`.
     * The other screen shows the same clothes, no guard armour; say what is
       missing, if anything.
@@ -249,6 +249,64 @@ world -- NOT joined (separate)`, `WO140-SEPARATE`, `MP-LEASH host: joiner … is
 in its own world`. `mp_sleep_status` prints the state; `mp_sleep_vote off`
 switches the vote off (then each of you sleeps alone, and the partner's clock
 still follows the host's).
+
+## WO-141 — sitting, sleeping, working, and animals' bites
+
+What people do with things now shows on the other screen: a sleeper lies in the
+same bed, a sitter sits on the same bench, a leaner leans on the same wall, a
+guard stands at his post. The same for the two of you. Both switches are on by
+default (`mp_activities`, `mp_animal_attacks`). Stand where you are allowed
+(guards react to trespass in houses).
+
+41. **People in bed.** In the evening, go where people sleep (an inn, a house
+    whose door is open to you). Marker: `mark_npcsleep`.
+    * Partner: each sleeper lies in the same bed as on the host's screen — not
+      standing next to it or inside it.
+42. **People sitting, leaning, on guard.** A village in daylight. Marker:
+    `mark_npcsit`.
+    * Partner: the same people sit on the same benches, lean on the same walls,
+      and the guards stand at the same posts as on the host's screen.
+43. **People at work.** A woodworker, a smith, someone sweeping, a farmer in a
+    field. Marker: `mark_workstation` (at a workbench), `mark_garden` (a field
+    or a garden).
+    * Partner: say what each one does. Expected for now: work that needs a tool
+      in the hand (the woodworker's) shows them standing at the spot, and the
+      farmer walks the field without the hoe.
+44. **A fight next to someone sitting.** A fight starts near someone who sits
+    or lies (bandits at a camp, or the host knocks someone out). Marker:
+    `mark_npcfight`.
+    * Partner: the sitter gets up first, then fights or runs, and sits down
+      again afterwards.
+45. **The host sits on a bench.** Marker: `mark_bench`.
+    * Partner: the host's figure sits on the same bench, the name above its
+      head (not above an empty spot); when the host gets up, it gets up.
+46. **The partner sits, then lies down** (a bed you may use, a bench).
+    Markers: `mark_bench`, then `mark_bed`.
+    * Host: the partner's figure sits on the same bench, then lies in the same
+      bed, the name above it.
+47. **Getting up.** Each of you gets up and walks away. Marker: `mark_standup`.
+    * The other screen: the figure gets up and walks on from there — no jump,
+      no sliding.
+48. **The partner washes at a water trough** (when dirty or bloody enough for
+    the game to offer "Wash"). Marker: `mark_trough`.
+    * Host: the partner's figure goes to the same trough and washes its face
+      for a few seconds, then stands again.
+49. **The partner sharpens at a grindstone.** Marker: `mark_grindstone`.
+    * Host: the figure stands at the grindstone. The sharpening itself is not
+      shown yet; say if anything odd happens.
+50. **Wolves bite.** Wolves (or dogs, boars) attack the host, at night away
+    from town. Marker: `mark_wolfbite`.
+    * Partner: the animals lunge and bite, they don't stand frozen; the host's
+      health drops on the host's screen.
+51. **The off switch** (partner): `mp_activities off`, look at a sleeper and
+    a sitter, then `mp_activities on`. Marker: `mark_npcsit`.
+    * Off: they stand where they are (as before 0.41.7). On: back in the bed and
+      on the bench within a second.
+
+Lines worth a look — both: `MP-W141`, `MP-W141 stats`, `WO141-CONFIG`,
+`WO141-CAPTURE`, `WO141-APPLY`, `WO141-LEAVE`, `MP-NPCWRITE … activity-hold`;
+the trough: `WO141-ANIM`, `WO141-SHOW`, `MP-W141 anim`; the bites: `SWING:
+entity=… is not a human`. `mp_activity_status` prints the state.
 
 ## Logs to send afterwards
 
