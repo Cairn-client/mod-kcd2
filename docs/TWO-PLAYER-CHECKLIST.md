@@ -1,7 +1,7 @@
 # The next two-player session: the combined checklist
 
-One list for the host and the partner, built up by WO-136 to WO-141. The same
-list, with what is new, is the tester page for 0.41.7: `docs/TEST-0.41.7.md`.
+One list for the host and the partner, built up by WO-136 to WO-143. The same
+list, with what is new, is the tester page for 0.42.0: `docs/TEST-0.42.0.md`.
 Tick what you saw, write the time next to anything odd, and send the logs
 listed at the end.
 
@@ -269,9 +269,9 @@ default (`mp_activities`, `mp_animal_attacks`). Stand where you are allowed
 43. **People at work.** A woodworker, a smith, someone sweeping, a farmer in a
     field. Marker: `mark_workstation` (at a workbench), `mark_garden` (a field
     or a garden).
-    * Partner: say what each one does. Expected for now: work that needs a tool
-      in the hand (the woodworker's) shows them standing at the spot, and the
-      farmer walks the field without the hoe.
+    * Partner: say what each one does. Expected for now: work at a bench that
+      needs a tool in the hand (the woodworker's) shows them standing at the
+      spot; the farmer hoes with the hoe (0.42.0, item 52).
 44. **A fight next to someone sitting.** A fight starts near someone who sits
     or lies (bandits at a camp, or the host knocks someone out). Marker:
     `mark_npcfight`.
@@ -292,8 +292,8 @@ default (`mp_activities`, `mp_animal_attacks`). Stand where you are allowed
     * Host: the partner's figure goes to the same trough and washes its face
       for a few seconds, then stands again.
 49. **The partner sharpens at a grindstone.** Marker: `mark_grindstone`.
-    * Host: the figure stands at the grindstone. The sharpening itself is not
-      shown yet; say if anything odd happens.
+    * Host: since 0.42.0 the figure sits on the grindstone's seat and grinds
+      (item 55); say if anything odd happens.
 50. **Wolves bite.** Wolves (or dogs, boars) attack the host, at night away
     from town. Marker: `mark_wolfbite`.
     * Partner: the animals lunge and bite, they don't stand frozen; the host's
@@ -307,6 +307,66 @@ Lines worth a look — both: `MP-W141`, `MP-W141 stats`, `WO141-CONFIG`,
 `WO141-CAPTURE`, `WO141-APPLY`, `WO141-LEAVE`, `MP-NPCWRITE … activity-hold`;
 the trough: `WO141-ANIM`, `WO141-SHOW`, `MP-W141 anim`; the bites: `SWING:
 entity=… is not a human`. `mp_activity_status` prints the state.
+
+## WO-143 — tools in hands, hoeing, one-shots, and the players' minigames
+
+What people hold and do now shows on the other screen too: the tool in a
+villager's hand, a farmer hoeing a field, a guest's drink, a dice player's
+reaction; and the other player's grindstone, reading, alchemy, herbs,
+lockpicking, digging and smithing. All five switches are on by default. If
+something looks wrong, turn that piece off in the console and say which:
+`mp_hand_items off`, `mp_activity_gaits off`, `mp_oneshots off`,
+`mp_player_minigames off`, `mp_idles off` (`on` switches each back).
+`mp_activity2_status` prints the state.
+
+52. **A farmer hoeing a field.** Daytime, a field by a village (the host
+    nearby). Marker: `mark_hoe`.
+    * Partner: she holds the hoe and hoes along the row, bent over it, as on the
+      host's screen. At the row's end she straightens and holds the hoe still.
+    * Say at once if the hoe jitters or jumps between frames (`mark_odd`, the
+      time): that was the bug before this build.
+53. **People carrying tools.** Someone walking with a saw, a bucket, a broom.
+    Marker: `mark_tool`.
+    * Partner: the same tool in the same hand. Nothing floats in the air next
+      to a hand (`mark_floating` if something does).
+    * Expected for now: a carpenter at his bench, a sawyer, a scribe at his desk
+      stand at the spot, as in 0.41.7.
+54. **A tavern with guests.** Marker: `mark_oneshot`.
+    * Partner: seated guests drink (the arm to the mouth) and dice players react
+      to a throw, and they stay seated — nobody stands up and sits down again.
+    * Expected for now: the tankard is not in the guest's hand; a barmaid
+      serving or wiping a table may not show it on the partner's screen.
+55. **The partner sharpens at a grindstone.** Marker: `mark_minigame`.
+    * Host: the partner's figure sits on the grindstone's seat, a foot on the
+      pedal, the hands on the wheel, and grinds. (The blade is not in its hands
+      yet.) When the partner stops, it gets up.
+56. **The partner reads a book, makes a potion, picks herbs, picks a lock,
+    digs, works at an anvil.** Marker: `mark_minigame`, once for each.
+    * Host: the figure does the same (reading, stirring at the alchemy table,
+      bending to the herbs, crouching at the lock, digging, hammering).
+    * Stone throwing and archery are not shown: the figure stands.
+57. **The host does the same** (a grindstone, a book). Marker: `mark_minigame`.
+    * Partner: the host's figure does it.
+58. **Walk close past people standing about.** Marker: `mark_look`.
+    * Partner: some turn their heads to you by themselves, as in the game.
+      Nobody's head swings back and forth, and no weapon flashes in and out of
+      its sheath (`mark_odd` if one does).
+59. **A cart or a caravan passes** near the host. Marker: `mark_cart`.
+    * Partner: say what you see. Expected for now: its horses can walk ahead of
+      the cart, which stays behind (the cart itself is not sent yet).
+60. **The switches** (partner, in the console): `mp_hand_items off` (the tools
+    go away), `mp_activity_gaits off` (the farmer walks upright), then both
+    `on`; the partner at a grindstone while the host types
+    `mp_player_minigames off` (the figure stands), then `on`. Marker:
+    `mark_tool`.
+    * Each piece stops within a second, nothing else changes, and `on` brings
+      it back.
+61. **Any time:** a body in a T-pose (arms straight out) — `mark_tpose`; an
+    item floating — `mark_floating`.
+
+Lines worth a look — both: `MP-W143`, `MP-W143 stats`, `WO143-CONFIG`,
+`WO143-HANDS`, `WO143-GAIT`, `WO143-SHOT`, `WO143-TEMP`, and WO-141's
+`WO141-APPLY` (a refused apply: three lines, then one a minute with the count).
 
 ## Logs to send afterwards
 
