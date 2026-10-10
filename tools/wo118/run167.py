@@ -382,7 +382,7 @@ def c3run(agent_dll, row=MOUNTED, n=8):
     return res
 
 
-def soak(agent_dll, minutes=30, slot_s=300):
+def soak(agent_dll, minutes=30, slot_s=300, tag='soak'):
     """The WO-167 soak (joiner role): two copies fight the player the whole time and a new host road-event NPC (a stand-in here)
     joins every slot_s seconds (the previous one leaves); armed rows every 1.5 s round the three current fighters, two paired rows per
     stand-in (C4), C1-C3 at their defaults. Pass: 0 faults, 0 switched off, applied=dup 0, every swing shown or lunged."""
@@ -423,10 +423,10 @@ def soak(agent_dll, minutes=30, slot_s=300):
     open(path, 'w').write('\n'.join(L) + '\n')
     n0 = klen()
     nn0 = sum(1 for _ in open(live.NLOG, encoding='utf-8', errors='replace'))
-    R.peer('r167soak', path, ['--duration', str(int(dur + 40)), '--claim-host'])
+    R.peer('r167' + tag, path, ['--duration', str(int(dur + 40)), '--claim-host'])
     t0 = time.time() + 10.0
     nudge()
-    R.agent('r167soak', agent_dll, ['KCDMP_TEST_JOINER_IN_WORLD=1'])
+    R.agent('r167' + tag, agent_dll, ['KCDMP_TEST_JOINER_IN_WORLD=1'])
     time.sleep(12)
     live.cmd('mp_leash off')
     res = {'plan_swings': i, 'slots': slots, 'started': time.strftime('%H:%M:%S')}
@@ -440,7 +440,7 @@ def soak(agent_dll, minutes=30, slot_s=300):
         nl = f.readlines()[nn0:]
     res['native'] = [l.strip()[:240] for l in nl if re.search(r'WO167|FRAME |FAULT-SUM|switched OFF|WO155-NUDGE', l)]
     res['agent'] = flines(st.get('agentlog', ''), r'WO167|MP-WO167-STATS|WO161-HIT|MP-WO161-STATS|MP-WO166 native')
-    json.dump(res, open(os.path.join(live.LOGS, 'run167.soak.json'), 'w'), indent=1)
+    json.dump(res, open(os.path.join(live.LOGS, 'run167.%s.json' % tag), 'w'), indent=1)
     R.stop('agent'); R.stop('peer')
     release_joiner_hold()
     return res
@@ -454,4 +454,5 @@ if __name__ == '__main__':
     elif v == 'tface': tface(sys.argv[2])
     elif v == 'c': crun(sys.argv[2])
     elif v == 'c3': c3run(sys.argv[2])
-    elif v == 'soak': soak(sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else 30, int(sys.argv[4]) if len(sys.argv) > 4 else 300)
+    elif v == 'soak': soak(sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else 30, int(sys.argv[4]) if len(sys.argv) > 4 else 300,
+                           sys.argv[5] if len(sys.argv) > 5 else 'soak')
