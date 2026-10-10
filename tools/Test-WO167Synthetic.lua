@@ -447,6 +447,19 @@ do
     local v = armedCopy("tzel_rowdy_4")
     check("C8: mp_copy_weapons off: nothing is touched", KCD2MP_W167Weapon("tzel_rowdy_4", SWORD, "hands") == false and v.draws == 0 and #v.drawnFrom == 0)
     KCD2MP_W167SetCopyWeapons("on")
+    -- the soak's stale mark: a held weapon on a body that is no longer the one it was set on
+    local w = armedCopy("tzel_rowdy_6")
+    KCD2MP_W167Weapon("tzel_rowdy_6", SWORD, "hands")
+    check("C9: held on this body", #w.drawnFrom == 1)
+    local w2 = armedCopy("tzel_rowdy_6")   -- the same name, a new body and puppet record (re-streamed)
+    KCD2MP_W167Weapon("tzel_rowdy_6", SWORD, "hands")
+    check("C10: a new body under the same name: the host's weapon is drawn again (never 'held already')", #w2.drawnFrom == 1)
+    KCD2MP_W167Weapon("tzel_rowdy_6", SWORD, "hands")
+    check("C11: ...and then held on it", #w2.drawnFrom == 1)
+    KCD2MP.w137.aliveAt = nil
+    KCD2MP_W137Session(false, true, true)   -- a fresh session (the agent reconnected)
+    KCD2MP_W167Weapon("tzel_rowdy_6", SWORD, "hands")
+    check("C12: a fresh session: nothing a copy held before is trusted", #w2.drawnFrom == 2)
     noErrs("C")
 end
 

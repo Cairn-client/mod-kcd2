@@ -204,8 +204,9 @@ check("g: asked again after 3 s, and it lands", HUMAN.dismounts == 2 and evtCoun
 clearLog(); KCD2MP_Wo114Dismount("t4")
 check("g: not mounted: nothing asked", HUMAN.dismounts == 2 and evtCount("wo124_reply", "t4 was=no force=none mounted=no") == 1, lastLog("wo124_reply"))
 
--- (h) fast travel
+-- (h) fast travel (WO-167 FT1: the switch is held only while this player picks on the travel map -- these run inside a pick)
 CVARS.wh_pl_FastTravelEnabled = 2
+KCD2MP.w167.ft.mapAt = NOW
 clearLog()
 check("h: block accepted", KCD2MP_Wo114FastTravelBlock(true, "test") == true)
 check("h: cvar 0", CVARS.wh_pl_FastTravelEnabled == 0, tostring(CVARS.wh_pl_FastTravelEnabled))
@@ -233,9 +234,27 @@ KCD2MP_Wo114FastTravelBlock(false, "left")
 check("h: given back to the previous value", CVARS.wh_pl_FastTravelEnabled == 2 and logCount("WO114-FASTTRAVEL given back (left): wh_pl_FastTravelEnabled -> 2") == 1, lastLog("WO114-FASTTRAVEL"))
 check("h: not blocked: a try is not told", KCD2MP_Wo114FastTravelTried("map") == false)
 CVARS.wh_pl_FastTravelEnabled = nil
+KCD2MP.w167.ft.mapAt = NOW
 check("h: an unreadable cvar blocks nothing and says so", KCD2MP_Wo114FastTravelBlock(true, "x") == false and logCount("unreadable -- fast travel NOT blocked") == 1)
 KCD2MP_Wo114FastTravelBlock(false, "x")
 CVARS.wh_pl_FastTravelEnabled = 1
+
+-- (h2) WO-167 FT1: armed in the host's world, held only while this player picks on the travel map
+KCD2MP.w167.ft.mapAt = -1e9
+clearLog()
+KCD2MP_Wo114FastTravelBlock(true, "in the host's world")
+check("h2: armed outside a pick: the switch stays the player's own (a quest's forced travel is never refused)",
+    CVARS.wh_pl_FastTravelEnabled == 1 and w.ftArmed == true and w.ftBlocked ~= true, tostring(CVARS.wh_pl_FastTravelEnabled))
+KCD2MP.w167.OnFtHighlight(KCD2MP.w167, "ApseMap", -1, "OnHighlightFastTravelPoint", { [0] = "fastTravel_x" })
+check("h2: a travel point highlighted on the map: held at once", CVARS.wh_pl_FastTravelEnabled == 0 and w.ftBlocked == true, lastLog("WO114-FASTTRAVEL"))
+NOW = NOW + 31
+KCD2MP_W154MenuBackstop()
+check("h2: the pick window over: given back by the draw loop (no agent needed)", CVARS.wh_pl_FastTravelEnabled == 1 and w.ftBlocked == false
+    and w.ftArmed == true, lastLog("WO114-FASTTRAVEL"))
+KCD2MP_Wo114FastTravelBlock(true, "re-assert")
+check("h2: the agent's re-assert outside a pick holds nothing", CVARS.wh_pl_FastTravelEnabled == 1)
+KCD2MP_Wo114FastTravelBlock(false, "left the host's world")
+check("h2: left the host's world: disarmed", w.ftArmed == false)
 
 -- (i) presets
 clearLog()

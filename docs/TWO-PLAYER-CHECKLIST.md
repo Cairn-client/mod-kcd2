@@ -1050,6 +1050,41 @@ Built and checked unattended with a stand-in partner (the synthetic peer); nothi
 223. **The joiner finds the host in Join through Steam** while the host's game is still starting: the host appears as
      "(starting...)" and becomes clickable by itself within about 10 s of the host's session being ready.
 
+## WO-167 — the last talk and trade gaps, the stuck scene, stand-in bandits, weapons, swings, shared fast travel (0.48.5)
+
+Built and checked unattended with a stand-in partner (the synthetic peer); nothing here was played by two people yet. **Press
+"Something's wrong here" (`mark_odd`) at every miss**, then send both logs. Lines worth a look: `WO167-TALK`, `WO167-T2`,
+`WO167-NOHOOK`, `WO166-TALK timeout … behaviour= … bt=`, `WO167-SCENE`, `WO167-PULSE`, `WO167-WEAPON`, `WO167-SHOWN`,
+`WO167-SYNCFALLBACK`, `WO167-FT`, `WO167-FAULT`, `MP-WO167-STATS` (agent) and `WO167-STATUS` (`mp_w167_status`).
+
+224. **Trade and haggle with a seller, then talk to three other people** (joiner). Every one of them answers. If one does not:
+     `mark_odd` at once; the joiner's `WO166-TALK timeout …` line now also names the person's behaviour, minigame and tree path, and
+     a `WO167-NOHOOK npc=… prompt=yes|no reason=…` line appears when you stood in front of someone and your press never reached the
+     mod.
+225. **The host trades with someone, then the joiner talks to the same person** within a minute (and once more a minute later).
+     They answer within about 2 seconds of the host finishing. * Joiner: `WO167-T2 npc=… swept=true … ended=none|…` right after the
+     host's trade; host: no `WO167-BUMP … by=figure` unless the joiner's figure really walked into them.
+226. **Talk to the jugglers ("Find a Lute")** (joiner, with the host nearby). If the screen goes black and stays black for 20
+     seconds, it comes back by itself, you are put on your feet and you read "That scene couldn't play here — your partner's world
+     runs it." (`WO167-SCENE stuck …`, then `released …`). A normal conversation scene is never cut short.
+227. **Talk to the dice player twice** (joiner): both times the talk starts (and the game, if you play). If the second one does not
+     start: `mark_odd`.
+228. **Each player fast travels once.** The host picks a place on the map: **both** see the travel map and the route, and both
+     arrive at the same place together; afterwards both clocks show the same time. Then the joiner picks a place: the host's game
+     travels there for both (no vote, no question); if the host can't travel right then (a fight, a conversation), the joiner reads
+     "Your partner can't travel right now." and nothing moves. * Host: `WO167-FT host travel seq=… started dest=… by=…`; joiner:
+     `WO167-FT the host's travel seq=… started …`, `WO167-FT pick id=… dest=…` (please send this line: the map's point id is the one
+     thing not seen yet).
+229. **Finish a quest that forces a travel** (the host's quest): the joiner reads "Travelling with your partner…" and arrives beside
+     the host when the host's travel ends. Neither game stays stuck on the map. If a map stays open with nothing happening, close it
+     (Esc) and `mark_odd`.
+230. **A road ambush while travelling** (if one happens): the travel stops for both; the joiner is placed beside the host where it
+     stopped (`WO167-FT … INTERRUPTED`).
+231. **A fight where new bandits appear** (a road ambush near the joiner): nobody stands in a T-pose, **every enemy holds the
+     weapon it fights with** (drawn when the host's enemy draws, put away when it does), and **every hit you take comes with a swing
+     or a lunge**. * Joiner: `WO167-PULSE npc=… asked=ok` for each new bandit, `WO167-WEAPON npc=… drawn=…`, never `re-asserted
+     sheathed`; `WO161-HIT … shown=yes|generic`, never `applied=dup`.
+
 ## Logs to send afterwards
 
 Both machines: Report a bug in the launcher. Since 0.42.2 it also collects the

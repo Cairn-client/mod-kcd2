@@ -178,6 +178,32 @@ public partial class GameBridge
             Console.WriteLine(FormattableString.Invariant($"WO161-HIT victim=me by={by} sid={m.SwingId} hid={hitId} verdict={HitVerdictMsg.VerdictName(m.Verdict)} dmg={m.Health:F1}/{m.Stamina:F1} applied=dup -- this id was applied already"));
             return;
         }
+        // WO-167 C3: the attacker's last swing is still watched (did it animate?): the verdict waits for that answer -- at most until the
+        // watch's last look -- so a swing that never animated comes with the lunge. Never in the relay's reader loop: it runs on, and the
+        // verdict (already counted once by the dedupe above) is judged and applied when the watch has decided.
+        if (m.Attacker.Length > 0 && W167WatchPending(m.Attacker))
+        {
+            _ = Task.Run(async () =>
+            {
+                long w0 = Environment.TickCount64;
+                try { await Wo167AwaitWatchAsync(m.Attacker); }
+                catch (Exception ex) { Wo167Fault("c3-verdict-wait", "swing-watch", ex); }
+                try { await Wo161JudgeApplyAsync(hitId, m, by, Environment.TickCount64 - w0, ct); }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"WO161-HIT victim=me by={by} hid={hitId} NOT applied: {ex.GetType().Name}: {ex.Message} -- counted (the swing-watch's wait faulted)");
+                    Wo167Fault("c3-verdict-apply", "swing-watch", ex);
+                }
+            });
+            return;
+        }
+        await Wo161JudgeApplyAsync(hitId, m, by, -1, ct);
+    }
+
+    /// <summary>The verdict's judgement (was its swing shown?), the lunge when not, and its damage (waitedMs: WO-167 C3's wait, -1 none).</summary>
+    private async Task Wo161JudgeApplyAsync(uint hitId, HitVerdictMsg m, string by, long waitedMs, CancellationToken ct)
+    {
+        long now = Environment.TickCount64;
         long? played = null, recv = null; string? refused = null; bool fits = false;
         if (m.Attacker.Length > 0)
         {
@@ -205,7 +231,7 @@ public partial class GameBridge
         _ = Wo165RecoilAsync(m.Attacker, c2 is { } e4 && e4.Call != Wo165Rules.DamageCall.FallbackApplyHost ? e4.Outcome : m.Verdict, ct);
         _w161Stats.In(applied, m.Verdict, m.Health, m.Stamina, shown || generic, generic ? "generic" : reason);
         Console.WriteLine(FormattableString.Invariant(
-            $"WO161-HIT victim=me by={by} sid={m.SwingId} hid={hitId} verdict={HitVerdictMsg.VerdictName(m.Verdict)} dmg={m.Health:F1}/{m.Stamina:F1} dir={Wo161Zone(m.Zone)} shown={(shown ? "yes" : generic ? "generic" : "no")} reason={reason} applied={(byEngine ? "engine" : applied ? "yes" : hasDamage ? "no" : "none")}{(_isDamageAuthority ? " note=this-machine-thinks-it-is-the-host" : "")}"));
+            $"WO161-HIT victim=me by={by} sid={m.SwingId} hid={hitId} verdict={HitVerdictMsg.VerdictName(m.Verdict)} dmg={m.Health:F1}/{m.Stamina:F1} dir={Wo161Zone(m.Zone)} shown={(shown ? "yes" : generic ? "generic" : "no")} reason={reason} applied={(byEngine ? "engine" : applied ? "yes" : hasDamage ? "no" : "none")}{(_isDamageAuthority ? " note=this-machine-thinks-it-is-the-host" : "")}{(waitedMs >= 0 ? $" watch_wait_ms={waitedMs}" : "")}"));
     }
 
     /// <summary>Victim: a bare 0.46.0 hit (0x22) -- a peer without the verdict path, or the host's fallback. Counted, never lost.</summary>
