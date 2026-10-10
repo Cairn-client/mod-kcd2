@@ -67,7 +67,7 @@ def ftj(agent_dll):
     path = os.path.join(live.LOGS, 'plan.run167.ftj.txt')
     open(path, 'w').write('\n'.join(plan) + '\n')
     n0 = klen()
-    R.peer('r167ftj', path, ['--duration', '115', '--claim-host'])
+    R.peer('r167ftj', path, ['--duration', '130', '--claim-host'])
     t0 = time.time() + 10.0   # the plan's stream clock (start 10)
     nudge()
     R.agent('r167ftj', agent_dll, ['KCDMP_TEST_JOINER_IN_WORLD=1'])
@@ -82,7 +82,11 @@ def ftj(agent_dll):
     live.lua('KCD2MP_W167FtPicked("ttkc_man_31", "OnDoubleClicked")')
     wait_until(t0 + 94)
     live.lua('KCD2MP_W167FtPicked("1234567", "OnDoubleClicked")')
-    wait_until(t0 + 100)
+    # FT1: a quest's own forced travel on this joiner's machine (no pick, no host message): never refused by the armed hold
+    wait_until(t0 + 98); res['samples']['t98_before_quest'] = FT.state()
+    live.cmd('wh_pl_FakeFastTravelTo %.1f %.1f %.1f' % FAR)
+    wait_until(t0 + 112); res['samples']['t112_after_quest'] = FT.state()
+    wait_until(t0 + 114)
     st = R.load_state()
     res['kcd'] = klines(n0, r'WO167-FT|FastTravel: |WO114-FASTTRAVEL|MP-TOAST|WO154-FT|ApseOpen|Setting active random event|stopping FastTravel')
     res['agent'] = flines(st.get('agentlog', ''), r'WO167-FT|MP-LEASH joiner|WO164-TEST')
@@ -406,7 +410,7 @@ def soak(agent_dll, minutes=30, slot_s=300):
         L.append('window %s %d %d' % (name, a, b))
         L.append('ncombat %d %d %s avatar:1 3 1 0 3' % (a, b, name))
         L.append('hands %d %s - %s' % (a + 4, name, SWORD))
-        L += ['swingat %.1f %s local %s 220 hit 0 1' % (a + 150 + 3 * j, name, SYNC) for j in range(2)]
+        L += ['swingat %.1f %s local %s 220 hit 0 1' % (a + min(150, slot_s // 2) + 3 * j, name, SYNC) for j in range(2)]
     t, i = 20.0, 0
     while t < dur:
         cur = next((n for n, a, b in slots if a + 8 <= t < b - 2), None)
@@ -450,4 +454,4 @@ if __name__ == '__main__':
     elif v == 'tface': tface(sys.argv[2])
     elif v == 'c': crun(sys.argv[2])
     elif v == 'c3': c3run(sys.argv[2])
-    elif v == 'soak': soak(sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else 30)
+    elif v == 'soak': soak(sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else 30, int(sys.argv[4]) if len(sys.argv) > 4 else 300)
