@@ -488,6 +488,15 @@ Agent **1,357** (0.48.2: 1,339); setup **77** (77); Farkle **59** (59); relay **
 (53), 3,819 checks, all green (WO-167's own suite 98, WO-114's 65); the native guard check 7/7. Live as above; the final 30-minute run
 passes on this build.
 
+## Build (the release candidate)
+
+A fresh clone of `e1d0261` (git-ignored start saves copied in; byte-identical to 0.48.2's), then
+`tools\Build-Installer.ps1 -SoakWaiver "The maintainer's standing rule, stated in WO-161 on 2026-10-08 and applied to WO-167 on
+2026-10-10: release candidates are built without the soak test (0.48.5)."` -- every build gate green inside the clone (relay 63, agent
+1,357, setup 77, the Lua and payload checks). `release\KingdomComeTogether-Setup-0.48.5.exe`: **106,510,928 bytes**, SHA-256
+`ad3a35ca4782d709a932296fb5a0e733ed9d8ad12222868825ba34b76f211219`, version resource 0.48.5, **unsigned** (no signing settings). The
+waiver is recorded beside it (`release\SOAK-WAIVED-0.48.5.txt`). Local only; never uploaded.
+
 ## Pocket (not done here; for the maintainer)
 
 1. **The travel map's point id** (FT2): its form is unseen; picks resolve a text GUID or an entity name to a position, anything else
