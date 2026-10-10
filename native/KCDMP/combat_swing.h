@@ -18,6 +18,8 @@
 
 #include <cstdint>
 
+#include "wo167_rules.h"
+
 namespace kcdmp::rttr {
 
 // WO-100 Phase 4 item 3 -- a specific failure vocabulary.
@@ -62,5 +64,15 @@ const char* swing_result_name(SwingResult r);
 /// fails to resolve; a visually inert success (weapon sheathed) still
 /// returns Ok, matching WO-45's live observation.
 SwingResult ghost_swing(uint32_t entityId, const char* fragSpec);
+
+// WO-167 C3: "shown" means rendered. ghost_swing hands its reference to the queued action to the watch (true = taken); each frame the
+// watch reads the action's status until it was installed or never will be (wo167_rules.h), then drops the reference. Main thread only.
+bool swing_watch_take(uint32_t eid, void* action);
+void swing_watch_tick();                                                        // every frame (dllmain post_repeating)
+wo167rules::Seen swing_watch_last(uint32_t eid, uint32_t* ageMs, uint32_t* waitMs);   // the last swing on this body
+void swing_watch_set(bool on);                                                  // mp_swing_watch (the agent)
+bool swing_watch_faulted();
+bool swing_watch_on();                                                          // on and not faulted
+int swing_watch_status(char* out, int n);
 
 } // namespace kcdmp::rttr

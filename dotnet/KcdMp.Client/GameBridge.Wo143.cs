@@ -224,6 +224,7 @@ public partial class GameBridge
                 case Protocol.ExtraKindHands:
                     _w143HostHands[r.Name] = r;
                     if (W141Active && _w143Hands) await Wo143ApplyHandsAsync(r);
+                    await Wo167OnHostHandsAsync(r);   // WO-167 C2: the weapon in the host NPC's hand
                     break;
                 case Protocol.ExtraKindGaits:
                     _w143HostGaits[r.Name] = r.Gaits;
