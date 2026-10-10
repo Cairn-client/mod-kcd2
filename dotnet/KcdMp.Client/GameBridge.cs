@@ -6006,6 +6006,7 @@ public partial class GameBridge(ClientConfig config)
             case "w167_clear":       // WO-167 T2: a copy the host used that showed a combat state: the WO-132 engagement lets go
             case "w167_standin":     // WO-167 C1: a stand-in body was spawned (its walk pulse once bound)
             case "w167_ftpick":      // WO-167 FT2: a pick on this player's travel map
+            case "w167_fault":       // WO-167: the mod's half of a feature faulted (the standing rule)
                 Wo167OnEvent(name, arg);
                 return;
             case "w163_hostile":     // WO-163 A7: the host's 5 s judge asks the engine whether the victim is in a skirmish fight with the host

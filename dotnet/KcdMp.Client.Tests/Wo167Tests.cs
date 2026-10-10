@@ -231,4 +231,28 @@ public class Wo167Tests
         Assert.Equal("taboryUCesty_bandit_10", Wo167Rules.SyncGuardNpc("Cannot change sync guard on taboryUCesty_bandit_10 because data not found for sync movement for slave."));
         Assert.Null(Wo167Rules.SyncGuardNpc("Perfect block Slot started with planned window length: 0.295 s"));
     }
+
+    [Fact]
+    public void A_fault_names_the_feature_it_switched_off()
+    {
+        string[] features = ["shared-travel", "scene-release", "swing-watch", "stand-in-pulse", "talk-clear", "talk-readiness"];
+        var texts = features.Select(Wo167Rules.FaultText).ToList();
+        Assert.Equal(features.Length, texts.Distinct().Count());
+        Assert.All(texts, t => Assert.EndsWith(" off this session (a game error).", t));
+        Assert.Equal("A co-op feature is off this session (a game error).", Wo167Rules.FaultText("something-else"));
+        Assert.Equal("fault", W164Text.TryParseTravel("n 3 fault", out _, out _, out string why, out _) ? why : null);   // the refusal word
+    }
+
+    [Fact]
+    public void A_travel_stopped_by_a_road_event_counts_as_interrupted()
+    {
+        // live (WO-167): an ambush on the route printed the event line and no "Interrupting FastTravel"
+        Assert.True(Wo167Rules.IsTravelInterruptLine("FastTravel: random event variant 'ambush_npc_man' with option set 'AmbushNPC_Event' answered with 'HelpingFight' <'Success'> stopping FastTravel: 'Y'"));
+        Assert.True(Wo167Rules.IsTravelInterruptLine("FastTravel: random event variant 'a' with option set 'b' answered with 'c' <'Success'> stopping FastTravel: 'Y'  "));
+        Assert.True(Wo167Rules.IsTravelInterruptLine("Interrupting FastTravel..."));
+        Assert.False(Wo167Rules.IsTravelInterruptLine("FastTravel: random event variant 'a' with option set 'b' answered with 'c' <'Fail'> stopping FastTravel: 'N'"));
+        Assert.False(Wo167Rules.IsTravelInterruptLine("FastTravel: ended..."));
+        Assert.False(Wo167Rules.IsTravelInterruptLine("Setting active random event for fast travel, event 'prepadeniNaCeste' with variant 'ambush_npc_man'"));
+        Assert.False(Wo167Rules.IsTravelInterruptLine(null));
+    }
 }

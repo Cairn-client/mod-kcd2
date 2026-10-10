@@ -450,6 +450,33 @@ do
     noErrs("C")
 end
 
+-- (G) the standing rule: a WO-167 action the engine throws on is counted, its site logged, its feature off for the session, said once
+do
+    ERRS = {}
+    reset(); joiner()
+    local e = armedCopy("prepadeniNaCeste_bandit_9")
+    e.human.HolsterWeapon = function() e.holsters = e.holsters + 1; error("engine refused") end
+    KCD2MP_W167Weapon("prepadeniNaCeste_bandit_9", SWORD, "hands")   -- drawn
+    local mark = #LOG
+    local toasts = #TOASTS
+    KCD2MP_W167Weapon("prepadeniNaCeste_bandit_9", "-", "hands")     -- the holster throws
+    check("G1: the engine threw on a copy's holster: counted, its site logged, the agent told",
+        lastLog("WO167-FAULT site=c2-holster feature=copy-weapons", mark) ~= nil and countEvt("w167_fault", "copy-weapons c2-holster", mark) == 1
+        and KCD2MP.w167.faults.n == 1, lastLog("WO167-FAULT", mark))
+    check("G2: ...the feature is off for the session and said on screen once", KCD2MP.w167.copyWeapons == false
+        and TOASTS[#TOASTS] == "Enemy weapon copying is off this session (a game error)." and #TOASTS == toasts + 1)
+    local before = e.holsters
+    KCD2MP.w167.copyWeapons = true   -- even switched back on by hand, a faulted feature stays off this session
+    KCD2MP_W167Weapon("prepadeniNaCeste_bandit_9", SWORD, "hands")
+    KCD2MP_W167Weapon("prepadeniNaCeste_bandit_9", "-", "hands")
+    check("G3: ...never tried again, never said again", e.holsters == before and #TOASTS == toasts + 1)
+    KCD2MP_W167Status()
+    check("G4: the status line names the fault", lastLog("WO167-STATUS faults=1 off=copy-weapons") ~= nil, lastLog("WO167-STATUS faults"))
+    check("G: the only Lua error is the one the test threw", #ERRS == 1 and tostring(ERRS[1]):find("engine refused", 1, true) ~= nil, ERRS[1])
+    KCD2MP.w167.faults = { n = 0, off = {} }
+    KCD2MP.w167.copyWeapons = true
+end
+
 -- (F) Phase 3: one shared fast travel ---------------------------------------------------------------------------------------
 local M154 = KCD2MP.w154menu
 local function session154(role, partner, ft)
@@ -507,8 +534,12 @@ do
     reset()
     local F = KCD2MP.w167.ft
     -- the host's rules for a joiner's pick
+    CVARS["wh_pl_FastTravelEnabled"] = 1
     local mark = #LOG
     check("F10: the host can travel: ok", KCD2MP_W167FtCanTravel("t1") == "ok" and countEvt("wo124_reply", "t1 ok", mark) == 1)
+    CVARS["wh_pl_FastTravelEnabled"] = 0
+    check("F10b: ...not while this game's own engine switch is off (the engine would open its map, then refuse)", KCD2MP_W167FtCanTravel("t1b") == "switch-off")
+    CVARS["wh_pl_FastTravelEnabled"] = 1
     P_DANGER = true
     check("F11: ...not in combat (its own rules: the partner is told why)", KCD2MP_W167FtCanTravel("t2") == "combat")
     P_DANGER = false
@@ -538,6 +569,9 @@ do
     KCD2MP_W167FtRefused("combat")
     check("F17: the host could not travel: the joiner told plainly", TOASTS[#TOASTS] == "Your partner can't travel right now.")
     check("F18: the texts", KCD2MP.w167.TEXT_FT_WITH == "Travelling with your partner\226\128\166")
+    KCD2MP_W167FtNotStarted("joiner")
+    check("F18b: a travel this mod asked for never began: the player is told to close the map", TOASTS[#TOASTS] == KCD2MP.w167.TEXT_FT_NOSTART
+        and string.find(KCD2MP.w167.TEXT_FT_NOSTART, "close the map", 1, true) ~= nil)
     noErrs("F-b")
 end
 do

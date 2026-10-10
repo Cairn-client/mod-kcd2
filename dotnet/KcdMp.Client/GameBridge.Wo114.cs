@@ -448,7 +448,7 @@ public partial class GameBridge
         // Only the host fast-travels: switched off while this game is in the host's world.
         bool wantBlock = _joinedWorld && _leashHostOn && JoinerSharedEffective && !W167MirrorHoldsSwitch;   // WO-167 FT2: open for the shared travel's run
         if (wantBlock != _leashFtBlocked || (wantBlock && second && DateTime.UtcNow.Second % 5 == 0))
-            await Wo114SetFastTravelBlockAsync(wantBlock, wantBlock ? "in the host's world" : "left the host's world");
+            await Wo114SetFastTravelBlockAsync(wantBlock, wantBlock ? "in the host's world" : W167MirrorHoldsSwitch ? "the shared travel's run (WO-167)" : "left the host's world");
 
         Wo147JoinerMotionCheck();   // WO-147: a jump, a flight or a fast travel -- told apart (was Wo114JoinerJumpCheck)
 
