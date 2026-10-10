@@ -395,6 +395,9 @@ public sealed class LogTailGameTransport : IGameTransport
         "of minigame entity",
         // WO-166 T3: a conversation's NPC never stopped its behaviour for it (the haggle's death)
         "PlayerDialogController::NPCPauseRequests timed out",
+        // WO-167 T3: an NPC's behaviour-tree path in the engine's own lines (the timeout line names the last one); T4: a fader's end
+        "/(BT)",
+        "Last fader took ",
     ];
 
     /// <summary>
@@ -669,6 +672,11 @@ public sealed class LogTailGameTransport : IGameTransport
             else if (line.IndexOf("Cancelling FF for all NPCs", StringComparison.Ordinal) >= 0)
             {
                 try { SceneStage.Invoke("FFCancelled", "", ""); }
+                catch (Exception ex) { Console.WriteLine($"[scene] stage handler threw: {ex.Message}"); }
+            }
+            else if (Wo167Rules.IsmStage(line) is { } ism)   // WO-167 T4: a conversation's interactive scene queued / ended
+            {
+                try { SceneStage.Invoke(ism, "", ""); }
                 catch (Exception ex) { Console.WriteLine($"[scene] stage handler threw: {ex.Message}"); }
             }
         }

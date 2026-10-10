@@ -725,6 +725,7 @@ public partial class GameBridge
     private void Wo137OnQuestLine(string line)
     {
         if (!Wo137Rules.TryParseQuestLine(line, out var q)) return;
+        if ((q.Kind is "end" or "attempt") && q.Souls.Contains("Dude")) Wo167OnDudeDialogue(q.Kind == "end");   // WO-167 T4: the scene's clock
         switch (q.Kind)
         {
             case "player":

@@ -7184,6 +7184,10 @@ function KCD2MP_W137Session(host, joiner, active)
     if fresh then
         -- the agent (re)connected: it follows this toggle (it keeps no value of its own across restarts)
         KCD2MP_EmitEvent("w137_sync", w.sync and "on" or "off")
+        if KCD2MP.w167 then   -- WO-167: the switches the agent acts on
+            KCD2MP_EmitEvent("w167_cfg", "scene_release=" .. (KCD2MP.w167.sceneRelease and "on" or "off"))
+            KCD2MP_EmitEvent("w167_cfg", "talk_fallback=" .. (KCD2MP.w167.talkFallback and "on" or "off"))
+        end
     end
     local wasHost, wasJoiner = w.host, w.joiner
     if fresh or host ~= w.host or joiner ~= w.joiner or active ~= w.active then
@@ -7271,6 +7275,7 @@ function KCD2MP_W137InstallTalk()
             local orig = cur
             local via = fn
             local wrap = function(self, user, slot)
+                if KCD2MP_W167NoteHook then pcall(KCD2MP_W167NoteHook, self, user) end   -- WO-167 T3: the press reached the mod
                 local bok, blocked = pcall(KCD2MP_W151HostTalkBlocked, self, user)   -- WO-151 3.6
                 if bok and blocked then return end
                 local dok, deb = pcall(KCD2MP_W164TalkDebounce, self, user, via)   -- WO-164 T2: one attempt at a time
@@ -7312,6 +7317,8 @@ end
 function KCD2MP_W137TalkResume(name, via)
     local w = KCD2MP.w137
     local t = w.talking[name]
+    -- WO-167 T1: a press inside the last talk's end window is a fresh talk (that end paused the copy right after this press's request)
+    if t and t.endAt and not t.minigame and KCD2MP_W167TalkRestart then t = KCD2MP_W167TalkRestart(name, t, via) end
     if t then t.via = tostring(via); return t end
     local wasPaused = KCD2MP._npcPaused[name] ~= nil
     t = { since = os.clock(), via = tostring(via), resumed = wasPaused }
@@ -7385,7 +7392,14 @@ function KCD2MP_W137TalkRequest(id)
     if not name then return end
     -- WO-166 T1: never while the player is in a dialogue, just left one, or has his own request open (the field: the fallback took
     -- the shop's own next step, held a copy, and the retry it triggered cleared the player's requests -- his next talk was dead)
-    local blocked = KCD2MP_W166OwnRequestBlocked and KCD2MP_W166OwnRequestBlocked()
+    -- WO-167 T1: the whole fallback is off unless mp_talk_fallback is on; on, never to the NPC whose dialogue just ended either
+    local blocked
+    if KCD2MP_W167FallbackBlocked then
+        blocked = KCD2MP_W167FallbackBlocked(name, id)
+        if blocked == "off" then return end
+    else
+        blocked = KCD2MP_W166OwnRequestBlocked and KCD2MP_W166OwnRequestBlocked()
+    end
     if blocked then
         KCD2MP.w166.talk.stats.suppressed = KCD2MP.w166.talk.stats.suppressed + 1
         mp_log(string.format("WO166-TALK own-request suppressed via=request-fallback npc=%s id=%s why=%s", name, tostring(id), blocked))
@@ -7452,6 +7466,7 @@ function KCD2MP_W137DialogEnd(id, souls)
     local names = {}
     for soul in string.gmatch(tostring(souls or ""), "[%w_]+") do names[soul] = true end
     if names.Dude and KCD2MP_W166NoteDialogEnd then KCD2MP_W166NoteDialogEnd("dialog-ended") end   -- WO-166 T1
+    if names.Dude and KCD2MP_W167NoteDialogEnd then KCD2MP_W167NoteDialogEnd(names) end   -- WO-167 T1: the NPC just talked to
     local ending = {}
     for name, t in pairs(w.talking) do
         if (id and t.id == id) or (names[name] and names.Dude) then ending[#ending + 1] = name end
@@ -7459,7 +7474,7 @@ function KCD2MP_W137DialogEnd(id, souls)
     for _, name in ipairs(ending) do KCD2MP_W137TalkEnd(name, "dialog-ended") end
 end
 
-function KCD2MP_W137TalkEnd(name, why)
+function KCD2MP_W137TalkEnd(name, why, keep)   -- keep (WO-167 T1): the copy is talked to again at once -- not paused, still free
     local w = KCD2MP.w137
     local t = w.talking[name]
     if not t then return end
@@ -7476,7 +7491,9 @@ function KCD2MP_W137TalkEnd(name, why)
     KCD2MP_EmitEvent("w164_talk", string.format("end %s %s %.1f", name, tostring(why), os.clock() - t.since))   -- WO-164 T0
     local p = KCD2MP.npcPuppets[name]
     local how
-    if p then
+    if p and keep then
+        how = "kept running and free: talked to again at once (WO-167)"
+    elseif p then
         if t.resumed or not KCD2MP._npcPaused[name] then mp_wo102_pause(name, p, "w137-talk-end") end
         how = KCD2MP._npcPaused[name] and "paused again" or "not paused (a corpse, or the pause lever is off)"
     elseif KCD2MP_W131IsActive and KCD2MP_W131IsActive() then
@@ -7490,7 +7507,7 @@ function KCD2MP_W137TalkEnd(name, why)
         t.holdSent and "" or "; the host's NPC was never held"))
     -- WO-144 1.3: an off only for a hold that went out (a conversation that never started held nothing)
     if t.holdSent then KCD2MP_EmitEvent("w137_talk", "off " .. name) end
-    if t.freed then KCD2MP_EmitEvent("w157_talkfree", "off " .. name) end   -- WO-157 3b.4: the host's activity again
+    if t.freed and not keep then KCD2MP_EmitEvent("w157_talkfree", "off " .. name) end   -- WO-157 3b.4: the host's activity again
     if why == "never-started" then
         w.stats.neverStarted = (w.stats.neverStarted or 0) + 1
         -- WO-164 T3: after the one retry the player is told to try again (never a third automatic try)
@@ -20434,6 +20451,7 @@ function KCD2MP_W160Conversation(on, name)
         if c then
             w.conv[name] = nil
             mp_log(string.format("WO160-CONV copy-released npc=%s held_s=%.1f -- the host's conversation is over", name, now - c.since))
+            if KCD2MP_W167AfterHostTalk then pcall(KCD2MP_W167AfterHostTalk, name) end   -- WO-167 T2: ready for this player's next talk
         end
         return true
     end
@@ -20716,7 +20734,7 @@ KCD2MP.w164 = KCD2MP.w164 or {
               retries = 0, cancelErr = 0, reissueErr = 0, fleeBackoffs = 0, fleeSkips = 0, unstuck1 = 0, unstuck2 = 0, reSwitched = 0 },
 }
 local W164_SWEEP_COOLDOWN_S = 20.0
-local W164_HOLD = { adaptive = 120, focus = 20, skip = 0, retry = 30, console = 20 }
+local W164_HOLD = { adaptive = 120, focus = 20, skip = 0, retry = 30, console = 20, hostconv = 20 }   -- hostconv: WO-167 T2
 local W164_FOCUS_M = 4.0
 local W164_SKIP_RADIUS_M = 300.0
 local W164_PER_TICK = 4
@@ -20749,7 +20767,7 @@ function KCD2MP_W164Sweep(name, trigger)
     if not w.sweep or not string.find(name, "^[%w_]+$") then return false end
     if not KCD2MP.npcPuppets[name] then w.stats.skipped = w.stats.skipped + 1; return false end   -- the host's copies only
     local now = os.clock()
-    if trigger ~= "retry" and (now - (w.sweptAt[name] or -1e9)) < W164_SWEEP_COOLDOWN_S then return false end
+    if trigger ~= "retry" and trigger ~= "hostconv" and (now - (w.sweptAt[name] or -1e9)) < W164_SWEEP_COOLDOWN_S then return false end
     local released
     if trigger == "retry" then
         -- the copy is in this player's talk (W160Release would skip it): the two resets the game has, directly
@@ -20999,11 +21017,13 @@ function KCD2MP_W164Frame()
     if w.talkGuard then
         for name, t in pairs(KCD2MP.w137.talking) do
             if t.id and not t.started and not t.sawDialog and not t.w164Retried and (now - t.since) > W164_RETRY_S
-               and t.via ~= "request-fallback" and t.via ~= "forced" then   -- WO-166 T1: only the player's own press is retried
+               and t.via ~= "request-fallback" and t.via ~= "forced"   -- WO-166 T1: only the player's own press is retried
+               and not (KCD2MP_W167RetryHeld and KCD2MP_W167RetryHeld(name, t)) then   -- WO-167 T1: never within 3 s of a dialogue's end
                 KCD2MP_W164Retry(name, t)
             end
         end
     end
+    if KCD2MP_W167FocusTick then pcall(KCD2MP_W167FocusTick, now) end   -- WO-167 T3: the copy stood in front of (NOHOOK)
 end
 
 -- S3: the unstuck ladder. Step 1 (also every first press): this player's stance and unstance reset; step 2: beside the partner.
@@ -21273,7 +21293,10 @@ function KCD2MP_W166TalkPress(npc, user, slot, orig, via)
         KCD2MP_ShowNativeToast("They're busy with your partner.")
         return true
     end
-    if not w.talkResumeFirst or KCD2MP._npcPaused[name] == nil or KCD2MP.w137.talking[name] then return false end
+    if not w.talkResumeFirst or KCD2MP.w137.talking[name] then return false end
+    -- WO-167 T2: a copy the host talked to or traded with in the last 2 minutes is resumed first even when the mod has it running
+    local fresh = KCD2MP_W167FreshResume and KCD2MP_W167FreshResume(name)
+    if KCD2MP._npcPaused[name] == nil and not fresh then return false end
     -- paused: resumed now (KCD2MP_W137BeforeTalk), the press after the brain has run a few updates
     pcall(KCD2MP_W137BeforeTalk, npc, user, via)
     pcall(function() KCD2MP_W164NotePress(name, orig, npc, user, slot) end)
@@ -21298,9 +21321,13 @@ function KCD2MP_W166TalkTimeoutFacts(name, t)
     local p = KCD2MP.npcPuppets[name]
     local paused = KCD2MP._npcPaused[name] ~= nil
     local stream = (t and t.w166Held) and "held" or ((p and p.nativeOwned) and "native-driven" or "lua-driven")
-    KCD2MP_EmitEvent("w166_talkstate", string.format("%s paused=%d copy_dialog=%d dead=%d resumed_for_talk=%d stream=%s via=%s retried=%d",
+    -- WO-167 T3: the copy's readiness as the game builds its Talk prompt, this player's minigame, and the copy he faces
+    local ready = KCD2MP_W167Readiness and KCD2MP_W167Readiness(e) or nil
+    local F = KCD2MP.w167 and KCD2MP.w167.talk.focus
+    KCD2MP_EmitEvent("w166_talkstate", string.format("%s paused=%d copy_dialog=%d dead=%d resumed_for_talk=%d stream=%s via=%s retried=%d%s player_minigame=%d target=%s",
         name, paused and 1 or 0, copyDialog and 1 or 0, dead and 1 or 0, (t and t.resumed) and 1 or 0, stream,
-        tostring(t and t.via or "?"), (t and t.w164Retried) and 1 or 0))
+        tostring(t and t.via or "?"), (t and t.w164Retried) and 1 or 0, ready and (" " .. ready.line) or "",
+        (KCD2MP.w137 and KCD2MP.w137.mgOn) and 1 or 0, F and F.name or "-"))
 end
 
 -- C3 / C4 / the C1 lever: the agent and the DLL act on them (w166_cfg)
@@ -21483,7 +21510,353 @@ function KCD2MP_W166Status()
         w.copyStrikes and "on" or "off", w.snapFix and "on" or "off"))
 end
 
-local W164_RE_PATTERNS = { "dummyWanderer", "karavany", "Caravan", "pocestny", "prepadeni", "rvacka", "taboryUCesty", "SpawnedAnimal" }
+-- ===== WO-167: 0.48.5 (docs/WO-167-findings.md) -- the game-side halves =====
+--   T1 mp_talk_fallback (default OFF): the generic request-fallback -- a request no wrapped talk action made, attached to the nearest
+--      copy -- is off (the field: 4 of them, 0 conversations; each took a copy the player was not talking to or swallowed his own press).
+--      On: never within 3 s of a dialogue's end, never to the NPC whose dialogue with this player just ended (10 s). A press on a copy
+--      whose last talk is still in its 2.5 s end window starts a fresh talk (the copy is not paused in between). The WO-164 retry
+--      waits until 3 s after any dialogue's end.
+--   T2 a copy the host just talked to or traded with: its release runs the WO-164 sweep, ends a combat/alert state its copy shows here
+--      while the host's NPC is not fighting (the game's TryEndCombat and stopFight), reads its shop contexts into the line (the game
+--      defines no trade-in-progress context), and the next talk to it resumes it first even when it is not paused.
+--      Host: every collision bark (crime_reaction_barks.kolize) is attributed -- this player or a partner's figure -- and a figure's
+--      bark is ended at once (the NPC's own InterruptDialogs): the figure is not this player.
+--   T3 the timeout line names the copy's readiness (combat, danger, CanTalk, restricted, the talk prompt, shop, the faced copy) and
+--      WO167-NOHOOK npc=<n> prompt=yes|no reason=<r> names a copy this player stopped in front of (3 m, 1 s) whose talk was never pressed
+--   T4 mp_scene_release (default ON): the agent ends a dialogue's interactive scene still running 20 s after the dialogue (the field:
+--      176 s of black, the NPC positioning held by paused copies) the engine's own way; here the faders come back, this player stands up
+--      and is told.
+--   WO167-TALK fallback-off|restart|retry-held ...   WO167-T2 ...   WO167-BUMP ...   WO167-NOHOOK ...   WO167-SCENE ...
+KCD2MP.w167 = KCD2MP.w167 or {
+    talkFallback = false,        -- mp_talk_fallback (T1)
+    sceneRelease = true,         -- mp_scene_release (T4; the agent acts on it)
+    AFTER_S = 3.0, LAST_NPC_S = 10.0, FRESH_S = 120.0, NOHOOK_M = 3.0, NOHOOK_S = 1.0, NOHOOK_EVERY_S = 60.0, NOHOOK_STARE_S = 6.0,
+    talk = { lastNpc = {}, fresh = {}, fbLogAt = -1e9, focus = nil, nohookAt = {},
+             stats = { fallbackOff = 0, restarts = 0, retryHeld = 0, nohook = 0, released = 0, ended = 0, fresh = 0, bumps = 0, bumpsFigure = 0 } },
+    scene = { faderHeldAt = nil, stats = { releases = 0, stood = 0, faders = 0, restores = 0 } },
+}
+
+-- ---- T1 ---------------------------------------------------------------------------------------------------------------
+-- KCD2MP_W137TalkRequest's gate for the generic fallback: nil = it may attach the request to `name`; else why not.
+function KCD2MP_W167FallbackBlocked(name, id)
+    local W = KCD2MP.w167
+    if not W.talkFallback then
+        W.talk.stats.fallbackOff = W.talk.stats.fallbackOff + 1
+        local now = os.clock()
+        if (now - W.talk.fbLogAt) >= 60 then
+            W.talk.fbLogAt = now
+            mp_log(string.format("WO167-TALK fallback-off id=%s nearest=%s n=%d -- the generic request fallback is off (mp_talk_fallback): a request no talk action made is the game's own",
+                tostring(id), tostring(name or "-"), W.talk.stats.fallbackOff))
+        end
+        return "off"
+    end
+    local blocked = KCD2MP_W166OwnRequestBlocked and KCD2MP_W166OwnRequestBlocked()
+    if blocked then return blocked end
+    local at = name and W.talk.lastNpc[name]
+    if at and (os.clock() - at) < W.LAST_NPC_S then return "last-npc" end
+    return nil
+end
+
+-- A dialogue with this player ended (KCD2MP_W137DialogEnd): its NPCs are "just talked to".
+function KCD2MP_W167NoteDialogEnd(names)
+    local now = os.clock()
+    for n in pairs(names or {}) do
+        if n ~= "Dude" then KCD2MP.w167.talk.lastNpc[n] = now end
+    end
+end
+
+-- A press on a copy whose last talk is in its end window (WO-144's 2.5 s): that talk ends now without its re-pause, and the press makes
+-- a fresh one (the field, 09:00:17: the old end paused the copy right after the player's own request was made to it).
+function KCD2MP_W167TalkRestart(name, t, via)
+    local W = KCD2MP.w167
+    W.talk.stats.restarts = W.talk.stats.restarts + 1
+    local endedS = t.endAt and (os.clock() - (t.endAt - (KCD2MP.w137.endDeferS or 2.5))) or 0
+    mp_log(string.format("WO167-TALK restart npc=%s via=%s ended_s=%.1f -- pressed again inside the last talk's end window: a fresh talk, the copy is not paused in between",
+        tostring(name), tostring(via), endedS))
+    KCD2MP_W137TalkEnd(name, "talked-again", true)
+    return nil
+end
+
+-- The WO-164 retry's gate: true = not now (a dialogue with this player ended under 3 s ago; the retry clears every request of his).
+function KCD2MP_W167RetryHeld(name, t)
+    local T = KCD2MP.w166 and KCD2MP.w166.talk
+    if not (T and T.lastDlgEndAt) or (os.clock() - T.lastDlgEndAt) >= KCD2MP.w167.AFTER_S then return false end
+    if t and not t.w167RetryHeld then
+        t.w167RetryHeld = true
+        KCD2MP.w167.talk.stats.retryHeld = KCD2MP.w167.talk.stats.retryHeld + 1
+        mp_log(string.format("WO167-TALK retry-held npc=%s -- a dialogue ended under %.0f s ago: the retry waits", tostring(name), KCD2MP.w167.AFTER_S))
+    end
+    return true
+end
+
+function KCD2MP_W167SetTalkFallback(arg)
+    local v = KCD2MP_Wo122ParseBool(arg)
+    if v == "bad" then mp_log("mp_talk_fallback: expected on|off"); return false end
+    if v ~= nil then KCD2MP.w167.talkFallback = v end
+    KCD2MP_EmitEvent("w167_cfg", "talk_fallback=" .. (KCD2MP.w167.talkFallback and "on" or "off"))
+    mp_log("WO167-TOGGLE mp_talk_fallback " .. (KCD2MP.w167.talkFallback and "on" or "off")
+        .. " -- a talk request no talk action made is " .. (KCD2MP.w167.talkFallback and "given to the nearest copy (never within 3 s of a dialogue's end, never to the person just talked to)" or "left to the game"))
+    return true
+end
+
+-- ---- T2 ---------------------------------------------------------------------------------------------------------------
+-- JOINER: the host's conversation with <name> is over (WO-160's release): its copy is made ready for this player's next talk.
+function KCD2MP_W167AfterHostTalk(name)
+    local W = KCD2MP.w167
+    name = tostring(name or "")
+    local e = nil
+    pcall(function() e = System.GetEntityByName(name) end)
+    if not e or not KCD2MP.npcPuppets[name] then return false end
+    W.talk.stats.released = W.talk.stats.released + 1
+    -- (1) the WO-164 sweep: released the game's own way, its loaded state made what its body is (the DLL's half)
+    local swept = KCD2MP_W164Sweep and KCD2MP_W164Sweep(name, "hostconv") or false
+    -- (2) a combat / alert state on the copy while the host's NPC is not fighting (no combat event from it in 10 s)
+    local combat, danger = false, false
+    local s = e.soul
+    if s and type(s.IsInCombatMode) == "function" then pcall(function() combat = s:IsInCombatMode() == true end) end
+    if s and type(s.IsInCombatDanger) == "function" then pcall(function() danger = s:IsInCombatDanger() == true end) end
+    local hc = KCD2MP.w164 and KCD2MP.w164.hostCombat and KCD2MP.w164.hostCombat[name]
+    local hostFighting = hc ~= nil and (os.clock() - hc) < 10.0
+    local ended = "none"
+    if (combat or danger) and not hostFighting then
+        local okEnd, okStop = false, false
+        if XGenAIModule and type(XGenAIModule.TryEndCombat) == "function" and e.this then
+            pcall(function() okEnd = XGenAIModule.TryEndCombat(e.this.id) == true end)
+        end
+        local st = W139 and W139.stim and W139.stim("stopFight")
+        if st then
+            st.soulCount = 1
+            st.messageId = "w167clear" .. name .. tostring(math.floor(os.clock() * 10))
+            okStop = W139.send(e, "stopFight", st) == true
+        end
+        KCD2MP_EmitEvent("w167_clear", name)   -- the agent lets go of its WO-132 engagement of this copy
+        ended = string.format("try_end_combat=%s,stop_fight=%s", tostring(okEnd), tostring(okStop))
+        W.talk.stats.ended = W.talk.stats.ended + 1
+    end
+    -- (3) shop and trade: the game defines no trade-in-progress context (Libs/Tables/ai/ScriptContext.xml); what the copy holds is read
+    local shop = {}
+    if s and type(s.HasScriptContext) == "function" then
+        for _, c in ipairs({ "shop_sellerReadyToSell", "shop_sellerGuardReadyForGossip", "shopper_buyingProduct" }) do
+            local has = false
+            pcall(function() has = s:HasScriptContext(c) == true end)
+            if has then shop[#shop + 1] = c end
+        end
+    end
+    -- (4) the next talk to it resumes it first (KCD2MP_W166TalkPress), even when the mod has it running
+    W.talk.fresh[name] = os.clock()
+    mp_log(string.format("WO167-T2 npc=%s swept=%s combat=%s danger=%s host_fighting=%s ended=%s shop=%s -- the copy the host just used is ready for the next talk",
+        name, tostring(swept), tostring(combat), tostring(danger), tostring(hostFighting), ended, #shop > 0 and table.concat(shop, ",") or "-"))
+    return true
+end
+
+-- KCD2MP_W166TalkPress: true = this copy is resumed first even when not paused (the host used it in the last 2 minutes; once).
+function KCD2MP_W167FreshResume(name)
+    local W = KCD2MP.w167
+    local at = W.talk.fresh[name]
+    if not at then return false end
+    W.talk.fresh[name] = nil
+    if (os.clock() - at) > W.FRESH_S then return false end
+    W.talk.stats.fresh = W.talk.stats.fresh + 1
+    if KCD2MP._npcPaused[name] == nil then w164_exec("wh_ai_ResumeNPC " .. tostring(name)) end
+    mp_log(string.format("WO167-T2 fresh-resume npc=%s after_s=%.1f -- the host used it last: resumed before this talk", tostring(name), os.clock() - at))
+    return true
+end
+
+-- HOST: the agent saw a collision bark start on <name> (crime_reaction_barks.kolize): this player's bump, or a partner's figure's?
+function KCD2MP_W167Bump(name)
+    local W = KCD2MP.w167
+    name = tostring(name or "")
+    if not string.find(name, "^[%w_]+$") then return false end
+    local e, np, pp = nil, nil, nil
+    pcall(function() e = System.GetEntityByName(name) end)
+    if e then pcall(function() np = e:GetWorldPos() end) end
+    pcall(function() pp = player and player:GetWorldPos() end)
+    if not (np and pp) then return false end
+    local function d(a) return math.sqrt((a.x - np.x) ^ 2 + (a.y - np.y) ^ 2) end
+    local dHost, dFig, fig = d(pp), 1e9, nil
+    for i = 0, 7 do
+        local a, ap = nil, nil
+        pcall(function() a = System.GetEntityByName("kcd2mp_" .. i) end)
+        if a then pcall(function() ap = a:GetWorldPos() end) end
+        if ap and d(ap) < dFig then dFig, fig = d(ap), "kcd2mp_" .. i end
+    end
+    W.talk.stats.bumps = W.talk.stats.bumps + 1
+    local by = (dFig <= 1.5 and dFig < dHost) and "figure" or (dHost <= 1.5 and "host" or "unknown")
+    local acted = "-"
+    if by == "figure" then
+        W.talk.stats.bumpsFigure = W.talk.stats.bumpsFigure + 1
+        local ok = false
+        if e.human and e.human.InterruptDialogs then ok = pcall(function() e.human:InterruptDialogs() end) end
+        acted = "reaction-ended:" .. tostring(ok)
+    end
+    mp_log(string.format("WO167-BUMP npc=%s by=%s d_host=%.2f d_figure=%s figure=%s acted=%s -- %s", name, by, dHost,
+        dFig < 1e8 and string.format("%.2f", dFig) or "-", tostring(fig or "-"), acted,
+        by == "figure" and "a partner's figure is not this player: the NPC's reaction is ended" or "the game's own reaction stands"))
+    return true
+end
+
+-- ---- T3 ---------------------------------------------------------------------------------------------------------------
+-- The copy's readiness for a talk, read the way the game builds its Talk prompt (BasicAIActions:GetActions -> ActorCanTalk,
+-- GetCanTalkHintType). Returns a table; .line is the text for the logs.
+function KCD2MP_W167Readiness(e)
+    local r = { combat = false, danger = false, canTalk = nil, restricted = nil, shop = false, act = nil, hint = nil }
+    if not e then r.prompt, r.reason = "?", "no-entity"; r.line = "prompt=? reason=no-entity"; return r end
+    local function has(o, m) return o ~= nil and type(o[m]) == "function" end   -- never a swallowed error for a missing bind
+    local s, a, ps = e.soul, e.actor, player and player.soul
+    if has(s, "IsInCombatMode") then pcall(function() r.combat = s:IsInCombatMode() == true end) end
+    if has(s, "IsInCombatDanger") then pcall(function() r.danger = s:IsInCombatDanger() == true end) end
+    if has(a, "CanTalk") then pcall(function() r.canTalk = a:CanTalk(player.id) == true end) end
+    if has(s, "IsDialogRestricted") then pcall(function() r.restricted = s:IsDialogRestricted(player.id) == true end) end
+    if has(s, "HasScriptContext") then pcall(function() r.shop = s:HasScriptContext("shop_sellerReadyToSell") == true end) end
+    if type(e.ActorCanTalk) == "function" then pcall(function() r.act = e:ActorCanTalk(player) == true end) end
+    if type(e.GetCanTalkHintType) == "function" then pcall(function() r.hint = e:GetCanTalkHintType() == true end) end
+    local pDanger, pTense = false, false
+    if has(ps, "IsInCombatDanger") then pcall(function() pDanger = ps:IsInCombatDanger() == true end) end
+    if has(ps, "IsInTenseCircumstance") then pcall(function() pTense = ps:IsInTenseCircumstance() == true end) end
+    if r.act == false then
+        r.reason = (r.canTalk == false) and "can-talk-false" or (r.combat and "copy-in-combat" or "actor-cannot-talk")
+    elseif r.hint == false then
+        r.reason = r.restricted and "dialog-restricted" or (pDanger and "player-combat-danger" or (pTense and "player-tense" or "hint-greyed"))
+    elseif r.act == nil then
+        r.reason = "unknown"
+    else
+        r.reason = "offered"
+    end
+    r.prompt = (r.act == true and r.hint ~= false) and "yes" or (r.act == nil and "?" or "no")
+    local function b(v) return v == nil and "?" or (v and "1" or "0") end
+    r.line = string.format("prompt=%s reason=%s combat=%s danger=%s can_talk=%s restricted=%s shop=%s",
+        r.prompt, r.reason, b(r.combat), b(r.danger), b(r.canTalk), b(r.restricted), b(r.shop))
+    return r
+end
+
+-- The talk wraps, first thing: this player's press reached our hook (NOHOOK is about the presses that never do).
+function KCD2MP_W167NoteHook(npc, user)
+    if not (npc and user and player and user.id == player.id) then return end
+    local name = nil
+    if type(npc.GetName) == "function" then pcall(function() name = npc:GetName() end) end
+    local F = KCD2MP.w167.talk.focus
+    if F and name and F.name == name then F.hooked = true end
+    KCD2MP.w167.talk.lastHookName, KCD2MP.w167.talk.lastHookAt = name, os.clock()
+end
+
+function KCD2MP_W167NoHookLine(F, now)   -- (a global, not a main-chunk local: the WO-110 budget)
+    local W = KCD2MP.w167
+    if (now - (W.talk.nohookAt[F.name] or -1e9)) < W.NOHOOK_EVERY_S then return end
+    W.talk.nohookAt[F.name] = now
+    local e = nil
+    pcall(function() e = System.GetEntityByName(F.name) end)
+    local r = KCD2MP_W167Readiness(e)
+    local copyDialog, inDialog = false, false
+    if e and e.human and type(e.human.IsInDialog) == "function" then pcall(function() copyDialog = e.human:IsInDialog() == true end) end
+    if player and player.human and type(player.human.IsInDialog) == "function" then pcall(function() inDialog = player.human:IsInDialog() == true end) end
+    W.talk.stats.nohook = W.talk.stats.nohook + 1
+    mp_log(string.format("WO167-NOHOOK npc=%s d=%.1f faced_s=%.1f %s copy_dialog=%s player_dialog=%s paused=%s -- this player stood in front of a copy and no talk press reached the mod",
+        F.name, F.d or 0, now - F.since, r.line, tostring(copyDialog), tostring(inDialog), tostring(KCD2MP._npcPaused[F.name] ~= nil)))
+end
+
+-- The 4 Hz frame (KCD2MP_W164Frame, a joiner in a session): the copy this player faces within 3 m and stands still in front of.
+function KCD2MP_W167FocusTick(now)
+    local W = KCD2MP.w167
+    local pp, dir = nil, nil
+    pcall(function() pp = player and player:GetWorldPos() end)
+    pcall(function() if player and player.GetDirectionVector then dir = player:GetDirectionVector() end end)
+    local best, bestD = nil, W.NOHOOK_M * W.NOHOOK_M
+    if pp then
+        for name, p in pairs(KCD2MP.npcPuppets) do
+            if not (p.dead or p.ko) and not KCD2MP.w137.talking[name] then
+                local e, pos = nil, nil
+                pcall(function() e = System.GetEntityByName(name) end)
+                if e then pcall(function() pos = e:GetWorldPos() end) end
+                if pos then
+                    local d2 = (pos.x - pp.x) ^ 2 + (pos.y - pp.y) ^ 2
+                    local facing = true
+                    if dir and d2 > 0.01 then facing = ((pos.x - pp.x) * dir.x + (pos.y - pp.y) * dir.y) / math.sqrt(d2) > 0.5 end
+                    if d2 < bestD and facing then best, bestD = name, d2 end
+                end
+            end
+        end
+    end
+    local F = W.talk.focus
+    local function still(f) return f.px and pp and ((pp.x - f.px) ^ 2 + (pp.y - f.py) ^ 2) < 1.0 end
+    if F and F.name ~= best then
+        if not F.hooked and not F.told and (F.last - F.since) >= W.NOHOOK_S and F.still then KCD2MP_W167NoHookLine(F, now) end
+        W.talk.focus, F = nil, nil
+    end
+    if not best then return end
+    if not F then
+        W.talk.focus = { name = best, since = now, last = now, d = math.sqrt(bestD), hooked = false, px = pp.x, py = pp.y, still = true }
+        return
+    end
+    F.last, F.d = now, math.sqrt(bestD)
+    F.still = F.still and still(F)
+    if not F.hooked and not F.told and F.still and (now - F.since) >= W.NOHOOK_STARE_S then
+        F.told = true
+        KCD2MP_W167NoHookLine(F, now)
+    end
+end
+
+-- ---- T4 ---------------------------------------------------------------------------------------------------------------
+-- JOINER, the agent: a dialogue's scene was released (ended = the engine ended it; false = it did not, the black is lifted instead).
+function KCD2MP_W167SceneReleased(ended, why)
+    local W = KCD2MP.w167
+    local S = W.scene
+    S.stats.releases = S.stats.releases + 1
+    local fader = "-"
+    if ended then
+        local fs = nil
+        pcall(function() fs = tonumber(System.GetCVar("wh_ui_FaderSuspend")) end)
+        if fs and fs ~= 0 then pcall(function() System.SetCVar("wh_ui_FaderSuspend", 0) end); fader = "restored" end
+    else
+        -- the field's own way out of the black (wh_ui_FaderSuspend 1), back to 0 once the scene ends or after 60 s
+        pcall(function() System.SetCVar("wh_ui_FaderSuspend", 1) end)
+        S.faderHeldAt = os.clock()
+        S.stats.faders = S.stats.faders + 1
+        fader = "suspended"
+    end
+    -- the unstuck step 1: this player's stance and unstance reset (the field: "can't get up" until mp_unstuck)
+    local nm, stood = nil, "no"
+    pcall(function() nm = player and player:GetName() end)
+    if nm and string.find(tostring(nm), "^[%w_]+$") then
+        local ok1 = w164_exec("wh_ai_NPCStateResetElement " .. tostring(nm) .. " Unstance")
+        local ok2 = w164_exec("wh_ai_NPCStateResetElement " .. tostring(nm) .. " Stance")
+        stood = (ok1 and ok2) and "asked" or "err"
+        S.stats.stood = S.stats.stood + 1
+    end
+    KCD2MP_ShowNativeToast("That scene couldn't play here \226\128\148 your partner's world runs it.")
+    mp_log(string.format("WO167-SCENE released ended=%s fader=%s stood=%s why=%s -- the player was told", tostring(ended == true), fader, stood, tostring(why)))
+    return true
+end
+
+-- The faders back to normal (the agent: the scene ended; or 60 s after the black was lifted).
+function KCD2MP_W167FaderRestore(why)
+    local S = KCD2MP.w167.scene
+    if not S.faderHeldAt then return false end
+    S.faderHeldAt = nil
+    pcall(function() System.SetCVar("wh_ui_FaderSuspend", 0) end)
+    S.stats.restores = S.stats.restores + 1
+    mp_log("WO167-SCENE faders restored (wh_ui_FaderSuspend 0) why=" .. tostring(why))
+    return true
+end
+
+function KCD2MP_W167SetSceneRelease(arg)
+    local v = KCD2MP_Wo122ParseBool(arg)
+    if v == "bad" then mp_log("mp_scene_release: expected on|off"); return false end
+    if v ~= nil then KCD2MP.w167.sceneRelease = v end
+    KCD2MP_EmitEvent("w167_cfg", "scene_release=" .. (KCD2MP.w167.sceneRelease and "on" or "off"))
+    mp_log("WO167-TOGGLE mp_scene_release " .. (KCD2MP.w167.sceneRelease and "on" or "off")
+        .. " -- a conversation's scene stuck 20 s after the conversation is ended the game's own way, the screen back and you on your feet")
+    return true
+end
+
+function KCD2MP_W167Status()
+    local W = KCD2MP.w167
+    local T, S = W.talk.stats, W.scene.stats
+    mp_log(string.format("WO167-STATUS talk fallback=%s fallback_off=%d restarts=%d retry_held=%d nohook=%d host_released=%d combat_ended=%d fresh=%d bumps=%d bumps_figure=%d | scene release=%s releases=%d stood=%d faders=%d restores=%d",
+        W.talkFallback and "on" or "off", T.fallbackOff, T.restarts, T.retryHeld, T.nohook, T.released, T.ended, T.fresh, T.bumps, T.bumpsFigure,
+        W.sceneRelease and "on" or "off", S.releases, S.stood, S.faders, S.restores))
+end
+
+local W164_RE_PATTERNS ={ "dummyWanderer", "karavany", "Caravan", "pocestny", "prepadeni", "rvacka", "taboryUCesty", "SpawnedAnimal" }
 
 -- M: this machine's block. Lines are game facts only (no names of people, no paths).
 function KCD2MP_W164MarkSnap(id, origin)
@@ -24844,6 +25217,9 @@ local ok, err = pcall(function()
     System.AddCCommand("mp_w166_automode", 'KCD2MP_W166SetAutoMode(%line)', "WO-166: test tool -- the partner figure's combat automation pattern while it is in combat (0 all off, 1 all on, 2-9 patterns)")
     System.AddCCommand("mp_talk_resume_first", 'KCD2MP_W166SetTalkResumeFirst(%line)', "WO-166: (joiner) a person you talk to is woken first and the host's movement leaves them alone while they answer (default on): mp_talk_resume_first on|off")
     System.AddCCommand("mp_w166_status", 'KCD2MP_W166Status()', "WO-166: loot screen, talk and combat counters of this build")
+    System.AddCCommand("mp_talk_fallback", 'KCD2MP_W167SetTalkFallback(%line)', "WO-167: (joiner) a talk request no talk action made goes to the nearest host copy (default off: in the field it never started a conversation and got in the way of real ones): mp_talk_fallback on|off")
+    System.AddCCommand("mp_scene_release", 'KCD2MP_W167SetSceneRelease(%line)', "WO-167: (joiner) a conversation's scene still running 20 s after the conversation (a black screen) is ended the game's own way, the screen back and you on your feet (default on): mp_scene_release on|off")
+    System.AddCCommand("mp_w167_status", 'KCD2MP_W167Status()', "WO-167: talk, scene, fast-travel and combat counters of this build")
     System.AddCCommand("mp_hostile_crime", 'KCD2MP_W163SetHostileCrime(%line)', "WO-163: (host) an assault is no crime when the engine says the victim is in a skirmish fight with the host, asked 5 s after the blow (default on): mp_hostile_crime on|off")
     System.AddCCommand("mp_fair_crime", 'KCD2MP_W154SetFairCrime(%line)', "WO-154: (host) a partner's murder only on the victim's death, and an assault judged 5 s later -- no crime if the victim fights by then, a quest brawl (default on): mp_fair_crime on|off")
     System.AddCCommand("mp_scene_resume", 'KCD2MP_W154SetSceneResume(%line)', "WO-154: (joiner) a scene stuck at its end resumes the host's copies, as in 0.44.0 (default off: no copy is resumed; the engine's own rescue, a save request, runs at once): mp_scene_resume on|off")

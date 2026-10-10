@@ -160,3 +160,71 @@ press. The cases it was built for (WO-137: a request that did not come through t
   shape: the joiner runs the game's own travel to the host's destination.
 * **A joiner's copy of a quest that forces travel:** with the joiner's cvar at 0 it is refused and parks the joiner on the map;
   with it at 1 it would run a second, independent travel.
+
+## Phase 1 — talking and trading (built)
+
+### T1 — our requests never follow a dialogue [code][syn]
+* **`mp_talk_fallback`, default off** (0.1: 0 of 4 field fallbacks ever started a conversation; every one took a copy the player was
+  not talking to or swallowed his own press). Off: `KCD2MP_W137TalkRequest` attaches a request no talk action made to nobody; the
+  game keeps it (`WO167-TALK fallback-off id=… nearest=…`, once a minute, counted). No case in 0.1 needs it, so it is off for every
+  case. On: WO-166's rules plus **never to the NPC whose dialogue with this player ended in the last 10 s** (`why=last-npc`).
+* **The press inside the old talk's end window** (the 09:00:17 cause): a press on a copy whose last talk is in WO-144's 2.5 s end
+  window ends that talk at once **without its re-pause** and starts a fresh talk (`WO167-TALK restart …`); the request that follows
+  attaches to the player's own talk, no fallback needed.
+* **The WO-164 retry** (the player's own unanswered press, once) waits until 3 s after any dialogue's end (`WO167-TALK
+  retry-held`): its cancel clears every request of the player.
+* The forced path (a conversation the game itself starts on a copy, e.g. the haggle) makes no request and is unchanged.
+* *Checks:* Lua T1–T15 — off by default and its line, the field's solo request leaves the copy paused, on: the NPC just talked to and
+  the 3 s rule, the switch real, the 09:00:17 sequence (a fresh talk, no `wh_ai_PauseNPC` between, the old talk closed for the agent,
+  the game's own talk once, the new request attached to it), the retry held and then run once **[syn]**; WO-166's and WO-137's
+  fallback scenarios now run with the switch on **[syn]**.
+
+### T2 — a copy the host just used is talkable again [code][syn]
+* **Joiner**, at WO-160's release (the host's conversation or trade with that NPC is over): (1) the WO-164 sweep (`trigger=hostconv`,
+  released the game's own way, the DLL's loaded state := its body, no cooldown); (2) a combat or alert state on the copy is ended
+  **only when the host's NPC is not fighting** (no combat event from it in 10 s): the game's `XGenAIModule.TryEndCombat` and its
+  `stopFight` message, and the agent lets go of the WO-132 engagement (`WO167-T2 clear …`); (3) its shop contexts are read into the
+  line — the game defines **no trade-in-progress context** (`Libs/Tables/ai/ScriptContext.xml`: only `shop_sellerReadyToSell`,
+  `shop_sellerGuardReadyForGossip`, `shopper_buyingProduct`, `shopGuardEnabled`), and `shop_sellerReadyToSell` is the joiner's own
+  Trade option (WO-159), so nothing is cleared; (4) the next talk to it within 2 minutes **resumes it first even when the mod has it
+  running** (`WO167-T2 fresh-resume …`, the WO-166 200 ms press after). One line: `WO167-T2 npc=… swept=… combat=… danger=…
+  host_fighting=… ended=… shop=…`.
+* **Host:** every collision bark (`crime_reaction_barks.kolize`) is attributed by distance (`WO167-BUMP npc=… by=host|figure|unknown
+  d_host=… d_figure=…`); a bark with a partner's figure within 1.5 m and nearer than the host's Henry is ended at once (the NPC's own
+  `InterruptDialogs`): the figure is not this player. The recorded mechanism (0.2): 0 of the field's 3 barks were the figure's — this
+  is the guard and the instrument; whether a figure can trigger one at all is the live check.
+* *Checks:* Lua H1–H11 (the release sweeps, ends a combat state only when the host's NPC is calm, reads the shop context, resumes the
+  next talk first, lapses after 2 minutes; the field's bark by the host's own Henry stands, a figure's is ended) **[syn]**; the bark
+  parser **[unit]**.
+* The cause of "never attempted" after the trade (0.2) is **[not determined]**; T3's line names the copy's state at the next one.
+
+### T3 — readiness at every timeout and every missing hook [code][syn][unit]
+* The timeout line (`WO166-TALK timeout …`) gains, from the Lua: the game's own Talk-prompt rule read on the copy (`prompt=yes|no
+  reason=offered|can-talk-false|copy-in-combat|dialog-restricted|player-combat-danger|player-tense`, `combat= danger= can_talk=
+  restricted= shop=`), the player's minigame and the copy he faces (`target=`); from the agent: the copy's behaviour (**the
+  NPC-state unstance the DLL reads**), its NPC-state minigame and **the last behaviour-tree path the engine printed for it**
+  (`bt=<subbrain>/<tree>@<age>`, from the engine's own NPCContext / node lines — the Warhorse brain's current node has no Lua read).
+* **`WO167-NOHOOK npc=… d=… faced_s=… prompt=… reason=… …`**: the player stood still (moved < 1 m) in front of a copy within 3 m for
+  1 s or more and no talk press reached the mod — logged when the focus ends, or once after a 6 s stare; once per NPC per minute;
+  never while talking to it. (The dice player would read `prompt=no reason=can-talk-false` or `copy-in-combat`.)
+* *Checks:* Lua N1–N6 (the dice player's case, a press that reached the hook, walking past, a long stare with the player's own
+  combat danger, the timeout facts) **[syn]**; the tree-path parser on the field's own lines **[unit]**.
+
+### T4 — release a stuck dialogue scene [code][syn][unit] — `mp_scene_release`, default **on**
+* **Agent (joiner):** counts the engine's `InteractiveSceneManager::EnqueueScene / EndScene / Interrupt` lines (since the last load)
+  and the end of every dialogue with this player; progress = a scene end, a new dialogue with the player, a fader that finished. A
+  scene still running **20 s** after the dialogue ended with no progress (no cutscene of WO-151's running) is released **the
+  engine's own way found in 0.4: a save request** (WO-151's rescue path: a QuickSave through the WO-125 snapshot path, moved out of
+  the playline at once — the engine cancels every NPC's fast-forward and the positioning ends). `WO167-SCENE stuck …`, then
+  `ended` or `not-ended` 6 s later. Once per stuck dialogue.
+* **Lua:** ended → the faders back to normal (`wh_ui_FaderSuspend` back to 0 if the player set it), the player stood up (the unstuck
+  step 1: his Stance/Unstance reset), and the line "That scene couldn't play here — your partner's world runs it." Not ended → the
+  black is lifted (`wh_ui_FaderSuspend 1`, the field's own way) and given back when the scene ends or after 60 s; stood up, told.
+* A normal scene (it ends with its dialogue, or progresses) is never touched.
+* *Checks:* the rule: a held intermission released at 20 s, never before, a scene that ends or progresses never, one release per
+  stuck dialogue; the scene and fader lines **[unit]**; Lua S1–S5 (faders, stand-up, the message, the lifted black given back)
+  **[syn]**. Live: see the live section.
+
+### Phase 1 gates (offline)
+Lua: the new suite **52/52**; **all 54 synthetic suites** green (3,768 checks; WO-166's and WO-137's fallback scenarios now switch
+the fallback on — the intended change). Agent **1,345** (0.48.2: 1,339). Static: Lua locals, console placeholders — green.
