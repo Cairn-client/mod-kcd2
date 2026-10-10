@@ -121,10 +121,11 @@ public static class Wo167Rules
 
     /// <summary>
     /// C3: a verdict for a swing whose watch has not decided waits at most until this long after the swing was played -- the watch's last
-    /// look (ShownFirstLookMs, ShownSecondLookMs, +250 ms) plus the pipe's answer. Live (WO-167's soak): every verdict came 220 ms after its
-    /// swing, before the watch decided, so a swing that never animated was still judged shown and no lunge played.
+    /// look (ShownFirstLookMs, ShownSecondLookMs, +250 ms) plus the pipe's answer and the scheduling, with room to spare. Live (WO-167's
+    /// soak): every verdict came 220 ms after its swing, before the watch decided, so a swing that never animated was still judged shown
+    /// and no lunge played; with 750 ms the cap still ran out just before the last look's answer (a verdict 640 ms after it arrived).
     /// </summary>
-    public const long WatchVerdictCapMs = 750;
+    public const long WatchVerdictCapMs = 1000;
 
     public static string SeenName(byte s) => s switch
     {

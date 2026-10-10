@@ -289,9 +289,10 @@ public partial class GameBridge
         }
         if (active)
         {
-            _leashFtRefusedUtc = DateTime.UtcNow;
-            Console.WriteLine($"MP-LEASH joiner: a fast travel STARTED on this game{(_joinedWorld ? " in the host's world, past the block -- only the host fast-travels; the leash brings you back" : " (not in the host's world)")}");
-            if (_joinedWorld) _ = Wo114SayAsync(LeashLogic.Text.JoinerFastTravelBlocked);
+            // WO-167 FT1: outside a pick the hold is armed, not held, so a travel here is a quest's own forced travel (or a pick the map's
+            // events never showed): it runs and nobody is told "only the host" -- the host's own travel and the leash bring this player
+            // beside the host (the travelling flag makes the pull wait for this run's end)
+            Console.WriteLine($"MP-LEASH joiner: a fast travel started on this game{(_joinedWorld ? " in the host's world outside a pick (a quest's own travel) -- it runs; the host's travel and the leash bring you beside the host" : " (not in the host's world)")}");
         }
         else Console.WriteLine("MP-LEASH joiner: this game's fast travel ended");
     }

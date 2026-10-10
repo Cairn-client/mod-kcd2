@@ -270,23 +270,31 @@ public partial class GameBridge
         return row;
     }
 
-    // C3: the swing each copy played last whose watch has not decided yet -- a verdict for it waits for the answer (Wo161JudgeApplyAsync)
-    private readonly ConcurrentDictionary<string, (long At, TaskCompletionSource Done)> _w167Watching = new(StringComparer.Ordinal);
+    // C3: every swing of a copy whose watch has not decided yet -- a verdict for that copy waits for all of them (Wo161JudgeApplyAsync).
+    // All, not the last: live (the second soak), two rows queued on one copy in the same instant both never animated, and a verdict that
+    // resumed on the later watch's answer still found the earlier row in the played rows (judged shown, no lunge) -- 4 of 9 such swings.
+    private readonly ConcurrentDictionary<string, List<(long At, TaskCompletionSource Done)>> _w167Watching = new(StringComparer.Ordinal);
     private long _w167VerdictWaits;
 
-    /// <summary>C3: a swing of <paramref name="npc"/>'s copy is still watched (played under WatchVerdictCapMs ago, not decided).</summary>
-    private bool W167WatchPending(string npc) =>
-        _w167SwingWatch && _w167Watching.TryGetValue(npc, out var w) && !w.Done.Task.IsCompleted
-        && Environment.TickCount64 - w.At < Wo167Rules.WatchVerdictCapMs;
+    private List<(long At, TaskCompletionSource Done)> W167OpenWatches(string npc, long nowMs)
+    {
+        if (!_w167Watching.TryGetValue(npc, out var l)) return [];
+        lock (l) return l.Where(w => !w.Done.Task.IsCompleted && nowMs - w.At < Wo167Rules.WatchVerdictCapMs).ToList();
+    }
 
-    /// <summary>C3: wait for the watch of <paramref name="npc"/>'s last swing (at most until WatchVerdictCapMs after it was played).</summary>
+    /// <summary>C3: a swing of <paramref name="npc"/>'s copy is still watched (played under WatchVerdictCapMs ago, not decided).</summary>
+    private bool W167WatchPending(string npc) => _w167SwingWatch && W167OpenWatches(npc, Environment.TickCount64).Count > 0;
+
+    /// <summary>C3: wait for every open watch of <paramref name="npc"/>'s swings (each at most until WatchVerdictCapMs after it was played).</summary>
     private async Task Wo167AwaitWatchAsync(string npc)
     {
-        if (!_w167Watching.TryGetValue(npc, out var w) || w.Done.Task.IsCompleted) return;
-        long left = w.At + Wo167Rules.WatchVerdictCapMs - Environment.TickCount64;
+        long now = Environment.TickCount64;
+        var open = W167OpenWatches(npc, now);
+        if (open.Count == 0) return;
+        long left = open.Max(w => w.At) + Wo167Rules.WatchVerdictCapMs - now;
         if (left <= 0) return;
         Interlocked.Increment(ref _w167VerdictWaits);
-        await Task.WhenAny(w.Done.Task, Task.Delay((int)left));
+        await Task.WhenAny(Task.WhenAll(open.Select(w => w.Done.Task)), Task.Delay((int)left));
     }
 
     /// <summary>C3: was the swing just queued on this copy animated? A row that never was is taken out of the played rows (the lunge plays).</summary>
@@ -294,7 +302,8 @@ public partial class GameBridge
     {
         if (!_w167SwingWatch) return;
         var watched = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        _w167Watching[npc] = (playedAt, watched);
+        var list = _w167Watching.GetOrAdd(npc, _ => new());
+        lock (list) { list.RemoveAll(w => w.Done.Task.IsCompleted); list.Add((playedAt, watched)); }
         try
         {
             await Task.Delay(Wo167Rules.ShownFirstLookMs);

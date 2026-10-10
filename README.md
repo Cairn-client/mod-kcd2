@@ -7,7 +7,7 @@
 <strong>Not affiliated with or endorsed by Warhorse Studios or PLAION.</strong></p>
 
 <p align="center">
-  <a href="docs/releases/RELEASE-NOTES-0.48.2.md"><img alt="main" src="https://img.shields.io/badge/main-0.48.2-b8860b?style=flat-square"></a>
+  <a href="docs/releases/RELEASE-NOTES-0.48.5.md"><img alt="main" src="https://img.shields.io/badge/main-0.48.5-b8860b?style=flat-square"></a>
   <a href="https://github.com/DeepFriedDepp/KingdomCome-Together/releases/latest"><img alt="latest release" src="https://img.shields.io/github/v/release/DeepFriedDepp/KingdomCome-Together?label=latest%20release&color=8a3324&style=flat-square"></a>
   <a href="LICENSE"><img alt="License: GPLv3" src="https://img.shields.io/badge/license-GPLv3-2c3e50?style=flat-square"></a>
   <a href="docs/LAUNCHING.md"><img alt="Platform" src="https://img.shields.io/badge/platform-Windows-555555?style=flat-square"></a>
@@ -28,7 +28,7 @@ against each other from inside the game itself.
 > Kingdom Come: Deliverance II, its assets and its content belong to Warhorse
 > Studios and PLAION; this is a free, non-commercial fan project.
 
-> **The current version is 0.48.2**, a release candidate for the maintainer and one tester (not on the releases
+> **The current version is 0.48.5**, a release candidate for the maintainer and one tester (not on the releases
 > page). `main` (this repo's source) is ahead of the last published installer; the feature list below describes
 > `main`. Installing from the
 > [releases page](https://github.com/DeepFriedDepp/KingdomCome-Together/releases)
@@ -36,8 +36,21 @@ against each other from inside the game itself.
 > here — [Building from source](#building-from-source) gets you current
 > `main`.
 >
-> **What 0.48.2 is, in plain words**
+> **What 0.48.5 is, in plain words**
 >
+> - **Fast travel together** (new in 0.48.5): on by default and shared — one travel for both, no vote. When the host travels,
+>   the joiner's game travels to the same place too (the travel map and route on both screens) and you arrive together, the
+>   same time on both clocks; when the joiner picks a place, the host's game travels there for both, or says "Your partner
+>   can't travel right now". A quest that forces a travel is never blocked. The host can still turn it off in the mod menu.
+> - **Talking and trading (joiner, new in 0.48.5):** the mod's own talk request is off by default (`mp_talk_fallback`); someone
+>   the host just traded or talked with is ready for your talk at once; a conversation's scene still running 20 s after the
+>   conversation (the black screen of "Find a Lute") is ended the game's own way and you are put on your feet
+>   (`mp_scene_release`, default on).
+> - **Ambush bandits and weapons (joiner, new in 0.48.5):** people the host's world spawned (a road ambush) no longer T-pose;
+>   every enemy holds the weapon the host's enemy holds (`mp_copy_weapons`); a swing counts as shown only when it really
+>   animated, otherwise a lunge plays before the hit (`mp_swing_watch`); a clinch or throw an enemy can't play is shown as its
+>   plain attack (`mp_sync_fallback`); all default on. Checked unattended with a stand-in partner; the checklist's items
+>   224–231 ask two people.
 > - **No loot crash** (new in 0.48.2): a body you are looting is never changed under your open loot screen; the host's changes
 >   wait until you close it.
 > - **Talking (joiner, new in 0.48.2):** a talk the mod starts never blocks your own; the person you press talk on stands still
@@ -78,7 +91,7 @@ against each other from inside the game itself.
 >   game, not yet with two people; the checklist's items 162–176 ask two people.
 > - **Doors, shops, herbs, horses and the prologue's cutscenes** got their own fixes since 0.45.5; the checklist lists each.
 >
-> **Known, not fixed in 0.48.2:** set-piece brawls (the Cuman brawl, the Moravians' flags); a killed person standing up
+> **Known, not fixed in 0.48.5:** set-piece brawls (the Cuman brawl, the Moravians' flags); a killed person standing up
 > again on the other screen (the standing dead copy); people left naked after a wait or a sleep — fixed in 0.46.0 and
 > waiting for the testers to confirm it; bows and arrows (not built); your own block does not yet decide a blocked blow on your
 > screen (the host's game does); the attacker does not recoil when his blow is blocked; two players on one enemy can still make it turn between them,
@@ -166,7 +179,7 @@ and weather. Each feature below says how far it is proven:
 | Dropping items for each other | What one drops, the other can pick up; the first pickup wins | ✅ |
 | Carrying | A body (dead or knocked out) or a sack one player carries is carried by that player's figure on the other screen and lies where it was put down; one carrier at a time, decided by the host's world | 🧪 |
 | Carrying a living quest person | A person a quest lets you carry alive (the wounded hunter) is carried the same way | ⚠️ built and tested in scripts; not seen in the game yet |
-| Fast travel | **Off** during a co-op session unless the host turns it on in the mod menu; then only the host fast travels and the partner is brought along | 🧪 |
+| Fast travel | **On** and shared (0.48.5): one travel for both, no vote — the host's travel runs on both games, a joiner's pick is asked of the host; a quest's forced travel is never blocked. The host can turn it off in the mod menu | 🧪 |
 | The leash | A partner more than 650 m from the host is brought back after a countdown | 🧪 |
 
 ### Quests and conversations
