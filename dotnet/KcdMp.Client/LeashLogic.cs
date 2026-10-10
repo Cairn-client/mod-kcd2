@@ -79,6 +79,7 @@ public sealed class LeashLogic
         NonHenry = 1 << 10, HostReloading = 1 << 11,
         NoJoinerPosition = 1 << 12,
         HostTravelling = 1 << 13,   // the host's fast travel is running (the pull follows on arrival)
+        JoinerTravelling = 1 << 14, // WO-167 FT2: the joiner's own run of the shared travel is running (the pull follows its arrival)
     }
 
     /// <summary>
@@ -88,10 +89,12 @@ public sealed class LeashLogic
     /// menu, dialogue, cutscene or down; the joiner's menu) is reported by the callers but holds nothing.
     /// </summary>
     public const Hold Blocking = Hold.JoinerLoading | Hold.JoinerDialogue | Hold.JoinerCutscene | Hold.JoinerDowned
-                               | Hold.HostLoading | Hold.HostReloading | Hold.HostTravelling | Hold.NonHenry | Hold.NoJoinerPosition;
+                               | Hold.HostLoading | Hold.HostReloading | Hold.HostTravelling | Hold.NonHenry | Hold.NoJoinerPosition
+                               | Hold.JoinerTravelling;
 
     /// <summary>WO-147: the holds <see cref="HoldCapMs"/> never ends: a load (no world to be placed in) and a missing position.</summary>
-    public const Hold Uncapped = Hold.JoinerLoading | Hold.HostLoading | Hold.HostReloading | Hold.NonHenry | Hold.NoJoinerPosition;
+    public const Hold Uncapped = Hold.JoinerLoading | Hold.HostLoading | Hold.HostReloading | Hold.NonHenry | Hold.NoJoinerPosition
+                               | Hold.JoinerTravelling;   // WO-167 FT2: a shared travel is never cut by the hold cap (the owed pull lapses at 120 s)
 
     public readonly record struct Settings(bool On, float WarnM, float PullM)
     {
@@ -356,7 +359,7 @@ public sealed class LeashLogic
                 Hold.HostDialogue => "host-dialogue", Hold.JoinerDialogue => "joiner-dialogue",
                 Hold.HostMenu => "host-menu", Hold.JoinerMenu => "joiner-menu",
                 Hold.NonHenry => "non-henry", Hold.HostReloading => "host-reloading",
-                Hold.NoJoinerPosition => "no-joiner-position", Hold.HostTravelling => "host-travelling", _ => f.ToString(),
+                Hold.NoJoinerPosition => "no-joiner-position", Hold.HostTravelling => "host-travelling", Hold.JoinerTravelling => "joiner-travelling", _ => f.ToString(),
             });
         return string.Join(',', parts);
     }
@@ -370,6 +373,7 @@ public sealed class LeashLogic
         if ((flags & Protocol.LeashFlagCutscene) != 0) h |= Hold.JoinerCutscene;
         if ((flags & Protocol.LeashFlagDialogue) != 0) h |= Hold.JoinerDialogue;
         if ((flags & Protocol.LeashFlagMenu) != 0) h |= Hold.JoinerMenu;
+        if ((flags & Protocol.LeashFlagTravelling) != 0) h |= Hold.JoinerTravelling;   // WO-167 FT2
         return h;
     }
 

@@ -2,6 +2,7 @@
 // GPLv3 section 7 additional terms: NOTICE. This project's own code only; Kingdom Come: Deliverance II and its
 // content belong to Warhorse Studios and PLAION. Unofficial, free, not affiliated with or endorsed by them.
 using KcdMp.Client;
+using KcdMp.Wire;
 using Xunit;
 
 namespace KcdMp.Client.Tests;
@@ -154,6 +155,74 @@ public class Wo167Tests
         Assert.Equal(-1, Wo167Rules.PlainScore(SyncRow.Tags, 1, "aZ2+slash+attack_heavy+r_sword", 1));
         var none = ActionRowCatalog.FromRows(new[] { (SyncG, SyncRow), (plainSword, cat.TryGet(plainSword, out var sw) ? sw : default) });
         Assert.Null(none.PlainForSync(SyncRow));
+    }
+
+    // ---------------------------------------------------------------- FT1-FT4: one shared fast travel
+
+    [Fact]
+    public void Fast_travel_is_on_by_default()
+    {
+        Assert.True(Wo154MenuRules.FastTravelDefault);
+    }
+
+    [Fact]
+    public void The_travel_texts_round_trip()
+    {
+        Assert.True(W164Text.TryParseTravel(W164Text.TravelRequest(7, "@fastTravel_trosecko"), out char v, out uint seq, out string arg, out _));
+        Assert.Equal(('r', 7u, "@fastTravel_trosecko"), (v, seq, arg));
+        Assert.True(W164Text.TryParseTravel(W164Text.TravelStart(8, "1551.5,2277.4,17.6"), out v, out seq, out arg, out _));
+        Assert.Equal(('s', 8u, "1551.5,2277.4,17.6"), (v, seq, arg));
+        Assert.True(W164Text.TryParseTravel(W164Text.TravelStart(9, "-"), out v, out _, out arg, out _));
+        Assert.Equal(('s', "-"), (v, arg));
+        Assert.True(W164Text.TryParseTravel(W164Text.TravelEnd(9, 1580.04f, 2327.33f, 19.38f, true), out v, out _, out arg, out bool interrupted));
+        Assert.Equal(('e', "1580.0,2327.3,19.4"), (v, arg));
+        Assert.True(interrupted);
+        Assert.True(W164Text.TryParseTravel(W164Text.TravelRefused(10, "combat"), out v, out _, out arg, out _));
+        Assert.Equal(('n', "combat"), (v, arg));
+        foreach (var t in W164TextLengths()) Assert.True(t.Length <= Protocol.W164TextMax, t);
+    }
+
+    private static IEnumerable<string> W164TextLengths() => new[]
+    {
+        W164Text.TravelRequest(uint.MaxValue, "@" + new string('a', 48)),
+        W164Text.TravelStart(uint.MaxValue, "-99999.9,-99999.9,-99999.9"),
+        W164Text.TravelEnd(uint.MaxValue, -99999.9f, -99999.9f, -99999.9f, true),
+        W164Text.TravelRefused(uint.MaxValue, "unknown-destination"),
+    };
+
+    [Fact]
+    public void A_bad_travel_text_is_refused()
+    {
+        Assert.False(W164Text.TryParseTravel("r 1 @bad name", out _, out _, out _, out _));
+        Assert.False(W164Text.TryParseTravel("r 1 @" + new string('a', 49), out _, out _, out _, out _));
+        Assert.False(W164Text.TryParseTravel("s 1 1,2", out _, out _, out _, out _));
+        Assert.False(W164Text.TryParseTravel("s 1 1,2,NaN", out _, out _, out _, out _));
+        Assert.False(W164Text.TryParseTravel("s 1 999999,2,3", out _, out _, out _, out _));
+        Assert.False(W164Text.TryParseTravel("e 1 1,2,3 2", out _, out _, out _, out _));
+        Assert.False(W164Text.TryParseTravel("n 1 Combat!", out _, out _, out _, out _));
+        Assert.False(W164Text.TryParseTravel("x 1 -", out _, out _, out _, out _));
+        Assert.False(W164Text.TryParseTravel("r -1 -", out _, out _, out _, out _));
+        Assert.Equal("combat", Wo167Rules.RefusalWord("combat"));
+        Assert.Equal("not-now", Wo167Rules.RefusalWord("timeout because"));
+        Assert.Equal("not-now", Wo167Rules.RefusalWord(""));
+    }
+
+    [Fact]
+    public void The_pull_after_a_shared_travel_waits_for_the_joiners_own_run()
+    {
+        var l = new LeashLogic { Config = LeashLogic.Settings.Default };
+        long t = 0;
+        l.NoteHostFastTravel();
+        var held = new List<LeashLogic.Action>();
+        for (int i = 0; i < 160; i++) { t += 250; held.AddRange(l.Tick(t, 2400, LeashLogic.JoinerHold(Protocol.LeashFlagInWorld | Protocol.LeashFlagTravelling))); }
+        Assert.DoesNotContain(held, a => a.Kind == LeashLogic.Act.Pull);   // 40 s of the joiner's own run: never pulled mid-travel (no cap)
+        Assert.True(l.FastTravelPending);
+        var after = new List<LeashLogic.Action>();
+        for (int i = 0; i < 2; i++) { t += 250; after.AddRange(l.Tick(t, 2400, LeashLogic.JoinerHold(Protocol.LeashFlagInWorld))); }
+        var p = Assert.Single(after, a => a.Kind == LeashLogic.Act.Pull);
+        Assert.Equal(Protocol.LeashReasonFastTravel, Protocol.LeashReasonBase(p.Reason));   // its run over: beside the host (wherever it stopped)
+        Assert.Equal("joiner-travelling", LeashLogic.HoldText(LeashLogic.Hold.JoinerTravelling));
+        Assert.Contains("travelling", Protocol.LeashFlagsText(Protocol.LeashFlagTravelling));
     }
 
     [Fact]

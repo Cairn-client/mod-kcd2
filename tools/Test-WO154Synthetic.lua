@@ -156,10 +156,11 @@ end
 do
     local b = lastLog("WO154-BUILD") or ""
     check("a: WO154-BUILD logged once", logCount("WO154-BUILD") == 1, logCount("WO154-BUILD"))
-    for _, kv in ipairs({ "menu=on", "menu_key=insert", "name_badges=on", "ping_line=on", "clean_screen=off", "fast_travel=off", "items=17" }) do
+    -- WO-167 FT1: the session's fast travel is ON by default now (0.45.0 shipped it off)
+    for _, kv in ipairs({ "menu=on", "menu_key=insert", "name_badges=on", "ping_line=on", "clean_screen=off", "fast_travel=on", "items=17" }) do
         check("a: the build line says " .. kv, b:find(kv, 1, true) ~= nil, b)
     end
-    check("a: w154_menu_cfg fast_travel=off told to the agent at load", evts("w154_menu_cfg")[1] == "fast_travel=off", evts("w154_menu_cfg")[1])
+    check("a: w154_menu_cfg fast_travel=on told to the agent at load", evts("w154_menu_cfg")[1] == "fast_travel=on", evts("w154_menu_cfg")[1])
     for cmd, fn in pairs({ mp_menu = "KCD2MP_W154Menu", mp_name_badges = "KCD2MP_W154SetNameBadges", mp_ping_line = "KCD2MP_W154SetPingLine",
                            mp_clean_screen = "KCD2MP_W154SetCleanScreen", mp_fast_travel = "KCD2MP_W154SetFastTravel" }) do
         local c = CCMDS[cmd]
@@ -172,8 +173,8 @@ do
         if not CCMDS["mark_" .. w] then missing[#missing + 1] = w end
     end
     check("a: the live check's marker words are commands (mark_menu ...)", #missing == 0, table.concat(missing, ","))
-    check("a: defaults: badges on, ping on, clean off, fast travel off, key insert, closed",
-        M.nameBadges == true and M.pingLine == true and M.clean == false and M.fastTravel == false and M.menuKey == "insert" and M.menu.open == false)
+    check("a: defaults: badges on, ping on, clean off, fast travel on (WO-167), key insert, closed",
+        M.nameBadges == true and M.pingLine == true and M.clean == false and M.fastTravel == true and M.menuKey == "insert" and M.menu.open == false)
     check("a: no Lua errors at load", #ERRS == 0, ERRS[1])
 end
 
@@ -194,7 +195,7 @@ do
     check("b: ...the key hint", drawn("PgUp/PgDn choose  End change  Insert close") ~= nil)
     check("b: ...a group header", drawn("-- Display --") ~= nil and drawn("-- Gameplay --") ~= nil and drawn("-- Help --") ~= nil)
     check("b: ...the chosen row with its marker and value", drawn("> Partner's name badge: On") ~= nil)
-    check("b: ...the other rows unmarked", drawn("  Ping and clock line: On") ~= nil and drawn("  Fast travel: Off") ~= nil)
+    check("b: ...the other rows unmarked", drawn("  Ping and clock line: On") ~= nil and drawn("  Fast travel: On") ~= nil)   -- WO-167 FT1: on by default
     check("b: ...the chosen item's explanation", drawn("Shows your partner's name (and health) above their figure.") ~= nil)
     local minX = 1e9
     for _, d in ipairs(DRAWS) do if d.x < minX then minX = d.x end end
@@ -498,9 +499,13 @@ do
     check("g: no Lua errors", #ERRS == 0, ERRS[1])
 end
 
--- (h) fast travel
+-- (h) fast travel -- the session's off, as WO-154 built it; WO-167 FT1 holds the switch only while a player picks on the travel map
+-- (KCD2MP_W167FtMapWindow), so these scenarios run "while picking"; the window itself: Test-WO167Synthetic.lua (F)
 do
     reset()
+    M.fastTravel = false
+    local winWas = KCD2MP_W167FtMapWindow
+    KCD2MP_W167FtMapWindow = function() return true end
     local w114 = KCD2MP.w114
     CVARS.wh_pl_FastTravelEnabled = 2
     local mark, ui0 = #LOG, #UICALLS
@@ -589,6 +594,8 @@ do
     check("h: an unreadable cvar switches nothing and says so", M.ftHeld == false and logCount("unreadable -- fast travel NOT switched off") == 1)
     session("none", false)
     CVARS.wh_pl_FastTravelEnabled = 1
+    KCD2MP_W167FtMapWindow = winWas
+    M.fastTravel = true
     check("h: no Lua errors", #ERRS == 0, ERRS[1])
 end
 

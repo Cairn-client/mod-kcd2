@@ -219,7 +219,7 @@ public class Wo154MenuTests
         Assert.Equal("crime_mode", SessionSettingKey.Name(SessionSettingKey.CrimeMode));
         Assert.Equal("fast_travel", SessionSettingKey.Name(SessionSettingKey.FastTravel));
         Assert.Equal("unknown-9", SessionSettingKey.Name(9));
-        Assert.False(Wo154MenuRules.FastTravelDefault);   // 0.45.0: fast travel off in a co-op session unless the host allows it
+        Assert.True(Wo154MenuRules.FastTravelDefault);    // WO-167 FT1: on by default, one shared travel (0.45.0 shipped it off)
     }
 
     // ---------------------------------------------------------------- the menu key in the launcher's settings.json

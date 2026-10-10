@@ -275,12 +275,18 @@ public partial class GameBridge
     {
         if (_combatRoleApplied && _isDamageAuthority)
         {
+            Wo167OnHostTravel(active);   // WO-167 FT2: one shared travel -- the joiners run it too
             _leashHostTravelling = active;
             if (active) Console.WriteLine("MP-LEASH host: fast travel started -- the joiners' countdowns hold; they come along on arrival");
             else { _leashFtArrivedUtc = DateTime.UtcNow; Console.WriteLine("MP-LEASH host: fast travel ended -- the joiners come along in 1.5 s"); }
             return;
         }
         if (!_combatRoleApplied) return;
+        if (Wo167OnJoinerLocalTravel(active))   // WO-167 FT2: this game's run of the shared travel -- not a travel past the block
+        {
+            Console.WriteLine($"MP-LEASH joiner: this game's run of the shared fast travel {(active ? "started" : "ended")}");
+            return;
+        }
         if (active)
         {
             _leashFtRefusedUtc = DateTime.UtcNow;
@@ -433,13 +439,14 @@ public partial class GameBridge
         if (mounted) f |= Protocol.LeashFlagMounted;
         if ((DateTime.UtcNow - _leashFtRefusedUtc).TotalSeconds < 5) f |= Protocol.LeashFlagFastTravelRefused;
         if (Wo147OwnFlying) f |= Protocol.LeashFlagFlying;   // WO-147
+        if (_w167MirrorActive || _w167LocalTravel) f |= Protocol.LeashFlagTravelling;   // WO-167 FT2: the host's pull waits for this run's end
         return f;
     }
 
     private async Task Wo114JoinerTickAsync(bool second)
     {
         // Only the host fast-travels: switched off while this game is in the host's world.
-        bool wantBlock = _joinedWorld && _leashHostOn && JoinerSharedEffective;
+        bool wantBlock = _joinedWorld && _leashHostOn && JoinerSharedEffective && !W167MirrorHoldsSwitch;   // WO-167 FT2: open for the shared travel's run
         if (wantBlock != _leashFtBlocked || (wantBlock && second && DateTime.UtcNow.Second % 5 == 0))
             await Wo114SetFastTravelBlockAsync(wantBlock, wantBlock ? "in the host's world" : "left the host's world");
 

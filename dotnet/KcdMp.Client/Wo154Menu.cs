@@ -45,8 +45,11 @@ public static class Wo154MenuRules
         new("PartnerMarker", Kind.OnOff, false),   // WO-164 C2: mp_partner_marker
     };
 
-    /// <summary>WO-154: the session's fast travel ships OFF (0.45.0): the host turns it on in the menu.</summary>
-    public const bool FastTravelDefault = false;
+    /// <summary>
+    /// The session's fast travel. WO-154 shipped it OFF (0.45.0); WO-167 FT1 (the maintainer, 2026-10-10): ON by default -- one shared
+    /// travel for both players, no vote; the host can still turn it off in the menu (a quest's own travel is never refused either way).
+    /// </summary>
+    public const bool FastTravelDefault = true;
 
     public static Setting? Find(string key) => Array.Find(Settings, s => s.Key == key);
 
