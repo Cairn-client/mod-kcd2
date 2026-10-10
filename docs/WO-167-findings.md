@@ -48,7 +48,7 @@ print (the talk events, the native holds).
 and the agent closed it at once as never-started.
 
 **The fallback's record:** every `request-fallback` talk in the field bundles on disk (this one: 3; WO-166's: 1) — **0 of 4 ever
-started a conversation**; each one resumed (and later re-paused) a copy the player was not talking to, or competed with his own
+started a conversation**; each one resumed (and later re-paused) a copy the player was not talking to, or competed with their own
 press. The cases it was built for (WO-137: a request that did not come through the wrapped talk actions) did not occur once.
 
 ### 0.2 What the joiner's copy keeps after the host's trade (item 3) [L-field][code]
@@ -165,7 +165,7 @@ press. The cases it was built for (WO-137: a request that did not come through t
 
 ### T1 — our requests never follow a dialogue [code][syn]
 * **`mp_talk_fallback`, default off** (0.1: 0 of 4 field fallbacks ever started a conversation; every one took a copy the player was
-  not talking to or swallowed his own press). Off: `KCD2MP_W137TalkRequest` attaches a request no talk action made to nobody; the
+  not talking to or swallowed their own press). Off: `KCD2MP_W137TalkRequest` attaches a request no talk action made to nobody; the
   game keeps it (`WO167-TALK fallback-off id=… nearest=…`, once a minute, counted). No case in 0.1 needs it, so it is off for every
   case. On: WO-166's rules plus **never to the NPC whose dialogue with this player ended in the last 10 s** (`why=last-npc`).
 * **The press inside the old talk's end window** (the 09:00:17 cause): a press on a copy whose last talk is in WO-144's 2.5 s end
@@ -201,7 +201,7 @@ press. The cases it was built for (WO-137: a request that did not come through t
 ### T3 — readiness at every timeout and every missing hook [code][syn][unit]
 * The timeout line (`WO166-TALK timeout …`) gains, from the Lua: the game's own Talk-prompt rule read on the copy (`prompt=yes|no
   reason=offered|can-talk-false|copy-in-combat|dialog-restricted|player-combat-danger|player-tense`, `combat= danger= can_talk=
-  restricted= shop=`), the player's minigame and the copy he faces (`target=`); from the agent: the copy's behaviour (**the
+  restricted= shop=`), the player's minigame and the copy they face (`target=`); from the agent: the copy's behaviour (**the
   NPC-state unstance the DLL reads**), its NPC-state minigame and **the last behaviour-tree path the engine printed for it**
   (`bt=<subbrain>/<tree>@<age>`, from the engine's own NPCContext / node lines — the Warhorse brain's current node has no Lua read).
 * **`WO167-NOHOOK npc=… d=… faced_s=… prompt=… reason=… …`**: the player stood still (moved < 1 m) in front of a copy within 3 m for
@@ -218,7 +218,7 @@ press. The cases it was built for (WO-137: a request that did not come through t
   the playline at once — the engine cancels every NPC's fast-forward and the positioning ends). `WO167-SCENE stuck …`, then
   `ended` or `not-ended` 6 s later. Once per stuck dialogue.
 * **Lua:** ended → the faders back to normal (`wh_ui_FaderSuspend` back to 0 if the player set it), the player stood up (the unstuck
-  step 1: his Stance/Unstance reset), and the line "That scene couldn't play here — your partner's world runs it." Not ended → the
+  step 1: the character's Stance/Unstance reset), and the line "That scene couldn't play here — your partner's world runs it." Not ended → the
   black is lifted (`wh_ui_FaderSuspend 1`, the field's own way) and given back when the scene ends or after 60 s; stood up, told.
 * A normal scene (it ends with its dialogue, or progresses) is never touched.
 * *Checks:* the rule: a held intermission released at 20 s, never before, a scene that ends or progresses never, one release per
@@ -290,3 +290,70 @@ WO-166 C2 (the host's word for an unrowed blow), C3 `mp_copy_strikes` and C4 `mp
 ### Phase 2 gates (offline)
 Native **644** (0.48.2: 625); agent **1,350**; Lua: the WO-167 suite **62**; all 54 synthetic suites green (3,778 checks); the native
 guard check clean.
+
+## Phase 3 — one shared fast travel (built)
+
+### FT1 — on by default; a quest's travel is never refused by us [code][syn][unit] — `mp_fast_travel`, default **on**
+* **The default** is on (the maintainer, 2026-10-10): WO-154's menu row, the agent's `FastTravelDefault`, the mod's session default.
+  The host can still turn it off in the mod menu (Insert).
+* **Off no longer blocks the game's own travel:** WO-154 held `wh_pl_FastTravelEnabled 0` for the whole session when off — which
+  would also refuse a quest's forced travel (0.7). Now "off" holds the engine's switch **only while this player picks on the travel
+  map** (`KCD2MP_W167FtMapWindow`: 30 s after a highlighted travel point, the map's double click or the travel question's confirm,
+  seen through the map's own element events), and gives it back otherwise. A quest's forced travel (a fast-travel cutscene) goes
+  through on the host whatever the setting.
+* **A joiner's own engine travel** stays switched off in the host's world (WO-114): its picks are asked of the host (FT2), and its copy
+  of a quest's travel is not run there — the host's travel brings it along. Whether the engine's switch also refuses a quest's
+  (event-initiated) travel, and what the game does then, is the live probe below; the decision rule: if a refused quest travel
+  leaves the joiner's game stuck on the map, the joiner's switch is held only while it picks, like the host's.
+
+### FT2 — one travel for both, no vote [code][syn][unit]
+* **Wire:** W164 kind **6 Travel** (appended; WO-164's message family): `r <seq> <dest>` joiner → host (a pick, asked);
+  `n <seq> <why>` host → joiner (the host's world can't travel: nothing moves); `s <seq> <dest>` host → joiners (the travel started:
+  the host's own pick, a joiner's, or a quest's with `-`); `e <seq> <x,y,z> <0|1>` host → joiners (it ended there; 1 = interrupted).
+  A destination is a world position `x,y,z` (`-` = not known; `@name` parsed for a named entity). Leash flag **0x0400 travelling**
+  appended (the joiner's own run of the shared travel is under way: the host's pull waits for it).
+* **The pick:** the map's `OnHighlightFastTravelPoint(Id, Text)`, `OnDoubleClicked(Id)` and the travel question's
+  `OnQuestionDialogConfirmClicked` (which names nothing: the point last highlighted) are listened to through the game's own element
+  listener. The map declares its point id as a plain string (the map element's definition) and the handler keeps it as one; its form
+  is not documented, so `KCD2MP_W167FtDest` resolves it as an entity's text GUID (`System.GetEntityByTextGUID`) or an entity name to
+  that entity's **world position** — the console travel takes a position on both machines — and anything else to `-`. Every pick
+  logs the raw id (`WO167-FT pick id=… dest=…`), so the first two-player run shows the form. **[needs two players]**
+* **A joiner's pick:** sent to the host (`r`). The host checks its own world (off, already travelling, an unknown destination, no
+  player, dead, in a dialogue, in combat, in a minigame — `KCD2MP_W167FtCanTravel`), then runs the engine's own travel there
+  (`wh_pl_FastTravelTo x y z`) and waits 6 s for `FastTravel: started`; the engine's own refusals (over-encumbered, outside the
+  navmesh …) come back as `not-started`. Any refusal: the joiner reads **"Your partner can't travel right now."** and nothing moves.
+* **The host's travel (any start — its own pick, a joiner's, a quest's, the console):** at `FastTravel: started` the host tells every
+  joiner (`s`, with the destination when a pick named one within 15 s, else `-`). The joiner lets go of its own switch for this one
+  travel (WO-114's 5 s re-assert waits while the run lasts, 3 min at most) and runs **the game's own travel to the same destination**:
+  its own travel map, route and fades for the same route, so both screens show the travel for about the same time. Its clock jumps
+  with its own run and is the host's at the end (the WO-104 / WO-140 time sync: the host's clock wins). When both runs have ended, the
+  WO-114 pull places the joiner beside the host (the WO-124 ground-safe placement); the pull waits while the joiner's flag says
+  travelling.
+* **No vote, no prompt** on either side; the partner reads **"Travelling with your partner…"** (FT4).
+* *Checks:* the wire texts and their limits, the leash flag and the pull waiting for the joiner's run **[unit]**; the pick → the
+  agent, the map window hold, the destination forms (name, GUID, unknown, the origin), the host's rules, the host's travel for a
+  pick, the joiner's run with its switch let go, a blind start, the refusal, the texts **[syn]**.
+
+### FT3 — an interrupted travel [code][unit]
+* The engine's `Interrupting FastTravel…` line on the host marks the travel interrupted; the end message carries `1` and the stop
+  position, and the joiner is placed beside the host where it stopped (the same pull). The mod has no way to stop the joiner's own run
+  midway (the engine's console has travel commands but no stop): it finishes first, then the pull brings the joiner back to the host's
+  stop. **Limit, recorded.** A road encounter that stops the joiner's own run ends the same way: the pull places it beside the host.
+
+### FT4 — the texts [syn]
+* "Travelling with your partner…" on the partner's screen (both directions: the joiner when the host travels; the host when it travels
+  for the joiner's pick).
+* The off message (WO-166 F1) only when the host turned travel off **and** a player picks; a joiner's own engine refusal in the host's
+  world says nothing when travel is on (the pick is asked of the host) — never "Only the host can fast travel" while travel is on.
+
+### Phase 3 known limits
+* The map id's form is unverified (above): an id that resolves to nothing makes a joiner's pick refused (`unknown-destination`) and a
+  host's travel "blind" for the joiner (told, then placed beside the host on arrival — the 0.48.2 behaviour).
+* A quest's travel on the host is blind for the joiner by construction (the quest's travel point is not on the map's pick path): told,
+  then placed beside the host on arrival.
+* The joiner's run is the joiner's own engine travel: when it takes a different time than the host's (its own encounters, its own
+  streaming), the host's travel ends first or last and the pull evens it out; the two screens are not frame-locked.
+
+### Phase 3 gates (offline)
+Agent **1,354**; Lua: the WO-167 suite **87**, the WO-154 suite **229** (fast travel defaults on; the map-window hold); all 54
+synthetic suites green.

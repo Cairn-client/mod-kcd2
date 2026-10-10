@@ -5648,6 +5648,15 @@ end
 function KCD2MP_Wo114FastTravelTried(how)
     local w = KCD2MP.w114
     if not w.ftBlocked then return false end
+    -- WO-167 FT2: with the session's fast travel on, this player's pick is asked of the host (the shared travel starts, or "Your partner
+    -- can't travel right now"): the engine's own refusal here says nothing. FT4: off -> the session's off message (WO-154), never "only the host"
+    local m154 = KCD2MP.w154menu
+    local joinerUp = m154 ~= nil and m154.sessionUp ~= nil and m154.sessionUp() and m154.roleNow() == "joiner"
+    if joinerUp and KCD2MP_W154FastTravelSession and KCD2MP_W154FastTravelSession() then
+        mp_log("WO114-FASTTRAVEL refused here (" .. tostring(how or "map") .. ") -- the pick is asked of the host (WO-167 shared travel)")
+        return true
+    end
+    if KCD2MP_W154FastTravelTried and KCD2MP_W154FastTravelTried(how) then return true end
     if KCD2MP_W166FastTravelTell and not KCD2MP_W166FastTravelTell("wo114") then return true end   -- WO-166 F1
     if (os.clock() - w.ftToldAt) < 5 then return true end
     w.ftToldAt = os.clock()
@@ -7210,6 +7219,7 @@ function KCD2MP_W137Session(host, joiner, active)
     pcall(KCD2MP_W166WeatherTick, host and active, false, joiner and active)   -- WO-166 W1
     if KCD2MP.w166 and KCD2MP.w166.ft then   -- WO-166 F1: armed for the session, said at most once per session
         if active and (host or joiner) then pcall(KCD2MP_W166FtListen) elseif not active then KCD2MP.w166.ft.told = false end
+        if active and (host or joiner) and KCD2MP_W167FtListen then pcall(KCD2MP_W167FtListen) end   -- WO-167 FT1/FT2: the map's picks
     end
     pcall(KCD2MP_W160OwnHorseTick)   -- WO-160 6: a joiner's own horse is told to the host
 end
@@ -21328,7 +21338,7 @@ function KCD2MP_W166TalkTimeoutFacts(name, t)
     local p = KCD2MP.npcPuppets[name]
     local paused = KCD2MP._npcPaused[name] ~= nil
     local stream = (t and t.w166Held) and "held" or ((p and p.nativeOwned) and "native-driven" or "lua-driven")
-    -- WO-167 T3: the copy's readiness as the game builds its Talk prompt, this player's minigame, and the copy he faces
+    -- WO-167 T3: the copy's readiness as the game builds its Talk prompt, this player's minigame, and the copy they face
     local ready = KCD2MP_W167Readiness and KCD2MP_W167Readiness(e) or nil
     local F = KCD2MP.w167 and KCD2MP.w167.talk.focus
     KCD2MP_EmitEvent("w166_talkstate", string.format("%s paused=%d copy_dialog=%d dead=%d resumed_for_talk=%d stream=%s via=%s retried=%d%s player_minigame=%d target=%s",
@@ -21519,7 +21529,7 @@ end
 
 -- ===== WO-167: 0.48.5 (docs/WO-167-findings.md) -- the game-side halves =====
 --   T1 mp_talk_fallback (default OFF): the generic request-fallback -- a request no wrapped talk action made, attached to the nearest
---      copy -- is off (the field: 4 of them, 0 conversations; each took a copy the player was not talking to or swallowed his own press).
+--      copy -- is off (the field: 4 of them, 0 conversations; each took a copy the player was not talking to or swallowed their own press).
 --      On: never within 3 s of a dialogue's end, never to the NPC whose dialogue with this player just ended (10 s). A press on a copy
 --      whose last talk is still in its 2.5 s end window starts a fresh talk (the copy is not paused in between). The WO-164 retry
 --      waits until 3 s after any dialogue's end.
@@ -21584,7 +21594,7 @@ function KCD2MP_W167TalkRestart(name, t, via)
     return nil
 end
 
--- The WO-164 retry's gate: true = not now (a dialogue with this player ended under 3 s ago; the retry clears every request of his).
+-- The WO-164 retry's gate: true = not now (a dialogue with this player ended under 3 s ago; the retry clears every request of theirs).
 function KCD2MP_W167RetryHeld(name, t)
     local T = KCD2MP.w166 and KCD2MP.w166.talk
     if not (T and T.lastDlgEndAt) or (os.clock() - T.lastDlgEndAt) >= KCD2MP.w167.AFTER_S then return false end
@@ -21947,6 +21957,173 @@ function KCD2MP_W167SetCopyWeapons(arg) return KCD2MP.w167.switch("copy_weapons"
 function KCD2MP_W167SetSwingWatch(arg) return KCD2MP.w167.switch("swing_watch", "swingWatch", arg, "an enemy's swing counts as shown only when it really animated; otherwise the lunge plays before its blow") end
 function KCD2MP_W167SetSyncFallback(arg) return KCD2MP.w167.switch("sync_fallback", "syncFallback", arg, "a paired attack (a clinch, a throw) an enemy cannot play here is shown as its plain attack") end
 
+-- ---- FT1-FT4: one shared fast travel (Phase 3) -------------------------------------------------------------------------
+--   FT1 mp_fast_travel is ON by default (the maintainer, 2026-10-10). Whatever the setting, a quest's forced travel is never refused
+--       here: the session's "off" holds the engine's switch only while this player picks on the travel map (30 s after a highlighted
+--       travel point, the map's double click or the travel question's confirm), never otherwise. A joiner's own engine travel stays off
+--       in the host's world (WO-114): its picks are asked of the host, and its copy of a quest's travel is not run here.
+--   FT2 one travel for both, no vote: the host's world runs it (a joiner's pick is asked of the host, whose game travels there by the
+--       engine's own travel when its own rules let it -- else "Your partner can't travel right now"); a joiner runs the game's own travel
+--       to the same destination (the map and route on its screen too), its clock is the host's at the end, and it is placed beside the
+--       host once both runs have ended (WO-114's pull)
+--   FT3 an interrupted travel (a road encounter): the joiner is placed beside the host where it stopped
+--   FT4 "Travelling with your partner..." on the partner's screen; the off message only when the host turned travel off and a player picks
+--   WO167-FT listener|pick|go|mirror|refused ...
+KCD2MP.w167.ft = KCD2MP.w167.ft or { mapAt = -1e9, hiId = nil, hiAt = -1e9, listening = false, travelling = false, mirrorSeq = nil,
+    mirrorAt = -1e9, lastPick = nil, stats = { highlights = 0, picks = 0, mirrors = 0, refused = 0, goes = 0 } }
+KCD2MP.w167.FT_MAP_S = 30.0
+KCD2MP.w167.TEXT_FT_WITH = "Travelling with your partner\226\128\166"
+KCD2MP.w167.TEXT_FT_REFUSED = "Your partner can't travel right now."
+
+-- True while this player picks on the travel map (the session's "off" holds the engine's switch only then).
+function KCD2MP_W167FtMapWindow()
+    return (os.clock() - KCD2MP.w167.ft.mapAt) < KCD2MP.w167.FT_MAP_S
+end
+
+function KCD2MP.w167.ftArg(args)   -- (a table field: the WO-110 budget) an element event's first parameter (the WO-159 menu's shape: args[0]), else args[1]
+    if type(args) ~= "table" then return nil end
+    local v = args[0]
+    if v == nil then v = args[1] end
+    return v
+end
+
+function KCD2MP.w167.OnFtHighlight(self, el, inst, ev, args)
+    local F = KCD2MP.w167.ft
+    F.mapAt = os.clock()
+    F.stats.highlights = F.stats.highlights + 1
+    local id = KCD2MP.w167.ftArg(args)
+    if id ~= nil and tostring(id) ~= "" then F.hiId, F.hiAt = tostring(id), os.clock() end
+    if KCD2MP_W154FastTravelApply then pcall(KCD2MP_W154FastTravelApply, "map") end   -- the session's off-hold engages before any pick
+end
+
+function KCD2MP.w167.OnFtPick(self, el, inst, ev, args)
+    local F = KCD2MP.w167.ft
+    local now = os.clock()
+    F.mapAt = now
+    local id = KCD2MP.w167.ftArg(args)
+    if (id == nil or tostring(id) == "") and (now - F.hiAt) < 30 then id = F.hiId end   -- the travel question names nothing: the point highlighted
+    if KCD2MP_W154FastTravelApply then pcall(KCD2MP_W154FastTravelApply, "map") end
+    KCD2MP_W167FtPicked(id, ev)
+end
+
+function KCD2MP_W167FtListen()
+    local F = KCD2MP.w167.ft
+    if F.listening or type(UIAction) ~= "table" or type(UIAction.RegisterElementListener) ~= "function" then return F.listening end
+    local a = pcall(UIAction.RegisterElementListener, KCD2MP.w167, "ApseMap", -1, "OnHighlightFastTravelPoint", "OnFtHighlight")
+    local b = pcall(UIAction.RegisterElementListener, KCD2MP.w167, "ApseMap", -1, "OnDoubleClicked", "OnFtPick")
+    local c = pcall(UIAction.RegisterElementListener, KCD2MP.w167, "ApseModalDialog", -1, "OnQuestionDialogConfirmClicked", "OnFtPick")
+    F.listening = a or b or c
+    mp_log("WO167-FT listener " .. (F.listening and "armed (a highlighted travel point, the map's double click, the travel question's confirm)" or "NOT armed: no pick is seen"))
+    return F.listening
+end
+
+-- A map id -> the wire's destination. The map names its travel points by an id whose form the game does not document (the map element
+-- declares it a string; every pick logs it): an entity's text GUID (System.GetEntityByTextGUID) or an entity name resolves to that
+-- entity's world position "x,y,z" -- the console travel takes a position on both machines, wherever the entity's layer is loaded; any
+-- other id -> "-" (the host refuses it as unknown-destination: the partner is told, nothing moves).
+function KCD2MP_W167FtDest(id)
+    if id == nil then return "-" end
+    local s = tostring(id)
+    if #s < 1 or #s > 64 then return "-" end
+    local e = nil
+    local g = string.match(s, "^{?(%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x)}?$")
+    if g and type(System.GetEntityByTextGUID) == "function" then pcall(function() e = System.GetEntityByTextGUID(g) end) end
+    if e == nil and string.find(s, "^[%w_%.%-]+$") and type(System.GetEntityByName) == "function" then
+        pcall(function() e = System.GetEntityByName(s) end)
+    end
+    if type(e) ~= "table" or type(e.GetWorldPos) ~= "function" then return "-" end
+    local p = nil
+    pcall(function() p = e:GetWorldPos() end)
+    if type(p) ~= "table" or type(p.x) ~= "number" or type(p.y) ~= "number" or type(p.z) ~= "number" then return "-" end
+    if math.abs(p.x) > 100000 or math.abs(p.y) > 100000 or math.abs(p.z) > 100000 or (p.x == 0 and p.y == 0) then return "-" end
+    return string.format("%.1f,%.1f,%.1f", p.x, p.y, p.z)
+end
+
+-- A pick on this player's travel map: the agent decides (host: its travel's destination; joiner: asked of the host).
+function KCD2MP_W167FtPicked(id, how)
+    local F = KCD2MP.w167.ft
+    F.stats.picks = F.stats.picks + 1
+    local dest = KCD2MP_W167FtDest(id)
+    F.lastPick = dest
+    mp_log(string.format("WO167-FT pick id=%s dest=%s how=%s", tostring(id), dest, tostring(how)))
+    KCD2MP_EmitEvent("w167_ftpick", dest .. " " .. tostring(how or "?"))
+    return dest
+end
+
+-- The engine's console travel for a wire destination ("@name" or "x,y,z"); nil = none.
+function KCD2MP_W167FtCommand(dest)
+    dest = tostring(dest or "-")
+    local name = string.match(dest, "^@([%w_%.%-]+)$")
+    if name then return "wh_pl_FastTravelTo " .. name end
+    local x, y, z = string.match(dest, "^(%-?[%d%.]+),(%-?[%d%.]+),(%-?[%d%.]+)$")
+    if x then return "wh_pl_FastTravelTo " .. x .. " " .. y .. " " .. z end
+    return nil
+end
+
+-- HOST (the agent asks, a joiner's pick): can this game travel now? "ok" or the reason (the engine may still refuse: the agent waits for it).
+function KCD2MP_W167FtCanTravel(tok)
+    local function yes(o, m, ...)
+        if o == nil or type(o[m]) ~= "function" then return false end
+        local args = { ... }
+        local ok, v = pcall(function() return o[m](o, unpack(args)) end)
+        return ok and v == true
+    end
+    local why = "ok"
+    if not player then why = "no-player"
+    elseif yes(player.actor, "IsDead") then why = "dead"
+    elseif yes(player.human, "IsInDialog") then why = "dialogue"
+    elseif yes(player.soul, "IsInCombatDanger") then why = "combat"
+    elseif KCD2MP.w137 and KCD2MP.w137.mgOn then why = "minigame"
+    elseif KCD2MP.w167.ft.travelling then why = "travelling" end
+    mp_log("WO167-FT can-travel " .. why)
+    if tok ~= nil then KCD2MP_EmitEvent("wo124_reply", tostring(tok) .. " " .. why) end
+    return why
+end
+
+-- HOST: travel there for a joiner's pick -- the engine's own travel; the partner who picked it sees it start on their own screen.
+function KCD2MP_W167FtGo(dest, from)
+    local F = KCD2MP.w167.ft
+    local cmd = KCD2MP_W167FtCommand(dest)
+    if not cmd then mp_log("WO167-FT go refused: no destination (" .. tostring(dest) .. ")"); return false end
+    F.stats.goes = F.stats.goes + 1
+    local ok = w164_exec(cmd)
+    mp_log(string.format("WO167-FT go player%s's pick: %s ok=%s", tostring(from), cmd, tostring(ok)))
+    return ok
+end
+
+-- HOST / JOINER (the agent): this game's travel runs (forJoiner: the host travels for a partner's pick -- told here too).
+function KCD2MP_W167FtTravelling(on, forJoiner)
+    KCD2MP.w167.ft.travelling = on == true
+    if on and forJoiner then KCD2MP_ShowNativeToast(KCD2MP.w167.TEXT_FT_WITH) end
+end
+
+-- JOINER (the agent): the host's travel started -- the game's own travel to the same destination here; "-" (a quest's travel on the host):
+-- told only, placed beside the host when it arrives.
+function KCD2MP_W167FtMirror(seq, dest)
+    local F = KCD2MP.w167.ft
+    F.mirrorSeq, F.mirrorAt = seq, os.clock()
+    F.stats.mirrors = F.stats.mirrors + 1
+    KCD2MP_ShowNativeToast(KCD2MP.w167.TEXT_FT_WITH)
+    local cmd = KCD2MP_W167FtCommand(dest)
+    if not cmd then
+        mp_log(string.format("WO167-FT mirror seq=%s dest=%s -- the host's travel has no destination known here: told; the leash brings this player along", tostring(seq), tostring(dest)))
+        return false
+    end
+    -- this game's engine switch (WO-114 / WO-154) let go for this travel; the agent keeps it so until the travel has ended
+    if KCD2MP_Wo114FastTravelBlock then pcall(KCD2MP_Wo114FastTravelBlock, false, "w167-shared-travel") end
+    if KCD2MP_W154FastTravelHold then pcall(KCD2MP_W154FastTravelHold, false, "w167-shared-travel") end
+    local ok = w164_exec(cmd)
+    mp_log(string.format("WO167-FT mirror seq=%s %s ok=%s -- the host's travel, run here too (the game's own map and route)", tostring(seq), cmd, tostring(ok)))
+    return ok
+end
+
+-- JOINER (the agent): the host's world could not travel for this player's pick.
+function KCD2MP_W167FtRefused(why)
+    KCD2MP.w167.ft.stats.refused = KCD2MP.w167.ft.stats.refused + 1
+    mp_log("WO167-FT refused why=" .. tostring(why) .. " -- the host's world cannot travel now: nothing moves")
+    KCD2MP_ShowNativeToast(KCD2MP.w167.TEXT_FT_REFUSED)
+end
+
 function KCD2MP_W167Status()
     local W = KCD2MP.w167
     local T, S, C = W.talk.stats, W.scene.stats, W.combat.stats
@@ -21955,6 +22132,9 @@ function KCD2MP_W167Status()
         W.sceneRelease and "on" or "off", S.releases, S.stood, S.faders, S.restores,
         W.copyWeapons and "on" or "off", W.swingWatch and "on" or "off", W.syncFallback and "on" or "off",
         C.standins, C.drawn, C.holstered, C.created, C.held))
+    local F = W.ft.stats
+    mp_log(string.format("WO167-STATUS ft listening=%s map_window=%s highlights=%d picks=%d goes=%d mirrors=%d refused=%d travelling=%s",
+        tostring(W.ft.listening), tostring(KCD2MP_W167FtMapWindow()), F.highlights, F.picks, F.goes, F.mirrors, F.refused, tostring(W.ft.travelling)))
 end
 
 local W164_RE_PATTERNS ={ "dummyWanderer", "karavany", "Caravan", "pocestny", "prepadeni", "rvacka", "taboryUCesty", "SpawnedAnimal" }
@@ -23891,7 +24071,7 @@ do
     if M.nameBadges == nil then M.nameBadges = true end    -- mp_name_badges
     if M.pingLine == nil then M.pingLine = true end        -- mp_ping_line
     if M.clean == nil then M.clean = false end             -- mp_clean_screen
-    if M.fastTravel == nil then M.fastTravel = false end   -- mp_fast_travel: this machine's; the HOST's counts
+    if M.fastTravel == nil then M.fastTravel = true end    -- mp_fast_travel: this machine's; the HOST's counts (WO-167 FT1: on by default)
     M.role = M.role or "none"                              -- the agent, once a second: host | joiner | none
     M.partner = M.partner == true
     M.link = M.link or "starting"
@@ -24050,12 +24230,15 @@ do
     -- the host's value has come -- held meanwhile, fail-closed); else let go.
     function KCD2MP_W154FastTravelApply(why)
         local up = M.sessionUp()
-        if up and not KCD2MP_W154FastTravelSession() then
-            local joiner = M.roleNow() == "joiner"
-            if KCD2MP_W154FastTravelHold(true, why) and not M.ftTold and not (joiner and M.hostFt == nil) then
-                M.ftTold = true
-                M.say(M.ftText(joiner))
-            end
+        -- WO-167 FT1: the session's "off" holds the engine's switch only while this player picks on the travel map, so a quest's own
+        -- forced travel (no pick) is never refused; the off message is still said once per session
+        local picking = not KCD2MP_W167FtMapWindow or KCD2MP_W167FtMapWindow()
+        if up and not KCD2MP_W154FastTravelSession() and not M.ftTold and not (M.roleNow() == "joiner" and M.hostFt == nil) then
+            M.ftTold = true
+            M.say(M.ftText(M.roleNow() == "joiner"))
+        end
+        if up and not KCD2MP_W154FastTravelSession() and picking then
+            KCD2MP_W154FastTravelHold(true, why)
         else
             KCD2MP_W154FastTravelHold(false, up and "the session allows fast travel" or (tostring(why) .. ", no co-op session"))
         end

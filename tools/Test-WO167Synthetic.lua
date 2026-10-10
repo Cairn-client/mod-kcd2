@@ -450,6 +450,119 @@ do
     noErrs("C")
 end
 
+-- (F) Phase 3: one shared fast travel ---------------------------------------------------------------------------------------
+local M154 = KCD2MP.w154menu
+local function session154(role, partner, ft)
+    KCD2MP_W154MenuSession(role, partner, ft, nil, nil, "connected", "0.48.5", false, false)
+end
+do
+    ERRS = {}
+    reset()
+    local F = KCD2MP.w167.ft
+    F.mapAt, F.hiId, F.hiAt, F.travelling = -1e9, nil, -1e9, false
+    check("F1: fast travel is ON by default in a session (the host's switch)", M154.fastTravel == true)
+    -- the host turns it off: the engine's switch is held only while a player picks on the travel map
+    CVARS["wh_pl_FastTravelEnabled"] = 1
+    M154.fastTravel = false
+    session154("host", true)
+    check("F2: off, nobody picking: the switch is NOT held -- a quest's own forced travel goes through", tonumber(CVARS["wh_pl_FastTravelEnabled"]) == 1 and M154.ftHeld ~= true)
+    check("F3: ...and the host is told once that travel is off", TOASTS[#TOASTS] == M154.TEXT_FT_HOST)
+    KCD2MP.w167.OnFtHighlight(KCD2MP.w167, "ApseMap", -1, "OnHighlightFastTravelPoint", { [0] = "fastTravel_trosecko", [1] = "Troskowitz" })
+    check("F4: a travel point highlighted on the map: held now (before any double click)", tonumber(CVARS["wh_pl_FastTravelEnabled"]) == 0 and M154.ftHeld == true)
+    NOW = NOW + 31
+    session154("host", true)
+    check("F5: 30 s after the last pick on the map: given back", tonumber(CVARS["wh_pl_FastTravelEnabled"]) == 1 and M154.ftHeld == false)
+    M154.fastTravel = true
+    session154("host", true)
+    KCD2MP.w167.OnFtHighlight(KCD2MP.w167, "ApseMap", -1, "OnHighlightFastTravelPoint", { [0] = "fastTravel_trosecko" })
+    check("F6: on (the default): never held, picking or not", tonumber(CVARS["wh_pl_FastTravelEnabled"]) == 1 and M154.ftHeld ~= true)
+    -- the host's own pick names its travel's destination: the travel point's world position
+    ENTS["fastTravel_trosecko"] = { id = 7001, GetWorldPos = function() return { x = 1551.54, y = 2277.36, z = 17.6 } end }
+    local mark = #LOG
+    KCD2MP.w167.OnFtPick(KCD2MP.w167, "ApseMap", -1, "OnDoubleClicked", { [0] = "fastTravel_trosecko" })
+    check("F7: a double click: the pick goes to the agent as a destination", countEvt("w167_ftpick", "1551.5,2277.4,17.6 OnDoubleClicked", mark) == 1)
+    mark = #LOG
+    KCD2MP.w167.OnFtPick(KCD2MP.w167, "ApseModalDialog", -1, "OnQuestionDialogConfirmClicked", {})
+    check("F8: the travel question's confirm names nothing: the point last highlighted", countEvt("w167_ftpick", "1551.5,2277.4,17.6 OnQuestionDialogConfirmClicked", mark) == 1)
+    local GUIDS = { ["0f989ea3-f4e2-464f-a777-2fa58f9bd6aa"] = { GetWorldPos = function() return { x = 2433.0, y = 4092.26, z = 120.0 } end } }
+    local savedTG = System.GetEntityByTextGUID
+    System.GetEntityByTextGUID = function(g) return GUIDS[g] end
+    check("F8b: an entity's text GUID -> its position; an unknown id, a position at the origin, junk -> unknown (-)",
+        KCD2MP_W167FtDest("0f989ea3-f4e2-464f-a777-2fa58f9bd6aa") == "2433.0,4092.3,120.0"
+        and KCD2MP_W167FtDest("{0f989ea3-f4e2-464f-a777-2fa58f9bd6aa}") == "2433.0,4092.3,120.0"
+        and KCD2MP_W167FtDest("11111111-2222-3333-4444-555555555555") == "-" and KCD2MP_W167FtDest("12") == "-"
+        and KCD2MP_W167FtDest("bad id;x") == "-" and KCD2MP_W167FtDest(nil) == "-" and KCD2MP_W167FtDest(string.rep("a", 65)) == "-")
+    ENTS["origin_point"] = { GetWorldPos = function() return { x = 0, y = 0, z = 0 } end }
+    check("F8c: an entity at the world's origin (not placed) is not a destination", KCD2MP_W167FtDest("origin_point") == "-")
+    ENTS["origin_point"] = nil
+    System.GetEntityByTextGUID = savedTG
+    check("F9: the console travel for each kind of destination", KCD2MP_W167FtCommand("@fastTravel_trosecko") == "wh_pl_FastTravelTo fastTravel_trosecko"
+        and KCD2MP_W167FtCommand("1551.5,2277.4,17.6") == "wh_pl_FastTravelTo 1551.5 2277.4 17.6" and KCD2MP_W167FtCommand("-") == nil
+        and KCD2MP_W167FtCommand("@bad;cmd") == nil)
+    session154("none", false)
+    noErrs("F-a")
+end
+do
+    ERRS = {}
+    reset()
+    local F = KCD2MP.w167.ft
+    -- the host's rules for a joiner's pick
+    local mark = #LOG
+    check("F10: the host can travel: ok", KCD2MP_W167FtCanTravel("t1") == "ok" and countEvt("wo124_reply", "t1 ok", mark) == 1)
+    P_DANGER = true
+    check("F11: ...not in combat (its own rules: the partner is told why)", KCD2MP_W167FtCanTravel("t2") == "combat")
+    P_DANGER = false
+    IN_DIALOG = true
+    check("F12: ...not in a dialogue", KCD2MP_W167FtCanTravel("t3") == "dialogue")
+    IN_DIALOG = false
+    KCD2MP_W167FtTravelling(true, true)
+    check("F13: ...not while it travels already; the host told when it travels for its partner's pick", KCD2MP_W167FtCanTravel("t4") == "travelling"
+        and TOASTS[#TOASTS] == KCD2MP.w167.TEXT_FT_WITH)
+    KCD2MP_W167FtTravelling(false, false)
+    CMDS = {}
+    check("F14: the host travels to the joiner's pick by the engine's own travel", KCD2MP_W167FtGo("1551.5,2277.4,17.6", 1) == true
+        and cmdCount("wh_pl_FastTravelTo 1551.5 2277.4 17.6") == 1)
+    -- the joiner runs the same travel
+    CMDS = {}
+    CVARS["wh_pl_FastTravelEnabled"] = 0
+    KCD2MP.w114.ftBlocked = true; KCD2MP.w114.ftPrev = 1
+    mark = #LOG
+    KCD2MP_W167FtMirror(5, "1551.5,2277.4,17.6")
+    check("F15: the joiner's switch let go for the shared travel, the same travel run here, the partner told",
+        tonumber(CVARS["wh_pl_FastTravelEnabled"]) == 1 and cmdCount("wh_pl_FastTravelTo 1551.5 2277.4 17.6") == 1
+        and TOASTS[#TOASTS] == KCD2MP.w167.TEXT_FT_WITH and lastLog("WO167-FT mirror seq=5", mark) ~= nil)
+    CMDS = {}
+    KCD2MP_W167FtMirror(6, "-")
+    check("F16: a quest's travel on the host (no destination known): told only, nothing run here", cmdCount("wh_pl_FastTravelTo") == 0
+        and TOASTS[#TOASTS] == KCD2MP.w167.TEXT_FT_WITH)
+    KCD2MP_W167FtRefused("combat")
+    check("F17: the host could not travel: the joiner told plainly", TOASTS[#TOASTS] == "Your partner can't travel right now.")
+    check("F18: the texts", KCD2MP.w167.TEXT_FT_WITH == "Travelling with your partner\226\128\166")
+    noErrs("F-b")
+end
+do
+    -- FT4 on a joiner: its own engine's refusal (WO-114's block) is a request when the session's travel is on; off -> the off message
+    ERRS = {}
+    reset()
+    KCD2MP.w114.ftBlocked = true
+    KCD2MP.w166.ft.confirmAt, KCD2MP.w166.ft.told = NOW, false
+    session154("joiner", true, true)
+    local t0 = #TOASTS
+    local mark = #LOG
+    check("F19: travel on: the joiner's refusal says nothing (the pick is asked of the host)", KCD2MP_Wo114FastTravelTried("engine-refused") == true
+        and #TOASTS == t0 and lastLog("the pick is asked of the host", mark) ~= nil)
+    session154("joiner", true, false)
+    KCD2MP.w167.OnFtHighlight(KCD2MP.w167, "ApseMap", -1, "OnHighlightFastTravelPoint", { [0] = "fastTravel_trosecko" })
+    KCD2MP.w166.ft.confirmAt, KCD2MP.w166.ft.told = NOW, false
+    t0 = #TOASTS
+    KCD2MP_Wo114FastTravelTried("engine-refused")
+    check("F20: travel off (the host's switch): the off message, never 'only the host'", TOASTS[#TOASTS] == M154.TEXT_FT_JOINER
+        and TOASTS[#TOASTS] ~= "Only the host can fast travel in co-op.", TOASTS[#TOASTS])
+    session154("none", false)
+    KCD2MP.w114.ftBlocked = false
+    noErrs("F-c")
+end
+
 -- (W) the switches and the status --------------------------------------------------------------------------------------------
 do
     ERRS = {}

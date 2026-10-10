@@ -14,7 +14,7 @@ namespace KcdMp.Client;
 //      path the engine printed for it
 //   T4 mp_scene_release (joiner, default ON): a dialogue's interactive scene still running 20 s after the dialogue ended is released the
 //      engine's own way -- the WO-151 rescue save (the engine cancels every NPC's fast-forward and the scene positioning ends); the mod
-//      then brings the faders back, stands the player up and tells him
+//      then brings the faders back, stands the player up and tells them
 //   C1 a stand-in body (the mod's w167_standin) gets the WO-155 walk pulse from the DLL once it is bound (avatar event kind 3)
 //   C2 mp_copy_weapons (joiner, default ON): the host NPC's hand rows (WO-143) name the weapon class in its hand; in a fight that class
 //      (or nothing) is told to the mod, which holds it on the copy; every host attack row played on a copy also says armed or unarmed
@@ -74,6 +74,9 @@ public partial class GameBridge
             case "w167_clear":   // <npc>: T2 -- the host used this copy and it showed a combat state here: the WO-132 engagement lets go
                 if (f.Length >= 1 && Wo137Text.IsNpc(f[0])) _ = Wo167ClearAsync(f[0]);
                 return;
+            case "w167_ftpick":    // <dest> <how>: FT2 -- a pick on this player's travel map
+                Wo167OnFtPick(arg);
+                return;
             case "w167_standin":   // <npc>: C1 -- a stand-in body was spawned here (its walk pulse once bound; C4's set)
                 if (f.Length >= 1 && Wo137Text.IsNpc(f[0])) { _w167StandinPulse[f[0]] = W167NowMs(); _w167StandinSet[f[0]] = true; }
                 return;
@@ -117,6 +120,7 @@ public partial class GameBridge
             return;
         }
         if (Wo167Rules.FaderTook(line) is double secs) Wo167OnSceneStage("FaderDone", "", secs.ToString("F2", CultureInfo.InvariantCulture));
+        if (line.StartsWith(Wo167Rules.TravelInterruptLine, StringComparison.Ordinal)) Wo167OnTravelInterrupt();
     }
 
     /// <summary>T3: the behaviour-tree path the engine last printed for <paramref name="npc"/> (within 2 minutes), or "-".</summary>
@@ -335,7 +339,176 @@ public partial class GameBridge
         }
     }
 
+    // ---------------------------------------------------------------- FT1-FT4: one shared fast travel
+
+    /// <summary>The session's fast travel: the host's own mp_fast_travel on the host, the host's value on a joiner (WO-154).</summary>
+    private bool W167SessionTravelOn => W137Host ? _w154mFtPref : (_w154mHostFtKnown ? _w154mHostFt : Wo154MenuRules.FastTravelDefault);
+
+    // host
+    private volatile bool _w167FtActive;
+    private uint _w167FtSeq;
+    private string _w167FtDest = "-";
+    private volatile bool _w167FtInterrupted;
+    private (string Dest, long AtMs) _w167FtPick = ("-", 0);
+    private (string Dest, long AtMs, byte From, uint Seq) _w167FtAsked = ("-", 0, 0, 0);
+    // joiner
+    private volatile bool _w167MirrorActive, _w167LocalTravel;
+    private long _w167MirrorSinceMs;
+    private uint _w167MirrorSeq, _w167ReqSeq;
+    private long _w167FtStarts, _w167FtEnds, _w167FtInterrupts, _w167FtRequests, _w167FtRefusals, _w167FtMirrors, _w167FtMirrorsBlind, _w167FtPicks;
+
+    /// <summary>FT2, joiner: the shared travel's own run holds the engine's switch open (WO-114's re-assert waits) until it ended, 3 min at most.</summary>
+    private bool W167MirrorHoldsSwitch => _w167MirrorActive && W167NowMs() - _w167MirrorSinceMs < Wo167Rules.MirrorMaxMs;
+
+    /// <summary>The mod's w167_ftpick: a pick on this player's travel map (dest "@name" / "x,y,z" / "-", how = the element event).</summary>
+    private void Wo167OnFtPick(string? arg)
+    {
+        var f = (arg ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        string dest = f.Length >= 1 && W164Text.IsTravelDest(f[0]) ? f[0] : "-";
+        Interlocked.Increment(ref _w167FtPicks);
+        if (W137Host)
+        {
+            _w167FtPick = (dest, W167NowMs());
+            Console.WriteLine($"WO167-FT host pick dest={dest} -- the destination of the travel this game starts now (its partners run it too)");
+            return;
+        }
+        if (!W137Joiner) return;
+        if (!W167SessionTravelOn)
+        {
+            Console.WriteLine($"WO167-FT joiner pick dest={dest}: the session's fast travel is off (the host's switch) -- not asked; the off message is said");
+            return;
+        }
+        uint seq = unchecked(++_w167ReqSeq);
+        _ = W164SendAsync(Protocol.JoinTargetHost, Protocol.W164Travel, W164Text.TravelRequest(seq, dest));
+        Console.WriteLine($"WO167-FT joiner pick dest={dest} seq={seq} -- asked of the host (one travel for both: the host's world runs it)");
+    }
+
+    /// <summary>W164 kind 6 in.</summary>
+    private async Task Wo167OnTravelAsync(byte src, string text)
+    {
+        if (!W164Text.TryParseTravel(text, out char verb, out uint seq, out string arg, out bool interrupted)) { Interlocked.Increment(ref _w164Malformed); return; }
+        switch (verb)
+        {
+            case 'r' when W137Host: await Wo167FtRequestAsync(src, seq, arg); return;
+            case 'n' when !W137Host:
+                Interlocked.Increment(ref _w167FtRefusals);
+                Console.WriteLine($"WO167-FT the host refused the pick seq={seq} why={arg} -- nothing moves");
+                await ExecLuaAsync($"if KCD2MP_W167FtRefused then KCD2MP_W167FtRefused(\"{arg}\") end");
+                return;
+            case 's' when !W137Host: await Wo167FtMirrorAsync(seq, arg); return;
+            case 'e' when !W137Host:
+                Console.WriteLine($"WO167-FT the host's travel seq={seq} ended at {arg}{(interrupted ? " INTERRUPTED midway (a road encounter): this player is placed beside the host there" : "")}{(_w167LocalTravel ? " -- this game's own run is still under way: placed beside the host when it ends" : "")}");
+                return;
+            default: Interlocked.Increment(ref _w164Malformed); return;
+        }
+    }
+
+    /// <summary>FT2, host: a joiner's pick -- the host's world travels there when its own rules let it; else the joiner is told why.</summary>
+    private async Task Wo167FtRequestAsync(byte src, uint seq, string dest)
+    {
+        Interlocked.Increment(ref _w167FtRequests);
+        string? why = null;
+        if (!W167SessionTravelOn) why = "off";
+        else if (_w167FtActive) why = "travelling";
+        else if (dest == "-") why = "unknown-destination";
+        else
+        {
+            string r = (await AskModAsync("KCD2MP_W167FtCanTravel", 3000)).Trim();
+            if (r != "ok") why = Wo167Rules.RefusalWord(r);
+        }
+        if (why is null)
+        {
+            _w167FtAsked = (dest, W167NowMs(), src, seq);
+            await ExecLuaAsync($"if KCD2MP_W167FtGo then KCD2MP_W167FtGo(\"{dest}\", {src}) end");
+            long until = W167NowMs() + Wo167Rules.TravelStartWaitMs;
+            while (W167NowMs() < until && !_w167FtActive) await Task.Delay(200);
+            if (!_w167FtActive) why = "not-started";   // the engine's own rules said no (over-encumbered, outside the navmesh ...)
+        }
+        if (why is not null)
+        {
+            Interlocked.Increment(ref _w167FtRefusals);
+            Console.WriteLine($"WO167-FT host refused player {src}'s pick seq={seq} dest={dest} why={why} -- told; nothing moves");
+            await W164SendAsync(src, Protocol.W164Travel, W164Text.TravelRefused(seq, why));
+            return;
+        }
+        Console.WriteLine($"WO167-FT host travels for player {src}'s pick seq={seq} dest={dest} -- one travel for both");
+    }
+
+    /// <summary>FT1-FT4, host: this game's own travel started / ended ("FastTravel: started / ended", WO-114's tail).</summary>
+    private void Wo167OnHostTravel(bool active)
+    {
+        if (!W137Host) return;
+        long now = W167NowMs();
+        if (active)
+        {
+            _w167FtActive = true;
+            _w167FtInterrupted = false;
+            uint seq = unchecked(++_w167FtSeq);
+            string dest = now - _w167FtAsked.AtMs <= Wo167Rules.PickFreshMs ? _w167FtAsked.Dest
+                        : now - _w167FtPick.AtMs <= Wo167Rules.PickFreshMs ? _w167FtPick.Dest : "-";
+            bool forJoiner = now - _w167FtAsked.AtMs <= Wo167Rules.PickFreshMs;
+            _w167FtDest = dest;
+            Interlocked.Increment(ref _w167FtStarts);
+            var peers = Wo134Peers().ToList();
+            Console.WriteLine($"WO167-FT host travel seq={seq} started dest={dest} by={(forJoiner ? $"player{_w167FtAsked.From}" : dest == "-" ? "the-game (a quest's or the console's)" : "this player")} -> {peers.Count} joiner(s) run it too");
+            foreach (byte j in peers) _ = W164SendAsync(j, Protocol.W164Travel, W164Text.TravelStart(seq, dest));
+            _ = ExecLuaAsync($"if KCD2MP_W167FtTravelling then KCD2MP_W167FtTravelling(true, {(forJoiner ? "true" : "false")}) end");
+            return;
+        }
+        if (!_w167FtActive) return;
+        _w167FtActive = false;
+        Interlocked.Increment(ref _w167FtEnds);
+        if (_w167FtInterrupted) Interlocked.Increment(ref _w167FtInterrupts);
+        Console.WriteLine(FormattableString.Invariant($"WO167-FT host travel seq={_w167FtSeq} ended at ({_lastX:F1},{_lastY:F1},{_lastZ:F1}){(_w167FtInterrupted ? " INTERRUPTED midway" : "")} -- the joiners come along beside the host (WO-114's pull, after their own run ends)"));
+        foreach (byte j in Wo134Peers()) _ = W164SendAsync(j, Protocol.W164Travel, W164Text.TravelEnd(_w167FtSeq, _lastX, _lastY, _lastZ, _w167FtInterrupted));
+        _ = ExecLuaAsync("if KCD2MP_W167FtTravelling then KCD2MP_W167FtTravelling(false, false) end");
+    }
+
+    /// <summary>FT2, joiner: the host's travel started -- this game runs the game's own travel to the same destination.</summary>
+    private async Task Wo167FtMirrorAsync(uint seq, string dest)
+    {
+        _w167MirrorSeq = seq;
+        _w167MirrorActive = true;
+        _w167MirrorSinceMs = W167NowMs();
+        Interlocked.Increment(ref _w167FtMirrors);
+        if (dest == "-") Interlocked.Increment(ref _w167FtMirrorsBlind);
+        Console.WriteLine($"WO167-FT the host's travel seq={seq} started dest={dest} -- {(dest == "-" ? "its destination is not known here (a quest's travel): told, and placed beside the host when it arrives" : "this game runs the same travel (the game's own map and route), its switch held open until it ends")}");
+        await ExecLuaAsync($"if KCD2MP_W167FtMirror then KCD2MP_W167FtMirror({seq}, \"{dest}\") end");
+        if (dest == "-") { _w167MirrorActive = false; return; }
+        // the travel must start here within a few seconds, or the mirror is over (the leash still brings this player along)
+        long until = W167NowMs() + Wo167Rules.TravelStartWaitMs;
+        while (W167NowMs() < until && !_w167LocalTravel) await Task.Delay(200);
+        if (!_w167LocalTravel)
+        {
+            _w167MirrorActive = false;
+            Console.WriteLine($"WO167-FT this game's run of the shared travel seq={seq} did not start -- placed beside the host when it arrives (the leash)");
+        }
+    }
+
+    /// <summary>FT2, joiner: this game's own travel started / ended (WO-114's tail). True = it is the shared travel's run (no warning).</summary>
+    private bool Wo167OnJoinerLocalTravel(bool active)
+    {
+        bool shared = _w167MirrorActive;
+        _w167LocalTravel = active;
+        if (!active && shared)
+        {
+            _w167MirrorActive = false;
+            Console.WriteLine($"WO167-FT this game's run of the shared travel seq={_w167MirrorSeq} ended -- the host places this player beside it (WO-114's pull)");
+        }
+        return shared;
+    }
+
+    /// <summary>FT3, host: the engine interrupted this game's travel ("Interrupting FastTravel...": a road encounter).</summary>
+    private void Wo167OnTravelInterrupt()
+    {
+        if (W137Host && _w167FtActive) { _w167FtInterrupted = true; Console.WriteLine($"WO167-FT host travel seq={_w167FtSeq} INTERRUPTED by the game (a road encounter)"); }
+    }
+
+    private string Wo167FtStatsText() =>
+        $"ft_session={(W167SessionTravelOn ? "on" : "off")} ft_starts={Interlocked.Read(ref _w167FtStarts)} ft_ends={Interlocked.Read(ref _w167FtEnds)} ft_interrupts={Interlocked.Read(ref _w167FtInterrupts)} ft_picks={Interlocked.Read(ref _w167FtPicks)} ft_requests={Interlocked.Read(ref _w167FtRequests)} ft_refusals={Interlocked.Read(ref _w167FtRefusals)} ft_mirrors={Interlocked.Read(ref _w167FtMirrors)} ft_mirrors_blind={Interlocked.Read(ref _w167FtMirrorsBlind)}";
+
     private string Wo167StatsText() =>
         $"scene_release={(_w167SceneRelease ? "on" : "off")} talk_fallback={(_w167TalkFallback ? "on" : "off")} scene_releases={Interlocked.Read(ref _w167SceneReleases)} ended={Interlocked.Read(ref _w167SceneEnded)} not_ended={Interlocked.Read(ref _w167SceneNotEnded)} fader_restores={Interlocked.Read(ref _w167FaderRestores)} bumps={Interlocked.Read(ref _w167Bumps)} clears={Interlocked.Read(ref _w167Clears)} bt_lines={Interlocked.Read(ref _w167BtLines)}"
+        + " | " + Wo167FtStatsText()
         + $" | copy_weapons={(_w167CopyWeapons ? "on" : "off")} swing_watch={(_w167SwingWatch ? "on" : "off")} sync_fallback={(_w167SyncFallback ? "on" : "off")} shown={Interlocked.Read(ref _w167Shown)} no_anim={Interlocked.Read(ref _w167NoAnim)} shown_unknown={Interlocked.Read(ref _w167ShownUnknown)} sync_fallbacks={Interlocked.Read(ref _w167SyncFallbacks)} sync_no_plain={Interlocked.Read(ref _w167SyncNoPlain)} syncguard_after_row={Interlocked.Read(ref _w167SyncGuardAfterRow)} syncguard_other={Interlocked.Read(ref _w167SyncGuardOther)} pulses={Interlocked.Read(ref _w167Pulses)} weapon_calls={Interlocked.Read(ref _w167WeaponCalls)}";
 }

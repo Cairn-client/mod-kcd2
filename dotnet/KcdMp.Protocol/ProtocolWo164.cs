@@ -26,6 +26,12 @@ namespace KcdMp.Wire;
 //   5 Weather   "<rain> <profile|->"   WO-166 W1: the host's live weather -- its game's rain intensity (0..1, the engine's own computed
 //                                value) and its time-of-day profile when known; sent on a change and every 60 s. The joiner holds
 //                                its own rain at the host's (the engine's wh_env_RainIntensityOverride) while the session lasts
+//   6 Travel    WO-167 FT2: one shared fast travel. "<verb> <seq> ...":
+//                 r <seq> <dest>          joiner -> host: this player picked a destination on the travel map (asked, never run here)
+//                 n <seq> <why>           host -> joiner: the host's world cannot travel now (combat, dialogue, off ...): nothing moves
+//                 s <seq> <dest>          host -> joiners: the host's travel started (its own pick, a joiner's, or a quest's: dest "-")
+//                 e <seq> <x,y,z> <0|1>   host -> joiners: the host's travel ended there (1 = interrupted midway, a road encounter)
+//               dest: "@<name>" (a travel point the engine's wh_pl_FastTravelTo knows by name), "<x>,<y>,<z>" (a world position) or "-"
 //
 // An older peer never sees these (a mixed release is refused at the relay, WO-110 R9); a receiver that meets an unknown
 // kind ignores it (counted). No protocol bump.
@@ -38,14 +44,15 @@ public static partial class Protocol
     public const int W164TextMax = 80;
 
     // ---- kinds (APPEND-ONLY) ----
-    public const byte W164MarkPing = 1, W164Torch = 2, W164Escort = 3, W164HitOutcome = 4, W164Weather = 5;
+    public const byte W164MarkPing = 1, W164Torch = 2, W164Escort = 3, W164HitOutcome = 4, W164Weather = 5, W164Travel = 6;
 
     /// <summary>While the torch is out, the side-channel repeats it this often (a lost edge recovers).</summary>
     public const int W164TorchRepeatMs = 10_000;
 
     public static string W164KindName(byte k) => k switch
     {
-        W164MarkPing => "mark-ping", W164Torch => "torch", W164Escort => "escort", W164HitOutcome => "hit-outcome", W164Weather => "weather", _ => $"unknown-{k}",
+        W164MarkPing => "mark-ping", W164Torch => "torch", W164Escort => "escort", W164HitOutcome => "hit-outcome", W164Weather => "weather",
+        W164Travel => "travel", _ => $"unknown-{k}",
     };
 }
 
@@ -117,6 +124,67 @@ public static class W164Text
         if (!float.TryParse(f[2], System.Globalization.NumberStyles.Float, inv, out hp) || !float.TryParse(f[3], System.Globalization.NumberStyles.Float, inv, out st)) return false;
         bool ok(float v) => float.IsFinite(v) && (v == -1f || (v >= 0 && v <= Protocol.HitVerdictStatMax));
         return ok(hp) && ok(st);
+    }
+
+    /// <summary>
+    /// WO-167 FT2: a travel destination as the wire carries it -- "@name" (a travel point by name: [A-Za-z0-9_.-], 1..48), "x,y,z" (a world
+    /// position, each in -100000..100000) or "-" (not known).
+    /// </summary>
+    public static bool IsTravelDest(string? d)
+    {
+        if (d is null) return false;
+        if (d == "-") return true;
+        if (d.StartsWith('@'))
+        {
+            if (d.Length is < 2 or > 49) return false;
+            foreach (char c in d.AsSpan(1)) if (!(char.IsAsciiLetterOrDigit(c) || c is '_' or '.' or '-')) return false;
+            return true;
+        }
+        return TryParsePos(d, out _, out _, out _);
+    }
+
+    public static bool TryParsePos(string? s, out float x, out float y, out float z)
+    {
+        x = y = z = 0;
+        var f = (s ?? "").Split(',');
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        if (f.Length != 3) return false;
+        if (!float.TryParse(f[0], System.Globalization.NumberStyles.Float, inv, out x) || !float.TryParse(f[1], System.Globalization.NumberStyles.Float, inv, out y)
+            || !float.TryParse(f[2], System.Globalization.NumberStyles.Float, inv, out z)) return false;
+        bool ok(float v) => float.IsFinite(v) && Math.Abs(v) <= 100_000f;
+        return ok(x) && ok(y) && ok(z);
+    }
+
+    public static string Pos(float x, float y, float z) => FormattableString.Invariant($"{x:F1},{y:F1},{z:F1}");
+
+    public static string TravelRequest(uint seq, string dest) => $"r {seq} {dest}";
+    public static string TravelRefused(uint seq, string why) => $"n {seq} {why}";
+    public static string TravelStart(uint seq, string dest) => $"s {seq} {dest}";
+    public static string TravelEnd(uint seq, float x, float y, float z, bool interrupted) => $"e {seq} {Pos(x, y, z)} {(interrupted ? 1 : 0)}";
+
+    /// <summary>WO-167 FT2: one Travel text -> (verb r|n|s|e, seq, arg, interrupted). The refusal's word: [a-z-], 1..24.</summary>
+    public static bool TryParseTravel(string? text, out char verb, out uint seq, out string arg, out bool interrupted)
+    {
+        verb = '?'; seq = 0; arg = ""; interrupted = false;
+        var f = (text ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (f.Length < 3 || f[0].Length != 1 || !uint.TryParse(f[1], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out seq)) return false;
+        verb = f[0][0];
+        switch (verb)
+        {
+            case 'r':
+            case 's':
+                if (f.Length != 3 || !IsTravelDest(f[2])) return false;
+                arg = f[2]; return true;
+            case 'n':
+                if (f.Length != 3 || f[2].Length is 0 or > 24) return false;
+                foreach (char c in f[2]) if (!(c is >= 'a' and <= 'z' || c == '-')) return false;
+                arg = f[2]; return true;
+            case 'e':
+                if (f.Length != 4 || !TryParsePos(f[2], out _, out _, out _) || f[3] is not ("0" or "1")) return false;
+                arg = f[2]; interrupted = f[3] == "1"; return true;
+            default:
+                return false;
+        }
     }
 
     /// <summary>"&lt;npc&gt; 1|0" -> the NPC (an authored entity name) and on/off.</summary>

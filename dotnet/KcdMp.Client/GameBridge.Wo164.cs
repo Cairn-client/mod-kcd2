@@ -339,6 +339,9 @@ public partial class GameBridge
                 if (!W137Host) { Interlocked.Increment(ref _w164Malformed); return; }
                 Wo165OnOutcomeIn(src, m.Text);
                 return;
+            case Protocol.W164Travel:   // WO-167 FT2: one shared fast travel
+                await Wo167OnTravelAsync(src, m.Text);
+                return;
             case Protocol.W164Weather when W164Text.TryParseWeather(m.Text, out float wrain, out string? wprof):   // WO-166 W1
                 if (W137Host) { Interlocked.Increment(ref _w164Malformed); return; }   // only the host's weather is the session's
                 await Wo166OnHostWeatherAsync(wrain, wprof);
@@ -658,7 +661,9 @@ public partial class GameBridge
         }
         if (n % 60 == 0 && Interlocked.Read(ref _w166LootCloseLines) + Interlocked.Read(ref _w166TalkTimeouts) + Interlocked.Read(ref _w166TalkBusy) > 0)
             Console.WriteLine("MP-WO166-STATS " + Wo166StatsText());
-        if (n % 60 == 0 && (Interlocked.Read(ref _w167SceneReleases) + Interlocked.Read(ref _w167Bumps) + Interlocked.Read(ref _w167Clears) > 0))
+        if (n % 60 == 0 && (Interlocked.Read(ref _w167SceneReleases) + Interlocked.Read(ref _w167Bumps) + Interlocked.Read(ref _w167Clears)
+                            + Interlocked.Read(ref _w167FtStarts) + Interlocked.Read(ref _w167FtMirrors) + Interlocked.Read(ref _w167FtPicks)
+                            + Interlocked.Read(ref _w167NoAnim) + Interlocked.Read(ref _w167Shown) + Interlocked.Read(ref _w167WeaponCalls) > 0))
             Console.WriteLine("MP-WO167-STATS " + Wo167StatsText());
         if (n % 60 == 0 && (W137JoinerSession || W137Host)) { string? w166n = await _combat.Wo166StatusAsync(); if (w166n is not null && !w166n.Contains("requests=0 ", StringComparison.Ordinal)) Console.WriteLine("MP-WO166 native: " + w166n); }
         if (n % 60 == 0 && (_w164TalkAsks + _w164Sweeps + _w164QFixOk + _w164QFixRefused + _w164FleeDisengaged + _w164SitCleared + _w164TorchSide) > 0)
