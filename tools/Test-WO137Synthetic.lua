@@ -331,12 +331,14 @@ do -- (c) talking (joiner)
     check("c: not this player: untouched", cmdCount("wh_ai_ResumeNPC") == 0)
     check("c: the game's own function ran every time", #TALKS >= 5)
 
-    -- the request fallback (a conversation asked another way)
+    -- the request fallback (a conversation asked another way) -- WO-167 T1: off by default (mp_talk_fallback); this is it switched on
     NOW = NOW + 3   -- WO-164: not right after a talk to this game's own NPC (that request is that NPC's)
     CMDS = {}
+    if KCD2MP.w167 then KCD2MP.w167.talkFallback = true; KCD2MP.w167.talk.lastNpc = {} end
     KCD2MP_W137TalkRequest(400)
     check("c: a request by another path: the copy in reach is freed", cmdCount("wh_ai_ResumeNPC tzel_olbram") == 1
         and KCD2MP.w137.talking["tzel_olbram"] ~= nil and KCD2MP.w137.talking["tzel_olbram"].id == 400)
+    if KCD2MP.w167 then KCD2MP.w167.talkFallback = false end
     KCD2MP_W137DialogEnd(400, "Dude tzel_olbram")
     NOW = NOW + 3; KCD2MP_W137Session(false, true, true)   -- WO-144: past the deferred end
 

@@ -313,6 +313,7 @@ end
 do
     ERRS = {}
     world(); joiner(); resetTalk()
+    KCD2MP.w167.talkFallback = true   -- WO-167 T1 turned the generic fallback off by default; WO-166's rules are its rules when it is on
     copy("tzel_vavrinec", 101, 100)
     KCD2MP._npcPaused["tzel_vavrinec"] = NOW
     IN_DIALOG = true
@@ -349,6 +350,7 @@ do
     runTimers()
     check("T6: the player's own press ends the talk the mod attached", KCD2MP.w137.talking["tzel_vavrinec"] == nil
         and lastLog("WO166-TALK own-request cancelled npc=tzel_vavrinec for=tzel_woman_9", mark) ~= nil and ORIG_TALKS == before + 1, ORIG_TALKS - before)
+    KCD2MP.w167.talkFallback = false
     noErrs("T")
 end
 

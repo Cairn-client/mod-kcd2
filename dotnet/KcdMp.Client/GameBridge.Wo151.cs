@@ -662,6 +662,7 @@ public partial class GameBridge
     private void Wo151OnGameplayStarted()
     {
         Wo151SceneReset("load");   // 3.4: a load interrupts every scene (the field's two never-released ones)
+        Wo167SceneReset();         // WO-167 T4: the conversation scenes' counts start again
         if (_w151CatchUp && W137Host) _ = Task.Run(async () => { await Task.Delay(2000); await Wo151HostRebaseAsync(); });   // 3.1
         _lastAppliedWeatherProfile = null;
         if (!_isDamageAuthority && _w151WeatherGate is string g)
@@ -690,6 +691,7 @@ public partial class GameBridge
                 await Wo151SceneTickAsync();
                 await Wo151CatchUpTickAsync();
                 await Wo164TickAsync();   // WO-164: the torch side-channel, the flee watchdog, the stale seats, quest values, the marker notice
+                await Wo167TickAsync();   // WO-167: a conversation's scene that never ends (T4)
                 long now = Environment.TickCount64;
                 if (now - lastStatus >= 60_000)
                 {
@@ -704,6 +706,7 @@ public partial class GameBridge
         }
         _w151Connected = false;
         Wo151SceneReset("disconnect");
+        Wo167SceneReset();
         // the session is over: the weather gate opens (the DLL also opens it when the pipe closes)
         if (_w151WeatherGate is not null) { _w151WeatherGate = null; try { await _combat.Wo151WeatherGateAsync(null); } catch { } }
         // the session is over: every copy gets its own reactions back

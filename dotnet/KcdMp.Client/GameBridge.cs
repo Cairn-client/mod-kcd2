@@ -1858,6 +1858,7 @@ public partial class GameBridge(ClientConfig config)
             tailForPause.FastTravelRefused += Wo114OnFastTravelRefused;       // WO-114
             tailForPause.CutsceneEdge += OnLocalCutsceneEdge;        // WO-98 Phase 5
             tailForPause.SceneStage += Wo151OnSceneStage;            // WO-151 3.4: the scene guard
+            tailForPause.SceneStage += Wo167OnSceneStage;            // WO-167 T4: a conversation's scene
             tailForPause.ModInitDetected += OnModInitDetected;       // WO-98 Phase 7
             tailForPause.GameplayStarted += Wo122OnGameplayStarted;  // WO-122
             tailForPause.AutoSaveRefused += Wo122OnAutoSaveRefused;  // WO-122
@@ -6000,6 +6001,10 @@ public partial class GameBridge(ClientConfig config)
             case "w166_cfg":         // WO-166: mp_copy_strikes / mp_snap_fix / the C1 lever
             case "w166_wx":          // WO-166 W1: the host's rain
                 Wo166OnEvent(name, arg);
+                return;
+            case "w167_cfg":         // WO-167: mp_scene_release / mp_talk_fallback
+            case "w167_clear":       // WO-167 T2: a copy the host used that showed a combat state: the WO-132 engagement lets go
+                Wo167OnEvent(name, arg);
                 return;
             case "w163_hostile":     // WO-163 A7: the host's 5 s judge asks the engine whether the victim is in a skirmish fight with the host
             case "w163_probe":       // WO-163 Stage B: mp_w163_probe (the maintainer present; reads and the P6 / P8 levers)

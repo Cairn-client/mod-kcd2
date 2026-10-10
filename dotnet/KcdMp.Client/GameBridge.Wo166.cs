@@ -70,8 +70,10 @@ public partial class GameBridge
                 string st = _w166DlgState.TryGetValue(npc, out var ds) && ds.At >= asked - 1 ? ds.State : "request-only";
                 bool pauseTimedOut = _w166PauseReqTimeoutAt >= asked - 1;
                 Interlocked.Increment(ref _w166TalkTimeouts);
-                Console.WriteLine(FormattableString.Invariant(
-                    $"WO166-TALK timeout npc={npc} state={st} pause_requests={(pauseTimedOut ? "timed-out" : "-")} waited_s={now - asked:F1} placed={(t?.Placed ?? "?").Replace(' ', '_')} {string.Join(' ', f.Skip(1))}"));
+                string head = FormattableString.Invariant(
+                    $"WO166-TALK timeout npc={npc} state={st} pause_requests={(pauseTimedOut ? "timed-out" : "-")} waited_s={now - asked:F1} placed={(t?.Placed ?? "?").Replace(' ', '_')} {string.Join(' ', f.Skip(1))}");
+                // WO-167 T3: the copy's behaviour (the DLL's read of its NPC-state), its minigame and the engine's last tree path for it
+                _ = Task.Run(async () => Console.WriteLine(head + " " + await Wo167ReadinessTailAsync(npc)));
                 return;
             }
             case "w166_wx":          // W1 (host): <rain> -- its game's rain intensity
