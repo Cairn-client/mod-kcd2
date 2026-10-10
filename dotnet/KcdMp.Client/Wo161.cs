@@ -42,7 +42,8 @@ public static class Wo161Rules
     /// <summary>Victim (A4): the reasons that mean "damage with nothing shown" and so get a generic lunge on the copy. A named
     /// attacker only -- not a missile, not a bare legacy hit, not a row the copy refused to play.</summary>
     public static bool WantsGenericSwing(bool shown, string reason) =>
-        !shown && (reason == ReasonNone || reason == ReasonUnmatched || reason == "row-not-received" || reason == "row-stale");
+        !shown && (reason == ReasonNone || reason == ReasonUnmatched || reason == "row-not-received" || reason == "row-stale"
+                   || reason == Wo167Rules.ReasonNoAnim);   // WO-167 C3: the row was queued but the copy never animated it
 
     /// <summary>Victim: a swing row played on the copy this soon before the verdict is "the swing shown with it".</summary>
     public const long RowBeforeMs = 1500;
@@ -79,7 +80,10 @@ public static class Wo161Rules
         if (noAttacker) return (false, "no-attacker");
         if (missile) return (false, "missile");
         if (receivedAgoMs is long r && r >= -RowAfterMs && r <= RowBeforeMs)
+        {
+            if (refusedTag == Wo167Rules.ReasonNoAnim) return (false, Wo167Rules.ReasonNoAnim);   // WO-167 C3: shown means rendered
             return (false, string.IsNullOrEmpty(refusedTag) ? "row-not-played" : "row-refused-" + refusedTag);
+        }
         // WO-166 C2: the host said it captured no swing for this blow (27 of the field's 29 "row-stale" blows; the other 2 it could not
         // pair): an older row of the same NPC is another blow's, never this one's -- the host's word names the reason
         if (!swingKnown) return (false, ReasonNone);
@@ -200,6 +204,17 @@ public sealed class Wo161PlayedLog
         {
             if (_rows.Count >= Keep) _rows.RemoveAt(0);
             _rows.Add((atMs, lagMs));
+        }
+    }
+
+    /// <summary>WO-167 C3: a row noted at <paramref name="atMs"/> (within 50 ms) never animated -- it is no longer "played". True = taken out.</summary>
+    public bool Retract(long atMs)
+    {
+        lock (_gate)
+        {
+            for (int i = _rows.Count - 1; i >= 0; i--)
+                if (Math.Abs(_rows[i].At - atMs) <= 50) { _rows.RemoveAt(i); return true; }
+            return false;
         }
     }
 

@@ -404,12 +404,60 @@ do
     noErrs("S")
 end
 
+-- (C) Phase 2: C1 the stand-in's pulse is asked, C2 the weapon a copy holds -------------------------------------------------
+local SWORD = "1fc42528-2bef-4dde-bf8a-04febeef41c8"
+local function armedCopy(name)
+    local e = copy(name, 101, 100)
+    local inv = { items = {}, created = {} }
+    inv.FindItem = function(_, cls) return inv.items[cls] end
+    inv.CreateItem = function(_, cls) inv.created[#inv.created + 1] = cls; inv.items[cls] = "item:" .. cls end
+    e.inventory = inv
+    e.drawnFrom, e.draws, e.holsters = {}, 0, 0
+    e.human.DrawFromInventory = function(_, it) e.drawnFrom[#e.drawnFrom + 1] = it end
+    e.human.DrawWeapon = function() e.draws = e.draws + 1 end
+    e.human.HolsterWeapon = function() e.holsters = e.holsters + 1 end
+    return e
+end
+do
+    ERRS = {}
+    reset(); joiner()
+    local mark = #LOG
+    KCD2MP_W167StandInSpawned("prepadeniNaCeste_bandit_7", {})
+    check("C1: a stand-in's spawn is told to the agent (its walk pulse once bound)", countEvt("w167_standin", "prepadeniNaCeste_bandit_7", mark) == 1)
+    local e = armedCopy("prepadeniNaCeste_bandit_7")
+    mark = #LOG
+    KCD2MP_W167Weapon("prepadeniNaCeste_bandit_7", SWORD, "hands")
+    check("C2: the host's NPC holds a sword the stand-in never had: created in its inventory, drawn from it",
+        e.inventory.created[1] == SWORD and e.drawnFrom[1] == "item:" .. SWORD and e.draws == 0
+        and lastLog("WO167-WEAPON npc=prepadeniNaCeste_bandit_7 hand=1fc42528 owned=created drawn=this-class why=hands", mark) ~= nil, lastLog("WO167-WEAPON", mark))
+    KCD2MP_W167Weapon("prepadeniNaCeste_bandit_7", SWORD, "row")
+    KCD2MP_W167Weapon("prepadeniNaCeste_bandit_7", "?", "row")
+    check("C3: held: the same weapon again (a row, the hands) draws nothing again", #e.drawnFrom == 1 and #e.inventory.created == 1 and e.draws == 0)
+    KCD2MP_W167Weapon("prepadeniNaCeste_bandit_7", "-", "hands")
+    KCD2MP_W167Weapon("prepadeniNaCeste_bandit_7", "-", "row")
+    check("C4: nothing in the host NPC's hand: holstered once", e.holsters == 1 and KCD2MP.npcPuppets["prepadeniNaCeste_bandit_7"].appliedDrawn == false)
+    KCD2MP_W167Weapon("prepadeniNaCeste_bandit_7", "?", "row")
+    check("C5: an armed row with the class known from before: the same sword, from its own inventory", #e.drawnFrom == 2 and #e.inventory.created == 1)
+    check("C6: C2 holds the hand: the stream's drawn flag and the old re-assert leave the copy alone", KCD2MP_W167WeaponHeld("prepadeniNaCeste_bandit_7", NOW) == true
+        and KCD2MP_W167WeaponHeld("prepadeniNaCeste_bandit_7", NOW + 20) == false)
+    local u = armedCopy("tzel_rowdy_2")
+    KCD2MP_W167Weapon("tzel_rowdy_2", "?", "row")
+    check("C7: armed, no class known anywhere: the copy draws what it has (the game's DrawWeapon)", u.draws == 1 and #u.drawnFrom == 0)
+    KCD2MP_W167SetCopyWeapons("off")
+    local v = armedCopy("tzel_rowdy_4")
+    check("C8: mp_copy_weapons off: nothing is touched", KCD2MP_W167Weapon("tzel_rowdy_4", SWORD, "hands") == false and v.draws == 0 and #v.drawnFrom == 0)
+    KCD2MP_W167SetCopyWeapons("on")
+    noErrs("C")
+end
+
 -- (W) the switches and the status --------------------------------------------------------------------------------------------
 do
     ERRS = {}
     reset()
     check("W1: the switches and the status command are registered", CCMDS["mp_talk_fallback"] ~= nil and CCMDS["mp_talk_fallback"].body == "KCD2MP_W167SetTalkFallback(%line)"
-        and CCMDS["mp_scene_release"] ~= nil and CCMDS["mp_scene_release"].body == "KCD2MP_W167SetSceneRelease(%line)" and CCMDS["mp_w167_status"] ~= nil)
+        and CCMDS["mp_scene_release"] ~= nil and CCMDS["mp_scene_release"].body == "KCD2MP_W167SetSceneRelease(%line)" and CCMDS["mp_w167_status"] ~= nil
+        and CCMDS["mp_copy_weapons"] ~= nil and CCMDS["mp_swing_watch"] ~= nil and CCMDS["mp_sync_fallback"] ~= nil)
+    check("W1b: the combat switches default on", KCD2MP.w167.copyWeapons == true and KCD2MP.w167.swingWatch == true and KCD2MP.w167.syncFallback == true)
     check("W2: the defaults: the fallback off, the scene release on", KCD2MP.w167.talkFallback == false and KCD2MP.w167.sceneRelease == true)
     local mark = #LOG
     check("W3: a toggle tells the agent", KCD2MP_W167SetSceneRelease("off") == true and countEvt("w167_cfg", "scene_release=off", mark) == 1
@@ -421,7 +469,8 @@ do
     mark = #LOG
     KCD2MP.w137.aliveAt = nil
     KCD2MP_W137Session(false, true, true)
-    check("W6: a (re)connected agent learns the switches", countEvt("w167_cfg", "scene_release=on", mark) == 1 and countEvt("w167_cfg", "talk_fallback=off", mark) == 1)
+    check("W6: a (re)connected agent learns the switches", countEvt("w167_cfg", "scene_release=on", mark) == 1 and countEvt("w167_cfg", "talk_fallback=off", mark) == 1
+        and countEvt("w167_cfg", "copy_weapons=on", mark) == 1 and countEvt("w167_cfg", "swing_watch=on", mark) == 1 and countEvt("w167_cfg", "sync_fallback=on", mark) == 1)
     noErrs("W")
 end
 

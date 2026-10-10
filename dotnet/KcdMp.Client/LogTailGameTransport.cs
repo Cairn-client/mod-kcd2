@@ -376,6 +376,8 @@ public sealed class LogTailGameTransport : IGameTransport
         "<RandomEvent>",
         // WO-166 L1: the loot screen closing (the joiner applies a host update it held back while the screen was open)
         "PlayAudio: ui_inv_screen_out",
+        // WO-167 C4: the engine has no sync data for a paired attack's slave (counted against the rows the mod sent)
+        "Cannot change sync guard on ",
         // WO-166 W1: the game's own weather layer profiles (rain, flies...) -- counted; on the host a new one re-reads the rain at once
         "[Info] C_GameProfileManager: Activating profile 'weather_",
         "[Info] C_GameProfileManager: Deactivating profile 'weather_",

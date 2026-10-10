@@ -57,13 +57,19 @@
 #include "engine.h"
 #include "pe_exports.h"
 #include "log.h"
+#include "wo167_rules.h"
 
 #include <windows.h>
 #include <psapi.h>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <cstdint>
 #include <cstddef>
+#include <iterator>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace kcdmp::rttr {
 
@@ -944,12 +950,125 @@ SwingResult ghost_swing(uint32_t entityId, const char* fragSpec) {
     uint32_t status = ~0u, refc = ~0u;
     read_u32(anim, 0x28, &status);
     read_u32(anim, 0x58, &refc);
-    // Drop our reference through the object's own virtual. refc includes it,
-    // so the controller's view is refc-1.
-    call_release(anim);
-    logf("SWING: entity=%u queued fragment %d status=%u ref(controller)=%u spec=\"%s\"",
-         entityId, out.fragmentID, status, refc ? refc - 1 : 0, fragSpec);
+    // WO-167 C3: our reference goes to the swing watch (dropped there once the action was installed, or never was); with the watch
+    // off it is dropped here as before. refc includes it, so the controller's view is refc-1.
+    const bool watched = swing_watch_take(entityId, anim);
+    if (!watched) call_release(anim);
+    logf("SWING: entity=%u queued fragment %d status=%u ref(controller)=%u%s spec=\"%s\"",
+         entityId, out.fragmentID, status, refc ? refc - 1 : 0, watched ? " watched" : "", fragSpec);
     return SwingResult::Ok;
+}
+
+// --- WO-167 C3: "shown" means rendered (wo167_rules.h). ----------------------
+// A queued swing's action is kept (one reference of ours) and its status read each frame until it reads Installed / Exiting (the
+// copy's animation started), Finished without that, or wo167rules::kWatchS passes; then our reference is dropped through the action's
+// own virtual. The last result per body is what the agent asks before it counts the swing as shown. Main thread only. Any fault
+// switches the watch off for the session (every held reference dropped, the site logged; the agent says it on screen once).
+namespace {
+struct SwingWatch { uint32_t eid = 0; void* anim = nullptr; double t0 = 0; bool seen = false; };
+struct SwingLast { wo167rules::Seen seen = wo167rules::Seen::None; double at = 0; float waitS = 0; };
+std::vector<SwingWatch> g_watches;                       // main thread
+std::unordered_map<uint32_t, SwingLast> g_swingSeen;      // main thread
+std::atomic<bool> g_watchOn{true};                  // mp_swing_watch (the agent)
+std::atomic<bool> g_watchFaulted{false};
+std::string g_watchFaultSite;
+std::atomic<uint32_t> c_wTaken{0}, c_wInstalled{0}, c_wNever{0}, c_wEvicted{0}, c_wFaults{0};
+
+double w_now() { LARGE_INTEGER q, f; QueryPerformanceCounter(&q); QueryPerformanceFrequency(&f); return double(q.QuadPart) / double(f.QuadPart); }
+
+bool w_read_status(void* anim, uint32_t* out) {
+    KCDMP_FAULT_READ(site, "wo167::watch_status");
+    return fault::guarded(site, [&] { *out = *reinterpret_cast<const uint32_t*>(reinterpret_cast<const char*>(anim) + 0x28); });
+}
+
+bool w_release(void* anim) {
+    KCDMP_FAULT_CALL(site, "wo167::watch_release");
+    return fault::guarded(site, [&] {
+        auto* vtbl = *reinterpret_cast<void***>(anim);
+        reinterpret_cast<void (*)(void*)>(vtbl[0x10 / 8])(anim);
+    });
+}
+
+void w_switch_off(const char* site) {
+    if (g_watchFaulted.exchange(true)) return;
+    g_watchFaultSite = site;
+    c_wFaults.fetch_add(1);
+    logf("WO167-SHOWN switched OFF for the session -- a fault at %s (every queued swing counts as shown again, as in 0.48.2)", site);
+    for (auto& w : g_watches) if (w.anim) w_release(w.anim);   // a release that faults again leaks one action: never a crash
+    g_watches.clear();
+}
+
+void w_resolve(SwingWatch& w, wo167rules::Seen s, double now) {
+    if (!w_release(w.anim)) { w_switch_off("wo167::watch_release"); return; }
+    w.anim = nullptr;
+    (s == wo167rules::Seen::Installed ? c_wInstalled : c_wNever).fetch_add(1);
+    SwingLast& l = g_swingSeen[w.eid];
+    l.seen = s; l.at = now; l.waitS = static_cast<float>(now - w.t0);
+}
+} // namespace
+
+bool swing_watch_take(uint32_t eid, void* anim) {
+    if (!g_watchOn.load(std::memory_order_relaxed) || g_watchFaulted.load(std::memory_order_relaxed) || !anim) return false;
+    const double now = w_now();
+    if (g_watches.size() >= wo167rules::kMaxWatches) {   // the oldest first: it had its chance
+        SwingWatch& old = g_watches.front();
+        uint32_t st = 0;
+        if (!w_read_status(old.anim, &st)) { w_switch_off("wo167::watch_status"); return false; }
+        w_resolve(old, wo167rules::judge(st, old.seen, wo167rules::kWatchS), now);
+        if (g_watchFaulted.load()) return false;
+        g_watches.erase(g_watches.begin());
+        c_wEvicted.fetch_add(1);
+    }
+    g_watches.push_back(SwingWatch{ eid, anim, now, false });
+    SwingLast& l = g_swingSeen[eid];
+    l.seen = wo167rules::Seen::Pending; l.at = now; l.waitS = 0;
+    c_wTaken.fetch_add(1);
+    return true;
+}
+
+void swing_watch_tick() {
+    if (g_watches.empty()) return;
+    const double now = w_now();
+    for (size_t i = 0; i < g_watches.size();) {
+        SwingWatch& w = g_watches[i];
+        uint32_t st = 0;
+        if (!w_read_status(w.anim, &st)) { w_switch_off("wo167::watch_status"); return; }
+        const wo167rules::Seen s = wo167rules::judge(st, w.seen, now - w.t0);
+        if (s == wo167rules::Seen::Pending) { ++i; continue; }
+        w_resolve(w, s, now);
+        if (g_watchFaulted.load()) return;
+        g_watches.erase(g_watches.begin() + static_cast<std::ptrdiff_t>(i));
+    }
+    if (g_swingSeen.size() > 256)
+        for (auto it = g_swingSeen.begin(); it != g_swingSeen.end();)
+            it = (now - it->second.at > wo167rules::kKeepResultS && it->second.seen != wo167rules::Seen::Pending) ? g_swingSeen.erase(it) : std::next(it);
+}
+
+wo167rules::Seen swing_watch_last(uint32_t eid, uint32_t* ageMs, uint32_t* waitMs) {
+    *ageMs = 0; *waitMs = 0;
+    if (g_watchFaulted.load(std::memory_order_relaxed) || !g_watchOn.load(std::memory_order_relaxed)) return wo167rules::Seen::Off;
+    auto it = g_swingSeen.find(eid);
+    if (it == g_swingSeen.end()) return wo167rules::Seen::None;
+    const double age = w_now() - it->second.at;
+    *ageMs = static_cast<uint32_t>(age < 0 ? 0 : (age > 4e6 ? 4e6 : age * 1000.0));
+    *waitMs = static_cast<uint32_t>(it->second.waitS * 1000.0f);
+    return it->second.seen;
+}
+
+void swing_watch_set(bool on) {
+    const bool was = g_watchOn.exchange(on);
+    if (was != on) logf("WO167-SHOWN mp_swing_watch %s", on ? "on" : "off");
+    if (!on) { for (auto& w : g_watches) if (w.anim) w_release(w.anim); g_watches.clear(); }
+}
+
+bool swing_watch_faulted() { return g_watchFaulted.load(std::memory_order_relaxed); }
+bool swing_watch_on() { return g_watchOn.load(std::memory_order_relaxed) && !g_watchFaulted.load(std::memory_order_relaxed); }
+
+int swing_watch_status(char* out, int n) {
+    const bool f = g_watchFaulted.load();
+    return std::snprintf(out, n, "swing_watch=%s faulted=%s%s%s taken=%u installed=%u no_anim=%u evicted=%u watching=%zu faults=%u",
+                         g_watchOn.load() ? "on" : "off", f ? "yes" : "no", f ? " site=" : "", f ? g_watchFaultSite.c_str() : "",
+                         c_wTaken.load(), c_wInstalled.load(), c_wNever.load(), c_wEvicted.load(), g_watches.size(), c_wFaults.load());
 }
 
 } // namespace kcdmp::rttr

@@ -228,3 +228,65 @@ press. The cases it was built for (WO-137: a request that did not come through t
 ### Phase 1 gates (offline)
 Lua: the new suite **52/52**; **all 54 synthetic suites** green (3,768 checks; WO-166's and WO-137's fallback scenarios now switch
 the fallback on — the intended change). Agent **1,345** (0.48.2: 1,339). Static: Lua locals, console placeholders — green.
+
+## Phase 2 — combat on the joiner's screen (built)
+
+### C1 — stand-ins are animated, armed figures [code][native][syn][unit]
+* **The walk pulse (the T-pose's cause, 0.5):** the mod tells the agent each stand-in body it spawns (`w167_standin`); once its body is
+  bound the agent asks the DLL for the WO-155 walk-class pulse (avatar event **kind 3**, appended), which `motion.cpp` now gives a
+  **fresh spawn** as well as an avatar (`wo167rules::wants_pulse`; a mark that comes before the bind waits up to 10 s for it).
+  `WO167-PULSE npc=… asked=ok`, native `WO167-PULSE` / `WO155-NUDGE … stand-in`, `fresh_pulses=` in the motion status. Ordinary
+  copies (alive in this world before their bind) are never pulsed.
+* **The archetype:** a stand-in is already spawned from the host's own soul and class (Tables.pak) and goes through the ordinary
+  puppet start (0.5); nothing showed it cannot be animated from the soul, so it is not re-spawned from another archetype.
+* **The weapon:** C2 below (the host NPC's weapon class from its hand rows, created in the stand-in's inventory when it has none).
+  Its clothing stays its soul's own (the host's random-event spawn preset is not on the wire) — **[not built]**, pocketed.
+* **Strike windows** (WO-166 C3) open on its swings as on any copy (the row path is the same).
+* *Checks:* the pulse rule **[native]**; the spawn's event **[syn]**; live: see the live section.
+
+### C2 — the copy holds what the host's NPC holds [code][syn][unit] — `mp_copy_weapons`, default **on**
+* **The source:** the host NPC's hand rows (WO-143's capture: the item class in its right hand) — a class the item tables call a weapon
+  (`…Weapon` elements) is "armed with this", an empty hand is "nothing", a tool stays WO-143's. In a fight (the joiner's engagement
+  or the host's combat event in the last 10 s) every change is told to the mod at once; and every host attack row played on a copy
+  says armed (any `r_<weapon>`) or unarmed (`r_noweapon`), with the class when the hand rows named one.
+* **The copy:** `KCD2MP_W167Weapon` — armed: the copy's own item of that class (created in its inventory when it has none, the
+  stand-in's case) drawn from the inventory (`DrawFromInventory`, the game's own); class unknown: the game's `DrawWeapon`; nothing in
+  hand: holstered. **Once per change, then held** (`WO167-WEAPON …`); the class it held is kept for its next draw.
+* **The fight is gone:** with `mp_copy_weapons` on, the 2 s re-assert against the copy's own `IsWeaponDrawn()` (which lies on an
+  unarmed body, WO-160) never runs, and while C2 holds a copy's hand (15 s) the stream's drawn-flag transitions do not override it:
+  the field's 13 `re-asserted sheathed` on one stand-in cannot happen. Off: 0.48.2's behaviour.
+* *Checks:* Lua C2–C8 (the field's stand-in: created, drawn from its inventory; held — no second draw; nothing in hand — holstered
+  once; the class kept; unknown class — the game's draw; the switch) **[syn]**; the row tag and weapon-kind rules **[unit]**. The 0.5 s
+  follow-through on a live copy: see the live section.
+
+### C3 — "shown" means rendered [code][native][unit] — `mp_swing_watch`, default **on**
+* **Native (`combat_construct.cpp`, `wo167_rules.h`):** `ghost_swing` hands its reference to the queued action to a watch instead of
+  dropping it; each frame (main thread) the watch reads the action's status (+0x28, WO-42 §2.4) until it reads **Installed /
+  Exiting** (the copy's animation started) or **Finished without that / 0.6 s** (it never animated), then drops the reference through
+  the action's own virtual. The last result per body is answered over the pipe (WO-163 family op **12**; 13 status, 14 config). Two
+  named fault sites (`wo167::watch_status`, `wo167::watch_release`): **any fault switches the watch off for the session**, drops every
+  held reference, logs the site, and the agent says it on screen once ("Swing check is off this session (a game error).").
+* **Agent:** 200 ms after a row is played on a copy (again at 450 / 700 ms while pending) it asks; installed → shown as before; **never
+  animated → the row is taken back out of the played rows and refused `no-anim`**, so the hit's verdict reads `shown=no
+  reason=no-anim` and **the WO-163 generic lunge plays before its damage** (`WO167-SHOWN npc=… shown=no reason=no-anim …`). Off, no
+  answer, still pending: as 0.48.2.
+* *Checks:* the status rule (pending, installed, exiting, finished without install, the 0.6 s limit, a non-status value) **[native]**;
+  the verdict rule (`no-anim` → the lunge; a played row shown; other refusals unchanged), the played log's take-back **[unit]**. Live:
+  a row on a body that cannot animate, and on a normal copy — see the live section.
+
+### C4 — paired attacks on stand-ins [code][unit] — `mp_sync_fallback`, default **on**
+* A paired (sync) row (`CombatAttackSyncGen …`) for a **stand-in**, or for an NPC the engine said has no sync data (its `Cannot change
+  sync guard on <npc> … for slave` line, counted), is played as **the plain attack row of the same right-hand weapon**
+  (`ActionRowCatalog.PlainForSync`: a `CombatAttackGen` row of the attack table — the same attack type, strength, zone, left hand
+  scored; never a lying / sitting / mounted row; the same choice on every machine). `WO167-SYNCFALLBACK …`.
+* The engine's sync-guard line is now counted against our rows (`WO167-SYNCGUARD npc=… followed_row=yes|no`): the field's one line
+  followed the joiner's own swing (0.5), `followed_row=no`.
+* *Checks:* the fallback picks the same-weapon plain row and never another weapon's, a lying row or a kick; none fits → the sync row
+  stays; the line parser **[unit]**.
+
+### C5 — kept
+WO-166 C2 (the host's word for an unrowed blow), C3 `mp_copy_strikes` and C4 `mp_snap_fix` stay on; `mp_victim_decides` stays off.
+
+### Phase 2 gates (offline)
+Native **644** (0.48.2: 625); agent **1,350**; Lua: the WO-167 suite **62**; all 54 synthetic suites green (3,778 checks); the native
+guard check clean.

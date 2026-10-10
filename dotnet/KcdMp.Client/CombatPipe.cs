@@ -1158,6 +1158,35 @@ public sealed class CombatPipe : IAsyncDisposable
         return r is { Ok: true } x ? System.Text.Encoding.ASCII.GetString(x.Payload) : null;
     }
 
+    /// <summary>
+    /// WO-167 op 12 (C3): the last swing queued on this body -- Seen (wo167_rules.h: 0 none, 1 pending, 2 installed, 3 no-anim, 4 off),
+    /// the ms since it was queued or resolved, and the ms it waited for its install; null = no answer.
+    /// </summary>
+    public async Task<(byte Seen, uint AgeMs, uint WaitMs)?> Wo167SwingSeenAsync(uint eid, CancellationToken ct = default)
+    {
+        var a = new byte[4];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(a, eid);
+        var r = await Wo163Async(12, a, ct);
+        if (r is not { Ok: true, Payload.Length: >= 9 } x) return null;
+        return (x.Payload[0], System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(x.Payload.AsSpan(1)),
+                System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(x.Payload.AsSpan(5)));
+    }
+
+    /// <summary>WO-167 op 13: the native half's counters.</summary>
+    public async Task<string?> Wo167StatusAsync(CancellationToken ct = default)
+    {
+        var r = await Wo163Async(13, [], ct);
+        return r is { Ok: true } x ? System.Text.Encoding.ASCII.GetString(x.Payload) : null;
+    }
+
+    /// <summary>WO-167 op 14: mp_swing_watch (255 = unchanged) -> (on, switched off by a fault this session); null = no answer.</summary>
+    public async Task<(bool On, bool Faulted)?> Wo167ConfigAsync(byte swingWatch, CancellationToken ct = default)
+    {
+        var r = await Wo163Async(14, [swingWatch], ct);
+        if (r is not { Ok: true, Payload.Length: >= 2 } x) return null;
+        return (x.Payload[0] != 0, x.Payload[1] != 0);
+    }
+
     /// <summary>WO-165 op 6: the measured damage of replay <paramref name="seq"/>: State 0 unknown, 1 pending, 2 measured, 3 merged into an earlier one.</summary>
     public async Task<(byte State, float Health, float Stamina, bool VictimLive)?> Wo165ReplayDamageAsync(uint seq, CancellationToken ct = default)
     {

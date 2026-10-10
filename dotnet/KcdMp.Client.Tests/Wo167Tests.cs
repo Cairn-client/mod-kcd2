@@ -78,4 +78,88 @@ public class Wo167Tests
         Assert.Null(Wo167Rules.BtPath("[Error] /ai//(NPC)tzel_adam/NPC Context [NPCContext]:Couldn't find actions to get NPC into game loaded state"));
         Assert.Null(Wo167Rules.BtPath("no npc here (BT)x"));
     }
+
+    // ---------------------------------------------------------------- C2: the weapon a copy holds
+
+    [Fact]
+    public void A_row_says_armed_or_unarmed_by_its_right_hand()
+    {
+        Assert.False(Wo167Rules.RowArmed("r_noweapon+leftGuard+eZ1+aZ1+hook+attack_heavy+l_noShield+oppMale"));
+        Assert.True(Wo167Rules.RowArmed("leftGuard+eZ1+aZ1+slash+attack_heavy+r_bluntWeapon+l_noShield+oppMale+oppFemale"));
+        Assert.True(Wo167Rules.RowArmed("clinch1+eZ1+endClinch1+aZ2+slash+attack_heavy+r_stickWeapon+l_noShield+step0+oppMale"));
+        Assert.Null(Wo167Rules.RowArmed("leftGuard+eZ1+aZ1"));
+        Assert.True(Wo167Rules.IsWeaponKind("MeleeWeapon") && Wo167Rules.IsWeaponKind("MissileWeapon"));
+        Assert.False(Wo167Rules.IsWeaponKind("Tool") || Wo167Rules.IsWeaponKind("Armor") || Wo167Rules.IsWeaponKind(null));
+    }
+
+    // ---------------------------------------------------------------- C3: shown means rendered
+
+    [Fact]
+    public void A_row_that_never_animated_gets_the_lunge()
+    {
+        // received 400 ms before the verdict, refused as no-anim (the watch took it out of the played rows)
+        var (shown, reason) = Wo161Rules.Judge(true, false, false, null, 400, Wo167Rules.ReasonNoAnim);
+        Assert.False(shown);
+        Assert.Equal("no-anim", reason);
+        Assert.True(Wo161Rules.WantsGenericSwing(shown, reason));
+        // a row that did animate is shown as before
+        var (s2, r2) = Wo161Rules.Judge(true, false, false, 400, 400, null);
+        Assert.True(s2);
+        Assert.Equal("-", r2);
+        // another refusal keeps WO-163's rule (no lunge for a row the DLL refused outright)
+        var (s3, r3) = Wo161Rules.Judge(true, false, false, null, 400, "target-missing");
+        Assert.Equal("row-refused-target-missing", r3);
+        Assert.False(Wo161Rules.WantsGenericSwing(s3, r3));
+    }
+
+    [Fact]
+    public void The_watch_takes_a_row_back_out_of_the_played_log()
+    {
+        var log = new Wo161PlayedLog();
+        log.Note(1000, 600);
+        log.Note(2000, 600);
+        Assert.True(log.Retract(2010));          // the row noted 10 ms away from the play call's time
+        Assert.False(log.Retract(2010));         // once
+        var best = log.Best(2500);
+        Assert.NotNull(best);
+        Assert.Equal(1500, best!.Value.Ago);     // only the first row is left
+        Assert.Equal("installed", Wo167Rules.SeenName(Wo167Rules.SeenInstalled));
+        Assert.Equal("no-anim", Wo167Rules.SeenName(Wo167Rules.SeenNoAnim));
+    }
+
+    // ---------------------------------------------------------------- C4: paired attacks on stand-ins
+
+    private static readonly Guid SyncG = Guid.Parse("72c05fa9-6921-36ee-bbd1-8647478dfc21");
+    private static ActionRowCatalog.Row SyncRow => new("combat_action_sync_attack", "CombatAttackSyncGen",
+        "clinch1+eZ1+endClinch1+aZ2+slash+attack_heavy+r_stickWeapon+l_noShield+step0+oppMale", 2, 0, 1);
+
+    [Fact]
+    public void A_sync_row_falls_back_to_the_plain_attack_of_the_same_weapon()
+    {
+        Assert.True(Wo167Rules.IsSyncFragment("CombatAttackSyncGen"));
+        Assert.False(Wo167Rules.IsSyncFragment("CombatAttackGen"));
+        var plainStick = Guid.NewGuid(); var plainStickLight = Guid.NewGuid(); var plainSword = Guid.NewGuid(); var lying = Guid.NewGuid(); var kick = Guid.NewGuid();
+        var cat = ActionRowCatalog.FromRows(new[]
+        {
+            (SyncG, SyncRow),
+            (plainStick, new ActionRowCatalog.Row("combat_action_attack", "CombatAttackGen", "leftGuard+eZ1+aZ2+slash+attack_heavy+r_stickWeapon+l_noShield+oppMale", 2, 0, 1)),
+            (plainStickLight, new ActionRowCatalog.Row("combat_action_attack", "CombatAttackGen", "leftGuard+eZ1+aZ3+stab+attack_light+r_stickWeapon+l_noShield+oppMale", 3, 0, 2)),
+            (plainSword, new ActionRowCatalog.Row("combat_action_attack", "CombatAttackGen", "leftGuard+eZ1+aZ2+slash+attack_heavy+r_sword+l_noShield+oppMale", 2, 0, 1)),
+            (lying, new ActionRowCatalog.Row("combat_action_attack", "CombatAttackGen", "eZ1+aZ2+slash+attack_heavy+r_stickWeapon+l_noShield+oppLying", 2, 0, 1)),
+            (kick, new ActionRowCatalog.Row("combat_action_attack", "CombatAttackSpecialGen", "eZ2+aZ5+kick+attack_heavy+r_stickWeapon+l_noShield", 5, 0, 4)),
+        });
+        var p = cat.PlainForSync(SyncRow);
+        Assert.NotNull(p);
+        Assert.Equal(plainStick, p!.Value.Guid);   // same weapon, type, strength, zone, left hand -- never the sword, the lying row or the kick
+        Assert.Equal(-1, Wo167Rules.PlainScore(SyncRow.Tags, 1, "aZ2+slash+attack_heavy+r_sword", 1));
+        var none = ActionRowCatalog.FromRows(new[] { (SyncG, SyncRow), (plainSword, cat.TryGet(plainSword, out var sw) ? sw : default) });
+        Assert.Null(none.PlainForSync(SyncRow));
+    }
+
+    [Fact]
+    public void The_engines_sync_guard_line_names_its_npc()
+    {
+        Assert.Equal("taboryUCesty_bandit_10", Wo167Rules.SyncGuardNpc("Cannot change sync guard on taboryUCesty_bandit_10 because data not found for sync movement for slave."));
+        Assert.Null(Wo167Rules.SyncGuardNpc("Perfect block Slot started with planned window length: 0.295 s"));
+    }
 }

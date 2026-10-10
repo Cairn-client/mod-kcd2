@@ -34,6 +34,7 @@ int wo155_rules_tests(int* passed);        // wo155_rules_tests.cpp
 int wo163_tests(int* passed);              // wo163_tests.cpp (WO-163: sync GUID offsets, MP-FIGHTSNAP)
 int wo165_tests(int* passed);              // wo165_tests.cpp (WO-165: the replay's call site, structs, outcome)
 int wo166_tests(int* passed);              // wo166_tests.cpp (WO-166: the quest write gates, the striking window, the line limiter)
+int wo167_tests(int* passed);              // wo167_tests.cpp (WO-167: a watched swing installed or not, the stand-in walk pulse)
 
 static int g_fail = 0, g_pass = 0;
 #define CHECK(cond, ...) do { if (cond) ++g_pass; else { ++g_fail; std::printf("FAIL  %s:%d  ", __FILE__, __LINE__); std::printf(__VA_ARGS__); std::printf("\n"); } } while (0)
@@ -243,6 +244,14 @@ int main() {
     {
         int fp = 0;
         const int ff = wo166_tests(&fp);
+        g_pass += fp;
+        g_fail += ff;
+    }
+
+    // WO-167: a watched swing's action status (shown = installed), the walk pulse for a fresh spawn
+    {
+        int fp = 0;
+        const int ff = wo167_tests(&fp);
         g_pass += fp;
         g_fail += ff;
     }

@@ -140,6 +140,28 @@ public sealed class ActionRowCatalog
         return best;
     }
 
+    /// <summary>
+    /// WO-167 (C4): a plain attack row to play instead of a paired (sync) one on a copy that has no sync data -- a <c>CombatAttackGen</c>
+    /// row of the attack table with the same right-hand weapon (Wo167Rules.PlainScore: the attack type, the strength, the zone, the left
+    /// hand); the best score, then the lowest tags, then the lowest GUID, so every machine chooses the same. Null = none fits.
+    /// </summary>
+    public (Guid Guid, Row Row)? PlainForSync(Row sync)
+    {
+        (Guid Guid, Row Row)? best = null; int bestScore = -1;
+        foreach (var (g, r) in _rows)
+        {
+            if (r.Table != "combat_action_attack" || r.Fragment != Wo167Rules.PlainAttackFragment) continue;
+            int s = Wo167Rules.PlainScore(sync.Tags, sync.AttackType, r.Tags, r.AttackType);
+            if (s < 0) continue;
+            if (best is null || s > bestScore || (s == bestScore && (string.CompareOrdinal(r.Tags, best.Value.Row.Tags) < 0
+                || (r.Tags == best.Value.Row.Tags && g.CompareTo(best.Value.Guid) < 0)))) { best = (g, r); bestScore = s; }
+        }
+        return best;
+    }
+
+    /// <summary>For tests: a catalog from literal rows.</summary>
+    public static ActionRowCatalog FromRows(IEnumerable<(Guid Guid, Row Row)> rows) => new(rows.ToDictionary(x => x.Guid, x => x.Row));
+
     /// <summary>WO-163 (A1): the row behind a GUID, for both reads of a sync attack's descriptor -- both hitting the catalog is the one thing that must never happen.</summary>
     public bool BothResolve(Guid a, Guid b) => a != Guid.Empty && b != Guid.Empty && _rows.ContainsKey(a) && _rows.ContainsKey(b);
 

@@ -105,6 +105,85 @@ public static class Wo167Rules
         return (npc, path.Length > 96 ? path[..96] : path);
     }
 
+    // ------------------------------------------------------------------ C1-C4: combat on the joiner's screen
+
+    /// <summary>C2 mp_copy_weapons, C3 mp_swing_watch, C4 mp_sync_fallback: new mechanisms ship on, each with its switch.</summary>
+    public const bool DefaultCopyWeapons = true, DefaultSwingWatch = true, DefaultSyncFallback = true;
+
+    /// <summary>C3: the DLL's answer (native wo167_rules.h Seen).</summary>
+    public const byte SeenNone = 0, SeenPending = 1, SeenInstalled = 2, SeenNoAnim = 3, SeenOff = 4;
+
+    /// <summary>C3: the first look after a row was queued; a pending answer is looked at once more after <see cref="ShownSecondLookMs"/>.</summary>
+    public const int ShownFirstLookMs = 200, ShownSecondLookMs = 450;
+
+    /// <summary>C3: the reason a verdict's row did not show: the copy never animated it (the lunge plays instead).</summary>
+    public const string ReasonNoAnim = "no-anim";
+
+    public static string SeenName(byte s) => s switch
+    {
+        SeenNone => "none", SeenPending => "pending", SeenInstalled => "installed", SeenNoAnim => "no-anim", SeenOff => "off", _ => "?",
+    };
+
+    /// <summary>C2: a row's right-hand weapon tag -- false for r_noweapon (fists), true for any weapon (r_sword, r_bluntWeapon ...), null when the row names none.</summary>
+    public static bool? RowArmed(string tags)
+    {
+        foreach (var t in tags.Split('+', StringSplitOptions.RemoveEmptyEntries))
+            if (t.StartsWith("r_", StringComparison.Ordinal)) return t != "r_noweapon";
+        return null;
+    }
+
+    /// <summary>C2: an item table element kind that is a weapon held in the hand (MeleeWeapon, MissileWeapon ...).</summary>
+    public static bool IsWeaponKind(string? kind) => kind is not null && kind.EndsWith("Weapon", StringComparison.Ordinal);
+
+    /// <summary>C4: a paired (sync) attack row: its fragment says so ("CombatAttackSyncGen").</summary>
+    public static bool IsSyncFragment(string fragment) => fragment.Contains("Sync", StringComparison.Ordinal);
+
+    /// <summary>C4: the plain attack fragment a sync row falls back to.</summary>
+    public const string PlainAttackFragment = "CombatAttackGen";
+
+    /// <summary>
+    /// C4: how well a plain attack row stands in for a sync one: -1 = not at all (another right-hand weapon, or a situational row: lying,
+    /// sitting, mounted); else +4 the same attack type, +2 the same strength (attack_heavy / attack_light), +1 the same attack zone (aZ),
+    /// +1 the same left hand.
+    /// </summary>
+    public static int PlainScore(string syncTags, int syncAttackType, string plainTags, int plainAttackType)
+    {
+        static string? Tag(string tags, string prefix)
+        {
+            foreach (var t in tags.Split('+', StringSplitOptions.RemoveEmptyEntries)) if (t.StartsWith(prefix, StringComparison.Ordinal)) return t;
+            return null;
+        }
+        static bool Has(string tags, string t) => ("+" + tags + "+").Contains("+" + t + "+", StringComparison.Ordinal);
+        string? r = Tag(syncTags, "r_");
+        if (r is null || Tag(plainTags, "r_") != r) return -1;
+        foreach (var bad in new[] { "oppLying", "oppSitting", "mounted", "horse", "oppMounted" }) if (Has(plainTags, bad)) return -1;
+        int s = 0;
+        if (syncAttackType >= 0 && syncAttackType == plainAttackType) s += 4;
+        foreach (var st in new[] { "attack_heavy", "attack_light" }) if (Has(syncTags, st) && Has(plainTags, st)) s += 2;
+        string? az = Tag(syncTags, "aZ");
+        if (az is not null && Has(plainTags, az)) s += 1;
+        string? l = Tag(syncTags, "l_");
+        if (l is not null && Has(plainTags, l)) s += 1;
+        return s;
+    }
+
+    /// <summary>C4: "Cannot change sync guard on &lt;npc&gt; because data not found for sync movement for slave." -> the NPC, or null.</summary>
+    public static string? SyncGuardNpc(string line)
+    {
+        const string p = "Cannot change sync guard on ";
+        int a = line.IndexOf(p, StringComparison.Ordinal);
+        if (a < 0) return null;
+        int b = a + p.Length, e = b;
+        while (e < line.Length && (char.IsAsciiLetterOrDigit(line[e]) || line[e] == '_')) e++;
+        return e > b && e - b <= 63 ? line[b..e] : null;
+    }
+
+    /// <summary>C4: a sync-guard line this soon after a sync row we sent to that NPC is "after our row".</summary>
+    public const long SyncGuardAfterRowMs = 1000;
+
+    /// <summary>C1: a stand-in's walk pulse is asked once its body is bound, for at most this long after its spawn.</summary>
+    public const long StandInPulseWaitMs = 10_000;
+
     /// <summary>The name right after <paramref name="marker"/> (from <paramref name="from"/>) up to '/', ' ' or a quote; null when absent or empty.</summary>
     private static string? Segment(string line, string marker, int from)
     {

@@ -6191,6 +6191,7 @@ function KCD2MP_W131StandIn(name, x, y, z, rot, flags)
         pcall(function() e:SetWorldAngles({ x = 0, y = 0, z = tonumber(rot) or 0 }) end)
         mp_log(string.format("WO131-STANDIN spawn npc=%s soul=%s class=%s kind=%s at=(%.1f,%.1f,%.1f) -- the host spawned it, this world never did",
             name, string.sub(soul, 1, 8), tostring(cls), kind, x, y, z))
+        if KCD2MP_W167StandInSpawned then pcall(KCD2MP_W167StandInSpawned, name, e) end   -- WO-167 C1: its walk pulse once bound
         if deadOnHost and KCD2MP_W137DeadStandInSpawned then KCD2MP_W137DeadStandInSpawned(name, e, w.standins[name]) end
     else
         mp_log(string.format("WO131-STANDIN fail npc=%s soul=%s ok=%s err=%s", name, string.sub(soul, 1, 8), tostring(ok), tostring(err)))
@@ -7187,6 +7188,9 @@ function KCD2MP_W137Session(host, joiner, active)
         if KCD2MP.w167 then   -- WO-167: the switches the agent acts on
             KCD2MP_EmitEvent("w167_cfg", "scene_release=" .. (KCD2MP.w167.sceneRelease and "on" or "off"))
             KCD2MP_EmitEvent("w167_cfg", "talk_fallback=" .. (KCD2MP.w167.talkFallback and "on" or "off"))
+            KCD2MP_EmitEvent("w167_cfg", "copy_weapons=" .. (KCD2MP.w167.copyWeapons and "on" or "off"))
+            KCD2MP_EmitEvent("w167_cfg", "swing_watch=" .. (KCD2MP.w167.swingWatch and "on" or "off"))
+            KCD2MP_EmitEvent("w167_cfg", "sync_fallback=" .. (KCD2MP.w167.syncFallback and "on" or "off"))
         end
     end
     local wasHost, wasJoiner = w.host, w.joiner
@@ -9706,7 +9710,7 @@ function KCD2MP_NpcPuppetTick(arg, gen)
             -- WO-40 Phase 6: the authority's weapon state, applied on the
             -- transition (the same DrawWeapon/HolsterWeapon calls the ghost
             -- path live-verified in WO-39).
-            if (p.drawn or false) ~= (p.appliedDrawn or false) then
+            if (p.drawn or false) ~= (p.appliedDrawn or false) and not (KCD2MP_W167WeaponHeld and KCD2MP_W167WeaponHeld(name, now)) then
                 p.appliedDrawn = p.drawn or false
                 if e.human then
                     if p.drawn then mp_npc_draw(name, e)
@@ -9816,7 +9820,10 @@ function KCD2MP_NpcPuppetTick(arg, gen)
             -- WO-164 D1: at most one re-assert per 2 s, none while the host's NPC flees, 20 s of rest after 3 in 10 s (the field: 118
             -- re-asserts and 260 weapon-collision re-creations on two fleeing bandits before the joiner's game died)
             local fleeHold = KCD2MP_W164ReassertBlocked and KCD2MP_W164ReassertBlocked(name, now, p.drawn == true)
-            if e.human and not inFight and not fleeHold and (now - (p.drawnCheckAt or 0)) >= 2.0 then
+            -- WO-167 C2 (mp_copy_weapons): no re-assert at all -- the host's state is set once and held (the field's 13 "re-asserted
+            -- sheathed" on one stand-in were this check fighting a copy whose own IsWeaponDrawn lies)
+            local w167hold = KCD2MP.w167 and KCD2MP.w167.copyWeapons
+            if e.human and not inFight and not fleeHold and not w167hold and (now - (p.drawnCheckAt or 0)) >= 2.0 then
                 p.drawnCheckAt = now
                 local actual = nil
                 pcall(function() actual = e.human:IsWeaponDrawn() == true end)
@@ -21848,12 +21855,106 @@ function KCD2MP_W167SetSceneRelease(arg)
     return true
 end
 
+-- ---- C1 / C2: stand-ins and the weapon a copy holds (Phase 2) ----------------------------------------------------------
+--   C1 a stand-in body (KCD2MP_W131StandIn) is told to the agent, which asks the DLL for the WO-155 walk pulse once it is bound (a fresh
+--      spawn bound at once stands in a T-pose until something moves it -- the field's bandit)
+--   C2 mp_copy_weapons (default ON): the weapon a copy holds is the host NPC's -- its hand rows' weapon class (owned here, else created
+--      in the copy's inventory) drawn from the inventory, and nothing in its hand holstered; once per change, then held. The 2 s
+--      re-assert against the copy's own IsWeaponDrawn (which lies on an unarmed body, WO-160) is gone: the field's 13 "re-asserted
+--      sheathed" on one stand-in were that fight. A host row's own weapon tag (r_noweapon or a weapon) decides armed / unarmed when the
+--      hand rows have not said.
+--   WO167-WEAPON npc=<n> hand=<class8|?|-> ...   (the agent: WO167-PULSE, WO167-SHOWN, WO167-SYNCFALLBACK, WO167-SYNCGUARD)
+KCD2MP.w167.copyWeapons = KCD2MP.w167.copyWeapons ~= false    -- mp_copy_weapons (C2)
+KCD2MP.w167.swingWatch = KCD2MP.w167.swingWatch ~= false      -- mp_swing_watch (C3; the agent and the DLL act on it)
+KCD2MP.w167.syncFallback = KCD2MP.w167.syncFallback ~= false  -- mp_sync_fallback (C4; the agent acts on it)
+KCD2MP.w167.combat = KCD2MP.w167.combat or { weap = {}, stats = { standins = 0, weapon = 0, drawn = 0, holstered = 0, created = 0, held = 0 } }
+KCD2MP.w167.WEAPON_HOLD_S = 15.0
+
+function KCD2MP_W167StandInSpawned(name, e)
+    local C = KCD2MP.w167.combat
+    C.stats.standins = C.stats.standins + 1
+    C.weap[tostring(name)] = nil
+    KCD2MP_EmitEvent("w167_standin", tostring(name))
+end
+
+-- C2: the host's NPC holds `cls` (an item class; "?" = a weapon whose class is not known here; "-" = nothing in its hand).
+function KCD2MP_W167Weapon(name, cls, why)
+    local W = KCD2MP.w167
+    if not W.copyWeapons then return false end
+    name, cls = tostring(name or ""), tostring(cls or "?")
+    local e, p = nil, KCD2MP.npcPuppets[name]
+    pcall(function() e = System.GetEntityByName(name) end)
+    if not (e and p) or p.dead or p.ko then return false end
+    local C = W.combat
+    local st = C.weap[name] or {}
+    C.weap[name] = st
+    local now = os.clock()
+    st.at = now   -- the hand is C2's now: the stream's drawn flag and the old re-assert leave this copy alone for a while
+    if cls == "-" then
+        if st.drawn == false then return true end
+        st.drawn = false   -- the class it held is kept: its next draw is the same weapon
+        if e.human and type(e.human.HolsterWeapon) == "function" then pcall(function() e.human:HolsterWeapon() end) end
+        p.appliedDrawn = false
+        C.stats.holstered = C.stats.holstered + 1
+        mp_log(string.format("WO167-WEAPON npc=%s hand=- -> holstered why=%s -- the host's NPC holds nothing", name, tostring(why)))
+        return true
+    end
+    local want = (cls ~= "?") and cls or st.cls
+    if st.drawn == true and (cls == "?" or st.cls == cls) then return true end   -- held already: never asserted again
+    local item, owned = nil, "unknown"
+    if want and want ~= "?" and want ~= "-" and e.inventory and type(e.inventory.FindItem) == "function" then
+        pcall(function() item = e.inventory:FindItem(want) end)
+        owned = item and "yes" or "no"
+        if not item and type(e.inventory.CreateItem) == "function" then
+            pcall(function() e.inventory:CreateItem(want, 1, 1) end)
+            pcall(function() item = e.inventory:FindItem(want) end)
+            if item then owned = "created"; C.stats.created = C.stats.created + 1 end
+        end
+    end
+    local how = "own"
+    if item and e.human and type(e.human.DrawFromInventory) == "function" then
+        if pcall(function() e.human:DrawFromInventory(item, 0, true) end) then how = "this-class" end
+    end
+    if how == "own" then mp_npc_draw(name, e) end
+    st.drawn = true
+    if want and want ~= "?" then st.cls = want end
+    p.appliedDrawn = true
+    C.stats.drawn = C.stats.drawn + 1
+    mp_log(string.format("WO167-WEAPON npc=%s hand=%s owned=%s drawn=%s why=%s -- the host's NPC holds a weapon: this copy holds it too, once",
+        name, (want and want ~= "?") and string.sub(want, 1, 8) or "?", owned, how, tostring(why)))
+    return true
+end
+
+-- The puppet tick: true = C2 holds this copy's weapon now (no drawn-flag transition, no re-assert).
+function KCD2MP_W167WeaponHeld(name, now)
+    local W = KCD2MP.w167
+    if not W.copyWeapons then return false end
+    local st = W.combat.weap[name]
+    if st == nil or (now - (st.at or -1e9)) >= W.WEAPON_HOLD_S then return false end
+    W.combat.stats.held = W.combat.stats.held + 1
+    return true
+end
+
+function KCD2MP.w167.switch(key, field, arg, what)   -- (a table field, not a main-chunk local: the WO-110 budget)
+    local v = KCD2MP_Wo122ParseBool(arg)
+    if v == "bad" then mp_log("mp_" .. key .. ": expected on|off"); return false end
+    if v ~= nil then KCD2MP.w167[field] = v end
+    KCD2MP_EmitEvent("w167_cfg", key .. "=" .. (KCD2MP.w167[field] and "on" or "off"))
+    mp_log(string.format("WO167-TOGGLE mp_%s %s -- %s", key, KCD2MP.w167[field] and "on" or "off", what))
+    return true
+end
+function KCD2MP_W167SetCopyWeapons(arg) return KCD2MP.w167.switch("copy_weapons", "copyWeapons", arg, "an enemy on your screen holds the weapon the host's enemy holds (drawn, sheathed or none), set once and held") end
+function KCD2MP_W167SetSwingWatch(arg) return KCD2MP.w167.switch("swing_watch", "swingWatch", arg, "an enemy's swing counts as shown only when it really animated; otherwise the lunge plays before its blow") end
+function KCD2MP_W167SetSyncFallback(arg) return KCD2MP.w167.switch("sync_fallback", "syncFallback", arg, "a paired attack (a clinch, a throw) an enemy cannot play here is shown as its plain attack") end
+
 function KCD2MP_W167Status()
     local W = KCD2MP.w167
-    local T, S = W.talk.stats, W.scene.stats
-    mp_log(string.format("WO167-STATUS talk fallback=%s fallback_off=%d restarts=%d retry_held=%d nohook=%d host_released=%d combat_ended=%d fresh=%d bumps=%d bumps_figure=%d | scene release=%s releases=%d stood=%d faders=%d restores=%d",
+    local T, S, C = W.talk.stats, W.scene.stats, W.combat.stats
+    mp_log(string.format("WO167-STATUS talk fallback=%s fallback_off=%d restarts=%d retry_held=%d nohook=%d host_released=%d combat_ended=%d fresh=%d bumps=%d bumps_figure=%d | scene release=%s releases=%d stood=%d faders=%d restores=%d | combat copy_weapons=%s swing_watch=%s sync_fallback=%s standins=%d drawn=%d holstered=%d created=%d held=%d",
         W.talkFallback and "on" or "off", T.fallbackOff, T.restarts, T.retryHeld, T.nohook, T.released, T.ended, T.fresh, T.bumps, T.bumpsFigure,
-        W.sceneRelease and "on" or "off", S.releases, S.stood, S.faders, S.restores))
+        W.sceneRelease and "on" or "off", S.releases, S.stood, S.faders, S.restores,
+        W.copyWeapons and "on" or "off", W.swingWatch and "on" or "off", W.syncFallback and "on" or "off",
+        C.standins, C.drawn, C.holstered, C.created, C.held))
 end
 
 local W164_RE_PATTERNS ={ "dummyWanderer", "karavany", "Caravan", "pocestny", "prepadeni", "rvacka", "taboryUCesty", "SpawnedAnimal" }
@@ -25220,6 +25321,9 @@ local ok, err = pcall(function()
     System.AddCCommand("mp_talk_fallback", 'KCD2MP_W167SetTalkFallback(%line)', "WO-167: (joiner) a talk request no talk action made goes to the nearest host copy (default off: in the field it never started a conversation and got in the way of real ones): mp_talk_fallback on|off")
     System.AddCCommand("mp_scene_release", 'KCD2MP_W167SetSceneRelease(%line)', "WO-167: (joiner) a conversation's scene still running 20 s after the conversation (a black screen) is ended the game's own way, the screen back and you on your feet (default on): mp_scene_release on|off")
     System.AddCCommand("mp_w167_status", 'KCD2MP_W167Status()', "WO-167: talk, scene, fast-travel and combat counters of this build")
+    System.AddCCommand("mp_copy_weapons", 'KCD2MP_W167SetCopyWeapons(%line)', "WO-167: (joiner) an enemy on your screen holds the weapon the host's enemy holds -- drawn, sheathed or none -- set once and held, never fought over (default on): mp_copy_weapons on|off")
+    System.AddCCommand("mp_swing_watch", 'KCD2MP_W167SetSwingWatch(%line)', "WO-167: (joiner) an enemy's swing counts as shown only when it really animated on your screen; otherwise a lunge plays before its blow (default on): mp_swing_watch on|off")
+    System.AddCCommand("mp_sync_fallback", 'KCD2MP_W167SetSyncFallback(%line)', "WO-167: (joiner) a paired attack (a clinch, a throw) an enemy cannot play on your screen is shown as its plain attack (default on): mp_sync_fallback on|off")
     System.AddCCommand("mp_hostile_crime", 'KCD2MP_W163SetHostileCrime(%line)', "WO-163: (host) an assault is no crime when the engine says the victim is in a skirmish fight with the host, asked 5 s after the blow (default on): mp_hostile_crime on|off")
     System.AddCCommand("mp_fair_crime", 'KCD2MP_W154SetFairCrime(%line)', "WO-154: (host) a partner's murder only on the victim's death, and an assault judged 5 s later -- no crime if the victim fights by then, a quest brawl (default on): mp_fair_crime on|off")
     System.AddCCommand("mp_scene_resume", 'KCD2MP_W154SetSceneResume(%line)', "WO-154: (joiner) a scene stuck at its end resumes the host's copies, as in 0.44.0 (default off: no copy is resumed; the engine's own rescue, a save request, runs at once): mp_scene_resume on|off")

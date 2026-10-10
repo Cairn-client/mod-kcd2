@@ -25,6 +25,7 @@
 
 #include "anchors.h"
 #include "wo166.h"
+#include "wo167_rules.h"
 #include "buffs.h"
 #include "engine.h"
 #include "gait_logic.h"
@@ -252,8 +253,11 @@ struct Body {
     uint8_t quietApplied = 0;     // WO-135: the kQuiet* groups set on its soul
     double attachAt = -1;         // WO-155: when this body was first driven (a fresh spawn, a re-bind after a fall)
     bool nudged = false;          // WO-155: its locomotion graph has been started (a walk-class pulse, or it walked)
+    bool fresh = false;           // WO-167 C1: a fresh spawn (a stand-in for a host spawn): the avatar's walk pulse too
 };
 std::unordered_map<uint32_t, Body> g_bodies;
+std::unordered_map<uint32_t, double> g_freshPending;   // WO-167 C1: a fresh-spawn mark that came before its body was bound (main thread)
+std::atomic<uint32_t> c_freshPulses{0};
 constexpr double kNudgeAfterS = 0.1, kNudgeS = 0.6;
 constexpr float kNudgeMps = 0.3f;   // WO-155: the T-pose pulse (body_frame)
 
@@ -1335,6 +1339,17 @@ uint8_t on_config(const uint8_t* body, size_t len) {
     return 0;
 }
 
+// WO-167 C1: a fresh spawn (the agent's avatar event kind 3, a stand-in body): the walk pulse an avatar gets, now or at its bind.
+void mark_fresh(uint32_t eid) {
+    auto it = g_bodies.find(eid);
+    if (it == g_bodies.end()) { g_freshPending[eid] = npcdrive::now_s(); return; }
+    Body& b = it->second;
+    b.fresh = true;
+    b.nudged = false;
+    b.attachAt = npcdrive::now_s() - kNudgeAfterS;
+    logf("WO167-PULSE body=%s: a fresh spawn -- the WO-155 walk-class pulse starts its locomotion graph (bound already)", b.key.c_str());
+}
+
 void rearm_nudge(uint32_t eid, const char* why) {
     auto it = g_bodies.find(eid);
     if (it == g_bodies.end() || !it->second.avatar) return;
@@ -1362,6 +1377,13 @@ void body_frame(const char* key, void* ent, uint32_t eid, float renderSpeedMps, 
         b = Body{};
         b.eid = eid; b.ent = ent; b.key = key; b.avatar = is_avatar_key(key);
         b.attachAt = now;
+        if (auto fp = g_freshPending.find(eid); fp != g_freshPending.end()) {   // WO-167 C1: marked before its bind
+            if (now - fp->second <= wo167rules::kFreshPendingS) {
+                b.fresh = true;
+                logf("WO167-PULSE body=%s: a fresh spawn bound -- it gets the WO-155 walk-class pulse", key);
+            }
+            g_freshPending.erase(fp);
+        }
         b.actor = actor_by_eid(eid);
         if (b.actor && b.avatar) b.ca = combat_actor_of(b.actor, true);
         if (b.actor) b.exp = expansion_of(b.actor);
@@ -1405,11 +1427,14 @@ void body_frame(const char* key, void* ent, uint32_t eid, float renderSpeedMps, 
         // never does. A walk-class pulse of 0.6 s at 0.3 m/s, 0.1 s after the bind, starts it (live: the same pulse from a
         // partner's 0.6 s step cleared the pose at once and the idle that followed was normal). Only an avatar that is
         // still, once per bind; a partner already walking never needs it.
-        if (b.avatar && !b.nudged) {
+        if (wo167rules::wants_pulse(b.avatar, b.fresh, b.nudged)) {   // WO-167 C1: a fresh spawn as well as an avatar
             const double age = now - b.attachAt;
             if (cls >= 1.0f) b.nudged = true;
             else if (age >= kNudgeAfterS && age < kNudgeAfterS + kNudgeS) {
-                if (b.cls < 1.0f) logf("WO155-NUDGE body=%s: a %.2f s walk-class pulse starts its locomotion graph (a freshly bound avatar stands in a T-pose until then)", b.key.c_str(), kNudgeS);
+                if (b.cls < 1.0f) {
+                    logf("WO155-NUDGE body=%s: a %.2f s walk-class pulse starts its locomotion graph (a freshly bound %s stands in a T-pose until then)", b.key.c_str(), kNudgeS, b.avatar ? "avatar" : "stand-in");
+                    if (!b.avatar) c_freshPulses.fetch_add(1);
+                }
                 cls = gait::clamp_class(1.0f, range);
                 // along the body's own facing: the direction tag reads a velocity, and none reads as no gait at all
                 const float yaw = kcdmp::npcdrive::entity_yaw(b.ent);
@@ -1568,6 +1593,7 @@ void tick() {
     { std::lock_guard<std::mutex> lock(g_evMutex); evs.swap(g_events); }
     for (const auto& e : evs) {
         if (e.kind == 2) { rearm_nudge(e.eid, "a loop was stopped (the agent)"); continue; }   // WO-160
+        if (e.kind == 3) { mark_fresh(e.eid); continue; }   // WO-167 C1: a fresh spawn (a stand-in)
         if (e.kind != 1) continue;
         if (!g_moves || !g_cfgMoves) continue;
         auto it = g_bodies.find(e.eid);
@@ -1581,6 +1607,11 @@ void tick() {
         }
         (ok ? c_jumps : c_jumpFail).fetch_add(1);
         logf("WO121-MOTION eid=0x%X jump -> %s", e.eid, ok ? "accepted" : "refused");
+    }
+    if (!g_freshPending.empty()) {   // WO-167 C1: a mark whose body never came
+        const double now = npcdrive::now_s();
+        for (auto it = g_freshPending.begin(); it != g_freshPending.end();)
+            it = (now - it->second > wo167rules::kFreshPendingS) ? g_freshPending.erase(it) : std::next(it);
     }
     std::vector<Captured> caps;
     { std::lock_guard<std::mutex> lock(g_capMutex); caps.swap(g_captured); }
@@ -1614,7 +1645,7 @@ int status_text_motion(char* out, int n) {
         "cap_dropped=%u buff_adds=%u ctx_set=%u ctx_fail=%u faults=%u tags=%s tags_applied=%u gait_slots=%d "
         "cap_drop_notca=%u cap_drop_nodesc=%u cap_drop_noguid=%u cap_drop_noowner=%u cap_via_base8=%u cap_ours=%u "
         "engaged=%zu engage_holds=%u engage_releases=%u cap_crouch=%u cap_stance=%u crouch_query=%s crouch_fail=%u quiet=0x%X quiet_set=%u quiet_fail=%u "
-        "cap_hit=%u cap_sync=%u cap_drop_rowtype=%u",
+        "cap_hit=%u cap_sync=%u cap_drop_rowtype=%u fresh_pulses=%u fresh_pending=%zu",
         g_gait ? "armed" : "off", g_moves ? "armed" : "off", g_combat ? "armed" : "off", g_capture ? "armed" : "off",
         g_cfgAvatarGait.load(), g_cfgNpcGait.load(), g_cfgMoves.load(), g_cfgCombat.load(), g_cfgNpcRows.load(), g_bodies.size(),
         c_gaitWrites.load(), c_crouch.load(), c_jumps.load(), c_jumpFail.load(), c_combatStarts.load(), c_autoOff.load(),
@@ -1625,7 +1656,7 @@ int status_text_motion(char* out, int n) {
         g_engage.size(), c_engageHolds.load(), c_engageReleases.load(),
         c_capCrouch.load(), c_capStance.load(), g_isCrouchedState == 1 ? "armed" : g_isCrouchedState < 0 ? "refused" : "unread",
         c_crouchApplyFail.load(), g_cfgQuiet.load(), c_quietSet.load(), c_quietFail.load(),
-        c_capHit.load(), c_capSync.load(), c_dropRowType.load());
+        c_capHit.load(), c_capSync.load(), c_dropRowType.load(), c_freshPulses.load(), g_freshPending.size());
 }
 
 // WO-135 test verb: the player's own crouch setter -- the function the crouch
