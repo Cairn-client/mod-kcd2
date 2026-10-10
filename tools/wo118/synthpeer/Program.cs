@@ -68,6 +68,7 @@ static class P
         public ushort Seq;
         public double LastSent = -1e9, LastSentX, LastSentY, LastSentZ;
         public bool SentDead; public float SentHp = 100f;   // WO-131
+        public double T0 = double.NegativeInfinity, T1 = double.PositiveInfinity;   // WO-167: `window` -- streamed only inside [T0, T1)
         public abstract (float x, float y, float z, float yaw) At(double t);
     }
     sealed class Line : Mover
@@ -236,7 +237,10 @@ static class P
         // WO-164: `act <t> <npc|-player> <stance> <stanceObjHex|0> <unstanceId|-> <unstObjHex|0> [night]` (a host activity row),
         // `w164 <t> <kind> <text...>` (a W164 message), `qcp <t> <value> <path>` (a host quest checkpoint of one State)
         // WO-167: `w164h <t> <kind> <text...>` -- a W164 message to the host (this peer as a joiner: the target 0xFF);
-        //         `qconv <t> on|off <npc>` -- the host's conversation with an NPC (QuestHostConverse, WO-160)
+        //         `qconv <t> on|off <npc>` -- the host's conversation with an NPC (QuestHostConverse, WO-160);
+        //         `hands <t> <npc> <left|-> <right|->` -- the host NPC's hand rows (WO-143 ExtraKindHands: item classes);
+        //         `qmode <t> on|off` -- the host's quest-sync mode (QuestHostMode, WO-137), as a real host announces it;
+        //         `window <npc> <t0> <t1>` -- a mover declared earlier is streamed only between t0 and t1 (a spawn that appears, then leaves)
         var joinMsgs = new List<(double T, byte[] Pkt, string Note)>();
         uint joinTok = 0;
         var ncombats = new List<NCombat>();   // WO-132
@@ -360,6 +364,21 @@ static class P
                                   new LootMsg(byte.Parse(f[2], CultureInfo.InvariantCulture), ++joinTok, string.Join(' ', f.Skip(3))).BuildUp(Protocol.W164Up, 1),
                                   $"W164 kind={f[2]} {string.Join(' ', f.Skip(3))}"));
                     break;
+                case "window":   // WO-167: a mover streamed only inside [t0, t1)
+                    foreach (var mw in movers.Where(mv => mv.Name == f[1])) { mw.T0 = double.Parse(f[2], CultureInfo.InvariantCulture); mw.T1 = double.Parse(f[3], CultureInfo.InvariantCulture); }
+                    break;
+                case "qmode":   // WO-167: the host's quest-sync mode (a real host announces it at once)
+                    joinMsgs.Add((double.Parse(f[1], CultureInfo.InvariantCulture),
+                                  new LootMsg(Protocol.QuestHostMode, ++joinTok, $"{f[2]} synthetic-host").BuildUp(Protocol.QuestHostUp, 1),
+                                  $"QMODE {f[2]}"));
+                    break;
+                case "hands":   // WO-167 C2: the host NPC's hands (the item classes it holds)
+                {
+                    var er = new ExtraRow { Name = f[2], Left = f[3] == "-" ? new byte[16] : ExtraRow.ClassBytes(f[3]), Right = f[4] == "-" ? new byte[16] : ExtraRow.ClassBytes(f[4]) };
+                    joinMsgs.Add((double.Parse(f[1], CultureInfo.InvariantCulture), ExtraCodec.BuildUp(1, Protocol.ExtraKindHands, new List<ExtraRow> { er }),
+                                  $"HANDS {f[2]} left={f[3]} right={f[4]}"));
+                    break;
+                }
                 case "qconv":   // WO-167 T2: the host talks to an NPC / is done with it
                     joinMsgs.Add((double.Parse(f[1], CultureInfo.InvariantCulture),
                                   new LootMsg(Protocol.QuestHostConverse, ++joinTok, $"{f[2]} {f[3]}").BuildUp(Protocol.QuestHostUp, 1),
@@ -512,6 +531,7 @@ static class P
                 }
                 foreach (var m in movers)
                 {
+                    if (t < m.T0 || t >= m.T1) continue;   // WO-167: outside its window this NPC is not streamed (it appears / leaves)
                     if (now - m.LastSent < emitMs) continue;
                     var (x, y, z, yaw) = m.At(t);
                     if (tports.TryGetValue(m.Name, out var mtp)) { var (odx, ody) = Wo165Verbs.Offset(mtp, t); x += odx; y += ody; }

@@ -5606,6 +5606,15 @@ end
 -- previous value given back when it leaves. The agent re-asserts every 5 s.
 function KCD2MP_Wo114FastTravelBlock(on, why)
     local w = KCD2MP.w114
+    -- WO-167 FT1: in the host's world the block is ARMED, and the engine's switch is held at 0 only while this player picks on the
+    -- travel map (KCD2MP_W167FtMapWindow, 30 s after a highlighted point, the double click or the travel question): at 0 the engine
+    -- also refuses a quest's own forced travel and parks the game on its open map (live, WO-167). The pick itself is asked of the host
+    -- (WO-167 FT2); outside a pick the switch is this player's own, and the draw loop gives it back when the pick window ends.
+    if on ~= nil then w.ftArmed = (on == true) end
+    if on and KCD2MP_W167FtMapWindow and not KCD2MP_W167FtMapWindow() then
+        if w.ftBlocked then why = tostring(why) .. "; armed only -- held while picking on the travel map" end
+        on = false
+    end
     local cur = nil
     pcall(function() cur = tonumber(System.GetCVar("wh_pl_FastTravelEnabled")) end)
     w.ftCvarOk = cur ~= nil
@@ -7200,6 +7209,9 @@ function KCD2MP_W137Session(host, joiner, active)
             KCD2MP_EmitEvent("w167_cfg", "copy_weapons=" .. (KCD2MP.w167.copyWeapons and "on" or "off"))
             KCD2MP_EmitEvent("w167_cfg", "swing_watch=" .. (KCD2MP.w167.swingWatch and "on" or "off"))
             KCD2MP_EmitEvent("w167_cfg", "sync_fallback=" .. (KCD2MP.w167.syncFallback and "on" or "off"))
+            -- C2: what a copy held under the last session means nothing now (live, WO-167's soak: two copies kept a "drawn" mark from
+            -- an earlier session, their hand rows were taken as "held already" and they never held the host's weapon)
+            if KCD2MP.w167.combat then KCD2MP.w167.combat.weap = {} end
         end
     end
     local wasHost, wasJoiner = w.host, w.joiner
@@ -21930,6 +21942,9 @@ function KCD2MP_W167Weapon(name, cls, why)
     if not (e and p) or p.dead or p.ko then return false end
     local C = W.combat
     local st = C.weap[name] or {}
+    -- a new body under this name (re-spawned, re-streamed) or a new puppet record: what the old one held means nothing for it
+    if (st.eid ~= nil and st.eid ~= e.id) or (st.p ~= nil and st.p ~= p) then st = {} end
+    st.eid, st.p = e.id, p
     C.weap[name] = st
     local now = os.clock()
     st.at = now   -- the hand is C2's now: the stream's drawn flag and the old re-assert leave this copy alone for a while
@@ -22027,6 +22042,7 @@ function KCD2MP.w167.OnFtHighlight(self, el, inst, ev, args)
     local id = KCD2MP.w167.ftArg(args)
     if id ~= nil and tostring(id) ~= "" then F.hiId, F.hiAt = tostring(id), os.clock() end
     if KCD2MP_W154FastTravelApply then KCD2MP.w167.try("ft-apply", "shared-travel", KCD2MP_W154FastTravelApply, "map") end   -- the session's off-hold engages before any pick
+    if KCD2MP.w114 and KCD2MP.w114.ftArmed then KCD2MP.w167.try("ft-hold", "shared-travel", KCD2MP_Wo114FastTravelBlock, true, "picking on the travel map") end
 end
 
 function KCD2MP.w167.OnFtPick(self, el, inst, ev, args)
@@ -22036,6 +22052,7 @@ function KCD2MP.w167.OnFtPick(self, el, inst, ev, args)
     local id = KCD2MP.w167.ftArg(args)
     if (id == nil or tostring(id) == "") and (now - F.hiAt) < 30 then id = F.hiId end   -- the travel question names nothing: the point highlighted
     if KCD2MP_W154FastTravelApply then KCD2MP.w167.try("ft-apply", "shared-travel", KCD2MP_W154FastTravelApply, "map") end
+    if KCD2MP.w114 and KCD2MP.w114.ftArmed then KCD2MP.w167.try("ft-hold", "shared-travel", KCD2MP_Wo114FastTravelBlock, true, "picking on the travel map") end
     KCD2MP_W167FtPicked(id, ev)
 end
 
@@ -24813,6 +24830,12 @@ do
             pcall(KCD2MP_ShowInteractionMsg, t)
         end
         if M.ftHeld and not M.fresh() then KCD2MP_W154FastTravelApply("the agent went silent") end
+        -- WO-167 FT1: WO-114's joiner hold lasts only while this player picks on the travel map -- given back here when the pick window
+        -- ended, even with no agent left to say so (a dead agent used to leave the switch at 0 until the game restarted)
+        local w114 = KCD2MP.w114
+        if w114 and w114.ftBlocked and KCD2MP_W167FtMapWindow and not KCD2MP_W167FtMapWindow() then
+            KCD2MP_Wo114FastTravelBlock(w114.ftArmed == true, "the pick window ended")
+        end
     end
 end
 

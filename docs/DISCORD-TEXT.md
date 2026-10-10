@@ -25,6 +25,18 @@ How to play together (0.48.2):
 Nobody clicks CONNECT any more, and you don't need anyone's save file. First time ever starting the game? Start it once from Steam and accept its two first-run pages, then use the launcher.
 ```
 
+## Version 0.48.5 — talking and trading, the stuck scene, ambush bandits, shared fast travel (WO-167)
+
+```
+Kingdom Come: Together 0.48.5 — fixes from the last session.
+• Talking (joiner): the mod no longer sends its own talk request right after a conversation, or to the person you just talked to. That old fallback is now off by default (mp_talk_fallback, off). Someone the host just traded or talked with is ready for your talk again straight away.
+• The stuck conversation scene (the black screen after "Find a Lute"): if a conversation's scene is still running 20 seconds after the conversation ended, it is ended the game's own way, the screen comes back, you are put on your feet and told why (mp_scene_release, on).
+• Fighting (joiner): bandits that appear in a road ambush no longer stand in a T-pose. Every enemy holds the weapon the host's enemy holds — drawn, put away or none — instead of fighting over it. A swing only counts as shown when it really animated on your screen; otherwise a lunge plays before the hit. A clinch or throw an enemy can't play on your screen is shown as its plain attack.
+• Fast travel is ON by default and shared: one travel for both, no vote. When the host travels, the joiner's game travels to the same place too (the travel map and route on both screens) and you arrive together, with the same time on both clocks. When the joiner picks a place, the host's game travels there for both — or you read "Your partner can't travel right now." A quest that forces a travel is never blocked. The host can still turn fast travel off in the mod menu (Insert).
+Still off: mp_victim_decides (your own game judging an enemy's blow) and mp_talk_fallback.
+None of this has been played by two people yet. If something looks wrong, turn the new switch off in the console (mp_scene_release off / mp_copy_weapons off / mp_swing_watch off / mp_sync_fallback off) and press "Something's wrong here". Both players and the relay need 0.48.5.
+```
+
 ## Version 0.48.2 — the loot crash, talking, enemies that fight the joiner, weather (WO-166)
 
 ```

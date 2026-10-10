@@ -233,6 +233,14 @@ public class Wo167Tests
     }
 
     [Fact]
+    public void A_verdict_waits_for_the_swing_watch_but_never_a_second()
+    {
+        // live (WO-167's soak): verdicts came 220 ms after their swing, before the watch's ~600 ms answer -- the wait must cover its last look
+        Assert.True(Wo167Rules.WatchVerdictCapMs >= Wo167Rules.ShownSecondLookMs + 250);
+        Assert.True(Wo167Rules.WatchVerdictCapMs < 1000);
+    }
+
+    [Fact]
     public void A_fault_names_the_feature_it_switched_off()
     {
         string[] features = ["shared-travel", "scene-release", "swing-watch", "stand-in-pulse", "talk-clear", "talk-readiness"];

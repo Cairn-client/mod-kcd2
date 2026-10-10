@@ -472,7 +472,7 @@ public partial class GameBridge
         bool was = _leashFtBlocked;
         _leashFtBlocked = block;
         if (was != block)
-            Console.WriteLine($"MP-LEASH joiner: fast travel {(block ? "switched OFF" : "given back")} ({why})");
+            Console.WriteLine($"MP-LEASH joiner: fast travel {(block ? "ARMED off -- the engine's switch is held only while this player picks on the travel map (a quest's own travel is never refused; WO-167)" : "given back")} ({why})");
         try { await ExecLuaAsync($"if KCD2MP_Wo114FastTravelBlock then KCD2MP_Wo114FastTravelBlock({(block ? "true" : "false")}, \"{EscapeLua(why)}\") end"); }
         catch { }
     }

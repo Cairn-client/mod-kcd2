@@ -119,6 +119,13 @@ public static class Wo167Rules
     /// <summary>C3: the reason a verdict's row did not show: the copy never animated it (the lunge plays instead).</summary>
     public const string ReasonNoAnim = "no-anim";
 
+    /// <summary>
+    /// C3: a verdict for a swing whose watch has not decided waits at most until this long after the swing was played -- the watch's last
+    /// look (ShownFirstLookMs, ShownSecondLookMs, +250 ms) plus the pipe's answer. Live (WO-167's soak): every verdict came 220 ms after its
+    /// swing, before the watch decided, so a swing that never animated was still judged shown and no lunge played.
+    /// </summary>
+    public const long WatchVerdictCapMs = 750;
+
     public static string SeenName(byte s) => s switch
     {
         SeenNone => "none", SeenPending => "pending", SeenInstalled => "installed", SeenNoAnim => "no-anim", SeenOff => "off", _ => "?",

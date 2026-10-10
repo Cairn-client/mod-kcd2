@@ -270,10 +270,31 @@ public partial class GameBridge
         return row;
     }
 
+    // C3: the swing each copy played last whose watch has not decided yet -- a verdict for it waits for the answer (Wo161JudgeApplyAsync)
+    private readonly ConcurrentDictionary<string, (long At, TaskCompletionSource Done)> _w167Watching = new(StringComparer.Ordinal);
+    private long _w167VerdictWaits;
+
+    /// <summary>C3: a swing of <paramref name="npc"/>'s copy is still watched (played under WatchVerdictCapMs ago, not decided).</summary>
+    private bool W167WatchPending(string npc) =>
+        _w167SwingWatch && _w167Watching.TryGetValue(npc, out var w) && !w.Done.Task.IsCompleted
+        && Environment.TickCount64 - w.At < Wo167Rules.WatchVerdictCapMs;
+
+    /// <summary>C3: wait for the watch of <paramref name="npc"/>'s last swing (at most until WatchVerdictCapMs after it was played).</summary>
+    private async Task Wo167AwaitWatchAsync(string npc)
+    {
+        if (!_w167Watching.TryGetValue(npc, out var w) || w.Done.Task.IsCompleted) return;
+        long left = w.At + Wo167Rules.WatchVerdictCapMs - Environment.TickCount64;
+        if (left <= 0) return;
+        Interlocked.Increment(ref _w167VerdictWaits);
+        await Task.WhenAny(w.Done.Task, Task.Delay((int)left));
+    }
+
     /// <summary>C3: was the swing just queued on this copy animated? A row that never was is taken out of the played rows (the lunge plays).</summary>
     private async Task Wo167CheckShownAsync(string npc, uint eid, Guid rowGuid, long playedAt)
     {
         if (!_w167SwingWatch) return;
+        var watched = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _w167Watching[npc] = (playedAt, watched);
         try
         {
             await Task.Delay(Wo167Rules.ShownFirstLookMs);
@@ -290,6 +311,7 @@ public partial class GameBridge
                 Console.WriteLine($"WO167-SHOWN npc={npc} row={rowGuid} shown=no reason=no-anim wait_ms={s?.WaitMs} taken_out={(taken ? "yes" : "no")} -- the copy never animated this swing: its blow comes with the lunge [n={n}]");
         }
         catch (Exception ex) { Wo167Fault("c3-shown", "swing-watch", ex); }
+        finally { watched.TrySetResult(); }   // a verdict waiting for this swing goes on (shown, taken out, or not known)
     }
 
     /// <summary>C2: the host NPC's hand row (WO-143): the weapon class in its hand; in a fight the copy is told at once.</summary>
@@ -566,5 +588,5 @@ public partial class GameBridge
         $"faults={Interlocked.Read(ref _w167Faults)} off={(_w167OffFeatures.IsEmpty ? "-" : string.Join(',', _w167OffFeatures.Keys.OrderBy(k => k, StringComparer.Ordinal)))} "
         + $"scene_release={(_w167SceneRelease ? "on" : "off")} talk_fallback={(_w167TalkFallback ? "on" : "off")} scene_releases={Interlocked.Read(ref _w167SceneReleases)} ended={Interlocked.Read(ref _w167SceneEnded)} not_ended={Interlocked.Read(ref _w167SceneNotEnded)} fader_restores={Interlocked.Read(ref _w167FaderRestores)} bumps={Interlocked.Read(ref _w167Bumps)} clears={Interlocked.Read(ref _w167Clears)} bt_lines={Interlocked.Read(ref _w167BtLines)}"
         + " | " + Wo167FtStatsText()
-        + $" | copy_weapons={(_w167CopyWeapons ? "on" : "off")} swing_watch={(_w167SwingWatch ? "on" : "off")} sync_fallback={(_w167SyncFallback ? "on" : "off")} shown={Interlocked.Read(ref _w167Shown)} no_anim={Interlocked.Read(ref _w167NoAnim)} shown_unknown={Interlocked.Read(ref _w167ShownUnknown)} sync_fallbacks={Interlocked.Read(ref _w167SyncFallbacks)} sync_no_plain={Interlocked.Read(ref _w167SyncNoPlain)} syncguard_after_row={Interlocked.Read(ref _w167SyncGuardAfterRow)} syncguard_other={Interlocked.Read(ref _w167SyncGuardOther)} pulses={Interlocked.Read(ref _w167Pulses)} weapon_calls={Interlocked.Read(ref _w167WeaponCalls)}";
+        + $" | copy_weapons={(_w167CopyWeapons ? "on" : "off")} swing_watch={(_w167SwingWatch ? "on" : "off")} sync_fallback={(_w167SyncFallback ? "on" : "off")} shown={Interlocked.Read(ref _w167Shown)} no_anim={Interlocked.Read(ref _w167NoAnim)} verdict_waits={Interlocked.Read(ref _w167VerdictWaits)} shown_unknown={Interlocked.Read(ref _w167ShownUnknown)} sync_fallbacks={Interlocked.Read(ref _w167SyncFallbacks)} sync_no_plain={Interlocked.Read(ref _w167SyncNoPlain)} syncguard_after_row={Interlocked.Read(ref _w167SyncGuardAfterRow)} syncguard_other={Interlocked.Read(ref _w167SyncGuardOther)} pulses={Interlocked.Read(ref _w167Pulses)} weapon_calls={Interlocked.Read(ref _w167WeaponCalls)}";
 }
