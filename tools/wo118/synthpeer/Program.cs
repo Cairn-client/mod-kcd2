@@ -166,6 +166,13 @@ static class P
         return p;
     }
 
+    /// <summary>WO-167: a W164 message this peer received, as one line (null = not one).</summary>
+    static string? W164Note(byte[] payload)
+    {
+        if (!Protocol.TrySplitJoinDown(payload, out byte src, out _, out _, out var body) || !LootMsg.TryDecode(body, out var m)) return null;
+        return $"SYNTH got W164 from={src} kind={Protocol.W164KindName(m.Kind)} {m.Text}";
+    }
+
     static async Task<(byte, byte[])> ReadPacket(NetworkStream s, CancellationToken ct)
     {
         var h = new byte[3]; await ReadExact(s, h, ct);
@@ -228,6 +235,8 @@ static class P
         var raws = new List<(double T, byte Type, byte[] Body, int Stamp)>();   // WO-131
         // WO-164: `act <t> <npc|-player> <stance> <stanceObjHex|0> <unstanceId|-> <unstObjHex|0> [night]` (a host activity row),
         // `w164 <t> <kind> <text...>` (a W164 message), `qcp <t> <value> <path>` (a host quest checkpoint of one State)
+        // WO-167: `w164h <t> <kind> <text...>` -- a W164 message to the host (this peer as a joiner: the target 0xFF);
+        //         `qconv <t> on|off <npc>` -- the host's conversation with an NPC (QuestHostConverse, WO-160)
         var joinMsgs = new List<(double T, byte[] Pkt, string Note)>();
         uint joinTok = 0;
         var ncombats = new List<NCombat>();   // WO-132
@@ -351,6 +360,16 @@ static class P
                                   new LootMsg(byte.Parse(f[2], CultureInfo.InvariantCulture), ++joinTok, string.Join(' ', f.Skip(3))).BuildUp(Protocol.W164Up, 1),
                                   $"W164 kind={f[2]} {string.Join(' ', f.Skip(3))}"));
                     break;
+                case "qconv":   // WO-167 T2: the host talks to an NPC / is done with it
+                    joinMsgs.Add((double.Parse(f[1], CultureInfo.InvariantCulture),
+                                  new LootMsg(Protocol.QuestHostConverse, ++joinTok, $"{f[2]} {f[3]}").BuildUp(Protocol.QuestHostUp, 1),
+                                  $"QCONV {f[2]} {f[3]}"));
+                    break;
+                case "w164h":   // WO-167: a joiner's W164 message to the host
+                    joinMsgs.Add((double.Parse(f[1], CultureInfo.InvariantCulture),
+                                  new LootMsg(byte.Parse(f[2], CultureInfo.InvariantCulture), ++joinTok, string.Join(' ', f.Skip(3))).BuildUp(Protocol.W164Up, Protocol.JoinTargetHost),
+                                  $"W164->host kind={f[2]} {string.Join(' ', f.Skip(3))}"));
+                    break;
                 case "qcp":
                     joinMsgs.Add((double.Parse(f[1], CultureInfo.InvariantCulture),
                                   new LootMsg(Protocol.QuestHostCheckpoint, ++joinTok, $"1 1 {f[2]}:-:{f[3]}").BuildUp(Protocol.QuestHostUp, 1),
@@ -396,6 +415,8 @@ static class P
                     }
                     else if (rt == Protocol.CombatRole && rb2.Length == 1)
                         Console.WriteLine($"SYNTH role={(rb2[0] == 1 ? "authority (host)" : "not the authority (joiner)")}");
+                    else if (rt == Protocol.W164Down && W164Note(rb2) is string w164Note)
+                        Console.WriteLine(w164Note);   // WO-167
                 }
             }
             catch { }

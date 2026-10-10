@@ -74,6 +74,16 @@ public partial class GameBridge
             case "w167_clear":   // <npc>: T2 -- the host used this copy and it showed a combat state here: the WO-132 engagement lets go
                 if (f.Length >= 1 && Wo137Text.IsNpc(f[0])) _ = Wo167ClearAsync(f[0]);
                 return;
+            case "w167_fault":     // <feature> <site>: the mod's half of a feature faulted -- this half goes off too (the mod said it on screen)
+                if (f.Length >= 1 && f[0].Length is > 0 and <= 24 && f[0].All(c => c is >= 'a' and <= 'z' or '-'))
+                {
+                    long nf = Interlocked.Increment(ref _w167Faults);
+                    _w167OffFeatures.TryAdd(f[0], 0);
+                    if (f[0] == "scene-release") _w167SceneRelease = false;
+                    if (f[0] == "copy-weapons") _w167CopyWeapons = false;
+                    Console.WriteLine($"WO167-FAULT site=mod:{(f.Length > 1 ? f[1] : "?")} feature={f[0]} -- the mod's half faulted: {f[0]} is off for this session here too [faults={nf}]");
+                }
+                return;
             case "w167_ftpick":    // <dest> <how>: FT2 -- a pick on this player's travel map
                 Wo167OnFtPick(arg);
                 return;
@@ -86,8 +96,13 @@ public partial class GameBridge
     private async Task Wo167ClearAsync(string npc)
     {
         Interlocked.Increment(ref _w167Clears);
-        bool engaged = _w132Engaged.TryRemove(npc, out var eg);
-        if (engaged) { try { await _combat.Wo132EngageAsync(false, eg.Eid, default); } catch { } }
+        bool engaged = false;
+        if (!W167Off("talk-clear") && _w132Engaged.TryRemove(npc, out var eg))
+        {
+            engaged = true;
+            try { await _combat.Wo132EngageAsync(false, eg.Eid, default); }
+            catch (Exception ex) { Wo167Fault("t2-clear", "talk-clear", ex); }
+        }
         Console.WriteLine($"WO167-T2 clear npc={npc} engagement={(engaged ? "released" : "none")} -- the host's conversation with it is over and its copy showed a combat state here");
     }
 
@@ -120,7 +135,7 @@ public partial class GameBridge
             return;
         }
         if (Wo167Rules.FaderTook(line) is double secs) Wo167OnSceneStage("FaderDone", "", secs.ToString("F2", CultureInfo.InvariantCulture));
-        if (line.StartsWith(Wo167Rules.TravelInterruptLine, StringComparison.Ordinal)) Wo167OnTravelInterrupt();
+        if (Wo167Rules.IsTravelInterruptLine(line)) Wo167OnTravelInterrupt();
     }
 
     /// <summary>T3: the behaviour-tree path the engine last printed for <paramref name="npc"/> (within 2 minutes), or "-".</summary>
@@ -131,6 +146,7 @@ public partial class GameBridge
     private async Task<string> Wo167ReadinessTailAsync(string npc)
     {
         string behaviour = "?", mg = "?";
+        if (W167Off("talk-readiness")) return $"behaviour=off npc_minigame=off bt={Wo167BtFor(npc)}";
         try
         {
             var a = await _combat.Wo141ReadAsync(npc);
@@ -141,7 +157,7 @@ public partial class GameBridge
                 mg = s.Minigame == ActivityState.NoMinigame ? "none" : s.Minigame.ToString(CultureInfo.InvariantCulture);
             }
         }
-        catch { }
+        catch (Exception ex) { Wo167Fault("t3-readiness", "talk-readiness", ex); }
         return $"behaviour={behaviour} npc_minigame={mg} bt={Wo167BtFor(npc)}";
     }
 
@@ -190,7 +206,8 @@ public partial class GameBridge
     /// <summary>Once a second (the WO-151 loop).</summary>
     private async Task Wo167TickAsync()
     {
-        try { await Wo167StandInTickAsync(); await Wo167PushConfigAsync(); } catch (Exception ex) { Console.WriteLine($"WO167 tick: {ex.GetType().Name}: {ex.Message}"); }
+        try { if (!W167Off("stand-in-pulse")) await Wo167StandInTickAsync(); } catch (Exception ex) { Wo167Fault("c1-pulse", "stand-in-pulse", ex); }
+        try { await Wo167PushConfigAsync(); } catch (Exception ex) { Wo167Fault("c3-config", "swing-watch", ex); }
         long now = W167NowMs();
         long held = Volatile.Read(ref _w167FaderHeldMs);
         if (held > 0 && now - held >= Wo167Rules.FaderHoldMaxMs) await Wo167FaderRestoreAsync("60 s after the black was lifted");
@@ -221,7 +238,7 @@ public partial class GameBridge
             Console.WriteLine($"WO167-SCENE {(ended ? "ended" : "not-ended")} -- {(ended ? "the engine ended the scene; the faders back, the player stood up and told" : "the engine did not end it: the black is lifted (wh_ui_FaderSuspend 1, given back when it ends or in 60 s), the player stood up and told")}");
             await ExecLuaAsync($"if KCD2MP_W167SceneReleased then KCD2MP_W167SceneReleased({(ended ? "true" : "false")}, \"stuck-20s\") end");
         }
-        catch (Exception ex) { Console.WriteLine($"WO167-SCENE release failed: {ex.GetType().Name}: {ex.Message}"); }
+        catch (Exception ex) { Wo167Fault("t4-release", "scene-release", ex); }
         finally { Volatile.Write(ref _w167ReleaseBusy, 0); }
     }
 
@@ -272,7 +289,7 @@ public partial class GameBridge
             if (n <= 30 || n % 50 == 0)
                 Console.WriteLine($"WO167-SHOWN npc={npc} row={rowGuid} shown=no reason=no-anim wait_ms={s?.WaitMs} taken_out={(taken ? "yes" : "no")} -- the copy never animated this swing: its blow comes with the lunge [n={n}]");
         }
-        catch (Exception ex) { Console.WriteLine($"WO167-SHOWN check failed: {ex.GetType().Name}"); }
+        catch (Exception ex) { Wo167Fault("c3-shown", "swing-watch", ex); }
     }
 
     /// <summary>C2: the host NPC's hand row (WO-143): the weapon class in its hand; in a fight the copy is told at once.</summary>
@@ -339,6 +356,31 @@ public partial class GameBridge
         }
     }
 
+    // ---------------------------------------------------------------- no silent guards
+
+    private readonly ConcurrentDictionary<string, byte> _w167OffFeatures = new(StringComparer.Ordinal);
+    private long _w167Faults;
+
+    /// <summary>
+    /// The standing rule: a caught fault is counted, its site logged, its feature switched off for this session and said on screen once
+    /// (Wo167Rules.FaultText). scene-release and swing-watch are the switches' own flags (the DLL's watch follows at the next push).
+    /// </summary>
+    private void Wo167Fault(string site, string feature, Exception ex)
+    {
+        long n = Interlocked.Increment(ref _w167Faults);
+        bool first = _w167OffFeatures.TryAdd(feature, 0);
+        if (feature == "scene-release") _w167SceneRelease = false;
+        if (feature == "swing-watch") _w167SwingWatch = false;
+        Console.WriteLine($"WO167-FAULT site={site} feature={feature} {ex.GetType().Name}: {ex.Message} -- {feature} is off for this session [faults={n}]");
+        if (first) _ = ExecLuaAsync($"if KCD2MP_ShowNativeToast then KCD2MP_ShowNativeToast(\"{Wo167Rules.FaultText(feature)}\") end");
+    }
+
+    private bool W167Off(string feature) => _w167OffFeatures.ContainsKey(feature);
+
+    /// <summary>Work that waits (the mod's answer, the engine's start) runs here, never in the relay's reader loop; its fault is the rule's.</summary>
+    private void Wo167Background(string site, string feature, Func<Task> work) =>
+        _ = Task.Run(async () => { try { await work(); } catch (Exception ex) { Wo167Fault(site, feature, ex); } });
+
     // ---------------------------------------------------------------- FT1-FT4: one shared fast travel
 
     /// <summary>The session's fast travel: the host's own mp_fast_travel on the host, the host's value on a joiner (WO-154).</summary>
@@ -389,13 +431,13 @@ public partial class GameBridge
         if (!W164Text.TryParseTravel(text, out char verb, out uint seq, out string arg, out bool interrupted)) { Interlocked.Increment(ref _w164Malformed); return; }
         switch (verb)
         {
-            case 'r' when W137Host: await Wo167FtRequestAsync(src, seq, arg); return;
+            case 'r' when W137Host: Wo167Background("ft-request", "shared-travel", () => Wo167FtRequestAsync(src, seq, arg)); return;   // never waited on in the relay's reader (WO-131)
             case 'n' when !W137Host:
                 Interlocked.Increment(ref _w167FtRefusals);
                 Console.WriteLine($"WO167-FT the host refused the pick seq={seq} why={arg} -- nothing moves");
                 await ExecLuaAsync($"if KCD2MP_W167FtRefused then KCD2MP_W167FtRefused(\"{arg}\") end");
                 return;
-            case 's' when !W137Host: await Wo167FtMirrorAsync(seq, arg); return;
+            case 's' when !W137Host: Wo167Background("ft-mirror", "shared-travel", () => Wo167FtMirrorAsync(seq, arg)); return;
             case 'e' when !W137Host:
                 Console.WriteLine($"WO167-FT the host's travel seq={seq} ended at {arg}{(interrupted ? " INTERRUPTED midway (a road encounter): this player is placed beside the host there" : "")}{(_w167LocalTravel ? " -- this game's own run is still under way: placed beside the host when it ends" : "")}");
                 return;
@@ -408,7 +450,8 @@ public partial class GameBridge
     {
         Interlocked.Increment(ref _w167FtRequests);
         string? why = null;
-        if (!W167SessionTravelOn) why = "off";
+        if (W167Off("shared-travel")) why = "fault";
+        else if (!W167SessionTravelOn) why = "off";
         else if (_w167FtActive) why = "travelling";
         else if (dest == "-") why = "unknown-destination";
         else
@@ -422,7 +465,11 @@ public partial class GameBridge
             await ExecLuaAsync($"if KCD2MP_W167FtGo then KCD2MP_W167FtGo(\"{dest}\", {src}) end");
             long until = W167NowMs() + Wo167Rules.TravelStartWaitMs;
             while (W167NowMs() < until && !_w167FtActive) await Task.Delay(200);
-            if (!_w167FtActive) why = "not-started";   // the engine's own rules said no (over-encumbered, outside the navmesh ...)
+            if (!_w167FtActive)
+            {
+                why = "not-started";   // the engine's own rules said no (over-encumbered, outside the navmesh ...): its map may be open here
+                await ExecLuaAsync("if KCD2MP_W167FtNotStarted then KCD2MP_W167FtNotStarted(\"host\") end");
+            }
         }
         if (why is not null)
         {
@@ -437,7 +484,7 @@ public partial class GameBridge
     /// <summary>FT1-FT4, host: this game's own travel started / ended ("FastTravel: started / ended", WO-114's tail).</summary>
     private void Wo167OnHostTravel(bool active)
     {
-        if (!W137Host) return;
+        if (!W137Host || W167Off("shared-travel")) return;   // off: the joiners come along by the leash's pull alone (0.48.2)
         long now = W167NowMs();
         if (active)
         {
@@ -467,6 +514,7 @@ public partial class GameBridge
     /// <summary>FT2, joiner: the host's travel started -- this game runs the game's own travel to the same destination.</summary>
     private async Task Wo167FtMirrorAsync(uint seq, string dest)
     {
+        if (W167Off("shared-travel")) { Console.WriteLine($"WO167-FT the host's travel seq={seq} -- shared travel is off this session (a fault): the leash brings this player along"); return; }
         _w167MirrorSeq = seq;
         _w167MirrorActive = true;
         _w167MirrorSinceMs = W167NowMs();
@@ -482,14 +530,21 @@ public partial class GameBridge
         {
             _w167MirrorActive = false;
             Console.WriteLine($"WO167-FT this game's run of the shared travel seq={seq} did not start -- placed beside the host when it arrives (the leash)");
+            await ExecLuaAsync("if KCD2MP_W167FtNotStarted then KCD2MP_W167FtNotStarted(\"joiner\") end");
         }
     }
+
+    private long _w167LocalTravelEndedMs = -1_000_000;
+
+    /// <summary>FT2, joiner: this game's run of the shared travel moves the player now, or ended under 3 s ago (WO-147's motion check waits).</summary>
+    private bool W167OwnRunMoving => _w167LocalTravel || W167NowMs() - _w167LocalTravelEndedMs < 3000;
 
     /// <summary>FT2, joiner: this game's own travel started / ended (WO-114's tail). True = it is the shared travel's run (no warning).</summary>
     private bool Wo167OnJoinerLocalTravel(bool active)
     {
         bool shared = _w167MirrorActive;
         _w167LocalTravel = active;
+        if (!active) _w167LocalTravelEndedMs = W167NowMs();
         if (!active && shared)
         {
             _w167MirrorActive = false;
@@ -498,7 +553,7 @@ public partial class GameBridge
         return shared;
     }
 
-    /// <summary>FT3, host: the engine interrupted this game's travel ("Interrupting FastTravel...": a road encounter).</summary>
+    /// <summary>FT3, host: the engine stopped this game's travel midway ("Interrupting FastTravel...", or a road event's "stopping FastTravel: 'Y'").</summary>
     private void Wo167OnTravelInterrupt()
     {
         if (W137Host && _w167FtActive) { _w167FtInterrupted = true; Console.WriteLine($"WO167-FT host travel seq={_w167FtSeq} INTERRUPTED by the game (a road encounter)"); }
@@ -508,7 +563,8 @@ public partial class GameBridge
         $"ft_session={(W167SessionTravelOn ? "on" : "off")} ft_starts={Interlocked.Read(ref _w167FtStarts)} ft_ends={Interlocked.Read(ref _w167FtEnds)} ft_interrupts={Interlocked.Read(ref _w167FtInterrupts)} ft_picks={Interlocked.Read(ref _w167FtPicks)} ft_requests={Interlocked.Read(ref _w167FtRequests)} ft_refusals={Interlocked.Read(ref _w167FtRefusals)} ft_mirrors={Interlocked.Read(ref _w167FtMirrors)} ft_mirrors_blind={Interlocked.Read(ref _w167FtMirrorsBlind)}";
 
     private string Wo167StatsText() =>
-        $"scene_release={(_w167SceneRelease ? "on" : "off")} talk_fallback={(_w167TalkFallback ? "on" : "off")} scene_releases={Interlocked.Read(ref _w167SceneReleases)} ended={Interlocked.Read(ref _w167SceneEnded)} not_ended={Interlocked.Read(ref _w167SceneNotEnded)} fader_restores={Interlocked.Read(ref _w167FaderRestores)} bumps={Interlocked.Read(ref _w167Bumps)} clears={Interlocked.Read(ref _w167Clears)} bt_lines={Interlocked.Read(ref _w167BtLines)}"
+        $"faults={Interlocked.Read(ref _w167Faults)} off={(_w167OffFeatures.IsEmpty ? "-" : string.Join(',', _w167OffFeatures.Keys.OrderBy(k => k, StringComparer.Ordinal)))} "
+        + $"scene_release={(_w167SceneRelease ? "on" : "off")} talk_fallback={(_w167TalkFallback ? "on" : "off")} scene_releases={Interlocked.Read(ref _w167SceneReleases)} ended={Interlocked.Read(ref _w167SceneEnded)} not_ended={Interlocked.Read(ref _w167SceneNotEnded)} fader_restores={Interlocked.Read(ref _w167FaderRestores)} bumps={Interlocked.Read(ref _w167Bumps)} clears={Interlocked.Read(ref _w167Clears)} bt_lines={Interlocked.Read(ref _w167BtLines)}"
         + " | " + Wo167FtStatsText()
         + $" | copy_weapons={(_w167CopyWeapons ? "on" : "off")} swing_watch={(_w167SwingWatch ? "on" : "off")} sync_fallback={(_w167SyncFallback ? "on" : "off")} shown={Interlocked.Read(ref _w167Shown)} no_anim={Interlocked.Read(ref _w167NoAnim)} shown_unknown={Interlocked.Read(ref _w167ShownUnknown)} sync_fallbacks={Interlocked.Read(ref _w167SyncFallbacks)} sync_no_plain={Interlocked.Read(ref _w167SyncNoPlain)} syncguard_after_row={Interlocked.Read(ref _w167SyncGuardAfterRow)} syncguard_other={Interlocked.Read(ref _w167SyncGuardOther)} pulses={Interlocked.Read(ref _w167Pulses)} weapon_calls={Interlocked.Read(ref _w167WeaponCalls)}";
 }

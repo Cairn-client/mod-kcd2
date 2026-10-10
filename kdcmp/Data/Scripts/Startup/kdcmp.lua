@@ -21606,6 +21606,34 @@ function KCD2MP_W167RetryHeld(name, t)
     return true
 end
 
+-- The standing rule (no silent guards): a WO-167 ACTION the engine threw on (a write, a command, an inventory change) is counted, its
+-- site logged, its feature switched off for this session and said on screen once; the agent is told (w167_fault) so its half stops
+-- too. A READ that may fail (a method an entity lacks, an entity gone) is not a fault: it leaves its "?" in the line that reports it.
+KCD2MP.w167.faults = KCD2MP.w167.faults or { n = 0, off = {} }
+KCD2MP.w167.FAULT_TEXT = {
+    ["shared-travel"] = "Shared fast travel is off this session (a game error).",
+    ["scene-release"] = "Stuck-scene release is off this session (a game error).",
+    ["copy-weapons"] = "Enemy weapon copying is off this session (a game error).",
+    ["talk-clear"] = "Talk clean-up after the host's talk is off this session (a game error).",
+    ["talk-bump"] = "Partner bump clean-up is off this session (a game error).",
+}
+function KCD2MP.w167.try(site, feature, fn, ...)   -- (a table field: the WO-110 budget) true = done; false = off or it threw
+    local F = KCD2MP.w167.faults
+    if F.off[feature] then return false end
+    local ok, err = pcall(fn, ...)
+    if ok then return true end
+    F.n = F.n + 1
+    F.off[feature] = true
+    local W = KCD2MP.w167
+    if feature == "scene-release" then W.sceneRelease = false
+    elseif feature == "copy-weapons" then W.copyWeapons = false end
+    mp_log(string.format("WO167-FAULT site=%s feature=%s err=%s -- %s is off for this session [faults=%d]", tostring(site), tostring(feature),
+        tostring(err), tostring(feature), F.n))
+    KCD2MP_EmitEvent("w167_fault", tostring(feature) .. " " .. tostring(site))
+    KCD2MP_ShowNativeToast(W.FAULT_TEXT[feature] or "A co-op feature is off this session (a game error).")
+    return false
+end
+
 function KCD2MP_W167SetTalkFallback(arg)
     local v = KCD2MP_Wo122ParseBool(arg)
     if v == "bad" then mp_log("mp_talk_fallback: expected on|off"); return false end
@@ -21635,10 +21663,10 @@ function KCD2MP_W167AfterHostTalk(name)
     local hc = KCD2MP.w164 and KCD2MP.w164.hostCombat and KCD2MP.w164.hostCombat[name]
     local hostFighting = hc ~= nil and (os.clock() - hc) < 10.0
     local ended = "none"
-    if (combat or danger) and not hostFighting then
+    if (combat or danger) and not hostFighting and not KCD2MP.w167.faults.off["talk-clear"] then
         local okEnd, okStop = false, false
         if XGenAIModule and type(XGenAIModule.TryEndCombat) == "function" and e.this then
-            pcall(function() okEnd = XGenAIModule.TryEndCombat(e.this.id) == true end)
+            KCD2MP.w167.try("t2-endcombat", "talk-clear", function() okEnd = XGenAIModule.TryEndCombat(e.this.id) == true end)
         end
         local st = W139 and W139.stim and W139.stim("stopFight")
         if st then
@@ -21703,7 +21731,7 @@ function KCD2MP_W167Bump(name)
     if by == "figure" then
         W.talk.stats.bumpsFigure = W.talk.stats.bumpsFigure + 1
         local ok = false
-        if e.human and e.human.InterruptDialogs then ok = pcall(function() e.human:InterruptDialogs() end) end
+        if e.human and e.human.InterruptDialogs then ok = KCD2MP.w167.try("t2-bump", "talk-bump", function() e.human:InterruptDialogs() end) end
         acted = "reaction-ended:" .. tostring(ok)
     end
     mp_log(string.format("WO167-BUMP npc=%s by=%s d_host=%.2f d_figure=%s figure=%s acted=%s -- %s", name, by, dHost,
@@ -21822,13 +21850,16 @@ function KCD2MP_W167SceneReleased(ended, why)
     if ended then
         local fs = nil
         pcall(function() fs = tonumber(System.GetCVar("wh_ui_FaderSuspend")) end)
-        if fs and fs ~= 0 then pcall(function() System.SetCVar("wh_ui_FaderSuspend", 0) end); fader = "restored" end
+        if fs and fs ~= 0 then
+            fader = KCD2MP.w167.try("t4-fader", "scene-release", function() System.SetCVar("wh_ui_FaderSuspend", 0) end) and "restored" or "fault"
+        end
     else
         -- the field's own way out of the black (wh_ui_FaderSuspend 1), back to 0 once the scene ends or after 60 s
-        pcall(function() System.SetCVar("wh_ui_FaderSuspend", 1) end)
-        S.faderHeldAt = os.clock()
-        S.stats.faders = S.stats.faders + 1
-        fader = "suspended"
+        if KCD2MP.w167.try("t4-fader", "scene-release", function() System.SetCVar("wh_ui_FaderSuspend", 1) end) then
+            S.faderHeldAt = os.clock()
+            S.stats.faders = S.stats.faders + 1
+            fader = "suspended"
+        else fader = "fault" end
     end
     -- the unstuck step 1: this player's stance and unstance reset (the field: "can't get up" until mp_unstuck)
     local nm, stood = nil, "no"
@@ -21849,7 +21880,9 @@ function KCD2MP_W167FaderRestore(why)
     local S = KCD2MP.w167.scene
     if not S.faderHeldAt then return false end
     S.faderHeldAt = nil
-    pcall(function() System.SetCVar("wh_ui_FaderSuspend", 0) end)
+    -- the restore runs even after a scene-release fault (pcall: the black must not stay suspended); its own failure is said once
+    local okR, errR = pcall(function() System.SetCVar("wh_ui_FaderSuspend", 0) end)
+    if not okR then KCD2MP.w167.try("t4-restore", "scene-release", function() error(errR) end) end
     S.stats.restores = S.stats.restores + 1
     mp_log("WO167-SCENE faders restored (wh_ui_FaderSuspend 0) why=" .. tostring(why))
     return true
@@ -21890,7 +21923,7 @@ end
 -- C2: the host's NPC holds `cls` (an item class; "?" = a weapon whose class is not known here; "-" = nothing in its hand).
 function KCD2MP_W167Weapon(name, cls, why)
     local W = KCD2MP.w167
-    if not W.copyWeapons then return false end
+    if not W.copyWeapons or W.faults.off["copy-weapons"] then return false end   -- a fault keeps it off for the session
     name, cls = tostring(name or ""), tostring(cls or "?")
     local e, p = nil, KCD2MP.npcPuppets[name]
     pcall(function() e = System.GetEntityByName(name) end)
@@ -21903,7 +21936,7 @@ function KCD2MP_W167Weapon(name, cls, why)
     if cls == "-" then
         if st.drawn == false then return true end
         st.drawn = false   -- the class it held is kept: its next draw is the same weapon
-        if e.human and type(e.human.HolsterWeapon) == "function" then pcall(function() e.human:HolsterWeapon() end) end
+        if e.human and type(e.human.HolsterWeapon) == "function" then KCD2MP.w167.try("c2-holster", "copy-weapons", function() e.human:HolsterWeapon() end) end
         p.appliedDrawn = false
         C.stats.holstered = C.stats.holstered + 1
         mp_log(string.format("WO167-WEAPON npc=%s hand=- -> holstered why=%s -- the host's NPC holds nothing", name, tostring(why)))
@@ -21916,14 +21949,14 @@ function KCD2MP_W167Weapon(name, cls, why)
         pcall(function() item = e.inventory:FindItem(want) end)
         owned = item and "yes" or "no"
         if not item and type(e.inventory.CreateItem) == "function" then
-            pcall(function() e.inventory:CreateItem(want, 1, 1) end)
+            KCD2MP.w167.try("c2-create", "copy-weapons", function() e.inventory:CreateItem(want, 1, 1) end)
             pcall(function() item = e.inventory:FindItem(want) end)
             if item then owned = "created"; C.stats.created = C.stats.created + 1 end
         end
     end
     local how = "own"
     if item and e.human and type(e.human.DrawFromInventory) == "function" then
-        if pcall(function() e.human:DrawFromInventory(item, 0, true) end) then how = "this-class" end
+        if KCD2MP.w167.try("c2-draw", "copy-weapons", function() e.human:DrawFromInventory(item, 0, true) end) then how = "this-class" end
     end
     if how == "own" then mp_npc_draw(name, e) end
     st.drawn = true
@@ -21993,7 +22026,7 @@ function KCD2MP.w167.OnFtHighlight(self, el, inst, ev, args)
     F.stats.highlights = F.stats.highlights + 1
     local id = KCD2MP.w167.ftArg(args)
     if id ~= nil and tostring(id) ~= "" then F.hiId, F.hiAt = tostring(id), os.clock() end
-    if KCD2MP_W154FastTravelApply then pcall(KCD2MP_W154FastTravelApply, "map") end   -- the session's off-hold engages before any pick
+    if KCD2MP_W154FastTravelApply then KCD2MP.w167.try("ft-apply", "shared-travel", KCD2MP_W154FastTravelApply, "map") end   -- the session's off-hold engages before any pick
 end
 
 function KCD2MP.w167.OnFtPick(self, el, inst, ev, args)
@@ -22002,7 +22035,7 @@ function KCD2MP.w167.OnFtPick(self, el, inst, ev, args)
     F.mapAt = now
     local id = KCD2MP.w167.ftArg(args)
     if (id == nil or tostring(id) == "") and (now - F.hiAt) < 30 then id = F.hiId end   -- the travel question names nothing: the point highlighted
-    if KCD2MP_W154FastTravelApply then pcall(KCD2MP_W154FastTravelApply, "map") end
+    if KCD2MP_W154FastTravelApply then KCD2MP.w167.try("ft-apply", "shared-travel", KCD2MP_W154FastTravelApply, "map") end
     KCD2MP_W167FtPicked(id, ev)
 end
 
@@ -22074,7 +22107,14 @@ function KCD2MP_W167FtCanTravel(tok)
     elseif yes(player.human, "IsInDialog") then why = "dialogue"
     elseif yes(player.soul, "IsInCombatDanger") then why = "combat"
     elseif KCD2MP.w137 and KCD2MP.w137.mgOn then why = "minigame"
-    elseif KCD2MP.w167.ft.travelling then why = "travelling" end
+    elseif KCD2MP.w167.ft.travelling then why = "travelling"
+    else
+        -- the engine's own switch at 0 (a map pick's off-hold, WO-114's joiner hold) refuses the travel AFTER the engine has opened its
+        -- travel map, which then stays open (live, WO-167): asked here first, the map never opens for a travel that cannot start
+        local sw = nil
+        pcall(function() sw = tonumber(System.GetCVar("wh_pl_FastTravelEnabled")) end)
+        if sw == 0 then why = "switch-off" end
+    end
     mp_log("WO167-FT can-travel " .. why)
     if tok ~= nil then KCD2MP_EmitEvent("wo124_reply", tostring(tok) .. " " .. why) end
     return why
@@ -22110,11 +22150,19 @@ function KCD2MP_W167FtMirror(seq, dest)
         return false
     end
     -- this game's engine switch (WO-114 / WO-154) let go for this travel; the agent keeps it so until the travel has ended
-    if KCD2MP_Wo114FastTravelBlock then pcall(KCD2MP_Wo114FastTravelBlock, false, "w167-shared-travel") end
-    if KCD2MP_W154FastTravelHold then pcall(KCD2MP_W154FastTravelHold, false, "w167-shared-travel") end
+    if KCD2MP_Wo114FastTravelBlock then KCD2MP.w167.try("ft-letgo", "shared-travel", KCD2MP_Wo114FastTravelBlock, false, "w167-shared-travel") end
+    if KCD2MP_W154FastTravelHold then KCD2MP.w167.try("ft-letgo", "shared-travel", KCD2MP_W154FastTravelHold, false, "w167-shared-travel") end
     local ok = w164_exec(cmd)
     mp_log(string.format("WO167-FT mirror seq=%s %s ok=%s -- the host's travel, run here too (the game's own map and route)", tostring(seq), cmd, tostring(ok)))
     return ok
+end
+
+-- HOST / JOINER (the agent): a travel this mod started never began -- the engine's own refusal (outside the navmesh, over-encumbered)
+-- comes after it opened the travel map, which stays open: the player is told to close it (the partner is told separately).
+KCD2MP.w167.TEXT_FT_NOSTART = "That travel couldn't start here \226\128\148 close the map to go on."
+function KCD2MP_W167FtNotStarted(why)
+    mp_log("WO167-FT not-started why=" .. tostring(why) .. " -- the engine refused the travel this mod asked for (its map may be open)")
+    KCD2MP_ShowNativeToast(KCD2MP.w167.TEXT_FT_NOSTART)
 end
 
 -- JOINER (the agent): the host's world could not travel for this player's pick.
@@ -22132,6 +22180,10 @@ function KCD2MP_W167Status()
         W.sceneRelease and "on" or "off", S.releases, S.stood, S.faders, S.restores,
         W.copyWeapons and "on" or "off", W.swingWatch and "on" or "off", W.syncFallback and "on" or "off",
         C.standins, C.drawn, C.holstered, C.created, C.held))
+    local offs = {}
+    for k in pairs(W.faults.off) do offs[#offs + 1] = k end
+    table.sort(offs)
+    mp_log(string.format("WO167-STATUS faults=%d off=%s", W.faults.n, #offs > 0 and table.concat(offs, ",") or "-"))
     local F = W.ft.stats
     mp_log(string.format("WO167-STATUS ft listening=%s map_window=%s highlights=%d picks=%d goes=%d mirrors=%d refused=%d travelling=%s",
         tostring(W.ft.listening), tostring(KCD2MP_W167FtMapWindow()), F.highlights, F.picks, F.goes, F.mirrors, F.refused, tostring(W.ft.travelling)))

@@ -195,8 +195,37 @@ public static class Wo167Rules
     /// <summary>FT2: a joiner's run of the shared travel holds its engine switch open at most this long.</summary>
     public const long MirrorMaxMs = 180_000;
 
-    /// <summary>FT3: the engine's line when it stops a fast travel midway.</summary>
+    /// <summary>FT3: the engine's line when it stops a fast travel midway (its interrupt call).</summary>
     public const string TravelInterruptLine = "Interrupting FastTravel";
+
+    /// <summary>
+    /// FT3: the engine's line when a road event stops a fast travel (live, WO-167: an ambush on the route printed this and no
+    /// "Interrupting FastTravel"): "FastTravel: random event variant '..' with option set '..' answered with '..' &lt;'..'&gt; stopping
+    /// FastTravel: 'Y'" -- 'N' = the travel goes on.
+    /// </summary>
+    public const string TravelEventStopLine = "stopping FastTravel: 'Y'";
+
+    /// <summary>FT3: true for either engine line that ends a fast travel midway.</summary>
+    public static bool IsTravelInterruptLine(string? line) =>
+        line is not null && (line.StartsWith(TravelInterruptLine, StringComparison.Ordinal)
+                             || (line.StartsWith("FastTravel: random event variant ", StringComparison.Ordinal) && line.TrimEnd().EndsWith(TravelEventStopLine, StringComparison.Ordinal)));
+
+    /// <summary>
+    /// The standing rule (no silent guards): the line said once on screen when a caught fault switched a WO-167 feature off for the
+    /// session. Features: shared-travel, scene-release, swing-watch, stand-in-pulse, talk-clear, talk-readiness.
+    /// </summary>
+    public static string FaultText(string feature) => feature switch
+    {
+        "shared-travel" => "Shared fast travel is off this session (a game error).",
+        "scene-release" => "Stuck-scene release is off this session (a game error).",
+        "swing-watch" => "Swing check is off this session (a game error).",
+        "stand-in-pulse" => "Stand-in animation start is off this session (a game error).",
+        "talk-clear" => "Talk clean-up after the host's talk is off this session (a game error).",
+        "talk-readiness" => "Talk diagnostics are off this session (a game error).",
+        "copy-weapons" => "Enemy weapon copying is off this session (a game error).",
+        "talk-bump" => "Partner bump clean-up is off this session (a game error).",
+        _ => "A co-op feature is off this session (a game error).",
+    };
 
     /// <summary>FT2: the mod's answer to "can this game travel" -> one refusal word ([a-z-], 1..24); anything else is "not-now".</summary>
     public static string RefusalWord(string? r)

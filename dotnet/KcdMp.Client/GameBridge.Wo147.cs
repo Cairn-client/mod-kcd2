@@ -153,7 +153,8 @@ public partial class GameBridge
     private void Wo147JoinerMotionCheck()
     {
         if (!_hasPushed || !_joinedWorld || _localDowned || _where is GameWhere.Loading or GameWhere.Menu || _jj is not null || _rewinding
-            || (DateTime.UtcNow - _leashPulledUtc).TotalSeconds < 5 || Volatile.Read(ref _leashPulling) != 0)
+            || (DateTime.UtcNow - _leashPulledUtc).TotalSeconds < 5 || Volatile.Read(ref _leashPulling) != 0
+            || W167OwnRunMoving)   // WO-167 FT2: this game's run of the shared fast travel moves the player (the engine's travel, not a flight)
         { _w147Own.Reset(); return; }
         var m = _w147Own.Feed(_lastX, _lastY, W147NowMs(), _lastRiding);
         if (m == Wo147Rules.Motion.Jump)

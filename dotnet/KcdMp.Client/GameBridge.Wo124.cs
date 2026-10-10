@@ -806,9 +806,13 @@ public partial class GameBridge
         _wo124Replies[tok] = tcs;
         try
         {
+            long t0 = Environment.TickCount64;
             await ExecLuaAsync($"if {fn} then {fn}(\"{tok}\") else KCD2MP_EmitEvent(\"wo124_reply\", \"{tok} missing\") end");
+            long sent = Environment.TickCount64 - t0;
             var done = await Task.WhenAny(tcs.Task, Task.Delay(timeoutMs));
-            return done == tcs.Task ? tcs.Task.Result : "timeout";
+            if (done == tcs.Task) return tcs.Task.Result;
+            Console.WriteLine($"MP-ASK timeout fn={fn} tok={tok} send_ms={sent} waited_ms={Environment.TickCount64 - t0}");
+            return "timeout";
         }
         finally { _wo124Replies.TryRemove(tok, out _); }
     }
@@ -823,6 +827,7 @@ public partial class GameBridge
                 int sp = s.IndexOf(' ');
                 string tok = sp > 0 ? s[..sp] : s, payload = sp > 0 ? s[(sp + 1)..] : "";
                 if (_wo124Replies.TryGetValue(tok, out var t)) t.TrySetResult(payload);
+                else Console.WriteLine($"MP-ASK reply tok={tok} with no ask waiting (late) -- {payload}");
                 return;
             }
             case "wo124_where":
