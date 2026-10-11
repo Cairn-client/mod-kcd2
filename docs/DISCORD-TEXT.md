@@ -25,6 +25,20 @@ How to play together (0.48.2):
 Nobody clicks CONNECT any more, and you don't need anyone's save file. First time ever starting the game? Start it once from Steam and accept its two first-run pages, then use the launcher.
 ```
 
+## Version 0.48.8 — dead enemies, riding, travelling, trading, pickpocketing (WO-172)
+
+```
+Kingdom Come: Together 0.48.8 — a patch from your 2026-10-10 sessions.
+- Dead enemies stay dead for the joiner. When the host's enemy dies, the joiner's copy of it no longer gets up or keeps fighting.
+- Enemies pick their target better. An enemy turns to the player who is hitting it, at most once every 4 seconds.
+- Riding stays right. A rider whose game "forgot" he was on a horse is no longer shown running in the air, a partner who falls off his horse on your screen is put back on, and a horse never sinks into the ground.
+- No black screen after a quest that forces a travel, and the HUD comes back by itself (mp_unstuck brings it back too).
+- Trading: the trader stays for the joiner's whole trade, a cancelled haggle included.
+- The joiner can pickpocket now. Each item is asked of the host's world, so nothing is doubled; if the host took it first, it is taken back.
+- Invisible weapons on the host: not found yet. Typing mark_odd now also saves a screenshot, so please mark it the moment it happens.
+None of this has been played by two people yet. Every new part has a console switch (mp_dead_wins, mp_ride_repair, mp_trade_hold, mp_joiner_pickpocket, mp_mark_shot). Both players and the relay need 0.48.8.
+```
+
 ## Version 0.48.6 — the partner's figure, riders, the dialogue scene (WO-170)
 
 ```
