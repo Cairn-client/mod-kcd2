@@ -6923,6 +6923,7 @@ function KCD2MP_W136Ridden(name)
         mp_log(string.format("WO136-RIDE return npc=%s after_s=%.1f -- the host's world has its horse again (bound where the rider left it)",
             name, os.clock() - (r.at or os.clock())))
         KCD2MP_EmitEvent("w136_ride", name .. " 0")
+        if KCD2MP_W172GroundSnap then pcall(KCD2MP_W172GroundSnap, name, nil, "ride-return") end   -- WO-172 R1
         return false
     end
     return true
@@ -9262,6 +9263,7 @@ function KCD2MP_ApplyNpcState(name, x, y, z, rot, hp, flags, src, seq, senderMs)
     end
 
     if not p then
+        if KCD2MP_W172GroundSnap and tostring(e.class) == "Horse" then pcall(KCD2MP_W172GroundSnap, name, e, "stream-takes-it") end   -- WO-172 R1
         local cur = e:GetWorldPos()
         p = { cx = cur.x, cy = cur.y, cz = cur.z, cr = rot, animTag = "idle",
               ax = cur.x, ay = cur.y }   -- WO-108 s3.3: where the engine had this body before we wrote it (the relax anchor)
@@ -11267,6 +11269,7 @@ function KCD2MP_RemoveHorse(id)
         -- behaviour once position writes stop (WO-32's release principle).
         KCD2MP.horseGhosts[id] = nil
         mp_log("ReleaseWorldHorse id=" .. id .. " '" .. tostring(horseData.worldName) .. "'")
+        if KCD2MP_W172HorseReleased then pcall(KCD2MP_W172HorseReleased, horseData.worldName, horseData.entity) end   -- WO-172 R1
         if KCD2MP_W151AvatarLeavesHorse then pcall(KCD2MP_W151AvatarLeavesHorse, horseData.worldName) end   -- WO-151
         return
     end
@@ -12731,6 +12734,7 @@ function KCD2MP_InterpTick(arg, gen)
     end
     if not KCD2MP.interpRunning then return end
     if KCD2MP_DwellTickFromInterp then KCD2MP_DwellTickFromInterp() end   -- WO-110 Phase 6: dwell resumes even with mp_npc_sync off
+    if KCD2MP_W172Tick then pcall(KCD2MP_W172Tick) end   -- WO-172 R1/H1 (4 Hz inside)
     -- WO-78: chain identity, mirroring the puppet tick's WO-69 instrument.
     -- `gen` is nil for the external menu pump (never reschedules, cannot leak)
     -- and for any legacy bare reschedule. The 2026-09-11 field session had no
