@@ -1163,6 +1163,29 @@ colour, turning, name, compass and map sizes by eye); never between two real pla
 Switches (console): `mp_partner_marker`, `mp_partner_marker_style rotating|flat|companion`, `mp_marker_dir_offset 0..7`,
 `mp_marker_dir_flip on|off`, `mp_w171_status`.
 
+## WO-173 — the joiner's blows as real hits in the host's world (0.49.0)
+
+Two players, both on 0.49.0 (and the relay). Checked live on one machine against a synthetic joiner (host role) and a synthetic host
+(joiner role); never between two real players. **The new path is switched OFF in 0.49.0** (one of its checks could not be run without two
+people). Run items 253-258 twice: first as shipped (`mp_real_hits off`, the old damage with the knock-out fix), then with the host typing
+**`mp_real_hits on`** in the console. **Type `mark_odd` at every miss.**
+
+253. **The joiner fights a guard (or a bandit) while the host watches from a few metres.** On the **host's** screen the enemy **flinches,
+     staggers, blocks and parries** like it does when the host fights it, and **never falls over from one blow** at full strength.
+254. **The same moment on the joiner's screen:** the enemy flinches when the host's does, blocks when the host's does. Tell us any blow that
+     looked different on the two screens (`mark_odd` on both).
+255. **Knock an enemy down** (keep hitting until it drops, unconscious, not dead). It **falls on both screens** within half a second of each
+     other and **gets up on both** when it wakes. **No T-pose** (arms straight out) afterwards.
+256. **The enemy fights the joiner back with real swings**, not standing in a ready stance. Count roughly: does it attack the joiner as often
+     as it attacks the host?
+257. **Two players on one enemy, both hitting.** Every blow counts once (the enemy does not die suspiciously fast) and nobody's blows vanish.
+258. **The host knocks down an enemy the joiner is not fighting** (both nearby). It falls and gets up on the joiner's screen too.
+259. **The switch:** the host types `mp_real_hits off` mid-fight: the joiner's blows go back to the old way at once; `mp_real_hits on` brings
+     the new way back. `mp_w173_status` prints the counters (WO173-STATUS here; MP-WO173-STATS in agent.log).
+260. **Report a bug → Collect logs** afterwards (both machines).
+
+Switches (console, host): `mp_real_hits on|off` (default off in 0.49.0), `mp_w173_status`.
+
 ## Logs to send afterwards
 
 Both machines: Report a bug in the launcher. Since 0.48.9 it collects the current launch by default as a small file (or a few numbered
