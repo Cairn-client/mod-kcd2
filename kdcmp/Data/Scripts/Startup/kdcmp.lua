@@ -17996,8 +17996,15 @@ function KCD2MP_Mark(word)
     pcall(function() t = Calendar.GetWorldTime() end)
     mp_log(string.format("MP-MARK %s world_time=%.0f -- the tester's marker", word, t))
     KCD2MP_EmitEvent("mp_mark", word)
+    -- WO-172 W1: the mark keeps what the tester saw -- the game's own screenshot (its screenshots folder; works with the window
+    -- minimised). The field's "no weapons on the host" left no trace in any log: a picture at the mark is the evidence next time.
+    if not (KCD2MP.w172 and KCD2MP.w172.markShot == false) then
+        local ok = pcall(System.ExecuteCommand, "r_GetScreenShot 1")
+        mp_log("MP-MARK screenshot asked ok=" .. tostring(ok) .. " -- the game's own, in its screenshots folder (mp_mark_shot off to stop)")
+    end
     KCD2MP_ShowInteractionMsg("Marked: " .. word)
 end
+function KCD2MP_W172SetMarkShot(arg) return KCD2MP_W172Switch("mark_shot", "markShot", arg, "a mark (mark_odd) also takes the game's own screenshot (its screenshots folder)") end
 
 function KCD2MP_W140Status()
     local w = KCD2MP.w140
