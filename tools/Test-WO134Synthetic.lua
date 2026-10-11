@@ -301,8 +301,10 @@ LOG = {}; loop()
 check("B5 a put into the body goes to the host", events("w134_put")[1] ~= nil and string.find(events("w134_put")[1], "bandit_7 " .. APPLE .. " 1", 1, true) ~= nil, events("w134_put")[1])
 local v = mkBody("villager_3", 102, 100, 10); v.dead = false
 TOASTS = {}; LOOTS = {}
+if KCD2MP.w172 then KCD2MP.w172.pickpocket = false end   -- WO-172 P1: the joiner's pickpocket is a host request now (mp_joiner_pickpocket); off = the old block
 BasicAIActions.OnPickpocketing(v, player, 1)
-check("B6 pickpocketing a living host-owned NPC stays blocked", #LOOTS == 0 and lastToast() ~= nil and string.find(lastToast(), "pickpocket", 1, true) ~= nil, lastToast())
+check("B6 pickpocketing a living host-owned NPC stays blocked (mp_joiner_pickpocket off)", #LOOTS == 0 and lastToast() ~= nil and string.find(lastToast(), "pickpocket", 1, true) ~= nil, lastToast())
+if KCD2MP.w172 then KCD2MP.w172.pickpocket = true end
 local d = mkBody("bandit_8", 103, 100, 10); d.dead = false
 d.inventory:CreateItem(COAT, 1, 1)
 KCD2MP_W134BodyState("bandit_8", "update", 1, 1, 1, {})

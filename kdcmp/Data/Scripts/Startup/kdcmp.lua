@@ -6299,6 +6299,8 @@ function KCD2MP_W131LootAllowed(body, kind, orig, user, slot)
     -- WO-134: a body's loot is a request to the host (its list, then the loot screen);
     -- pickpocketing a living NPC stays blocked.
     if kind == "loot" and orig and KCD2MP_W134LootRequest and KCD2MP_W134LootRequest(body, orig, user, slot) then return false end
+    -- WO-172 P1: a pickpocket is the game's own minigame on this copy, every take asked of the host (WO-134's take and take-back)
+    if kind == "pickpocket" and orig and KCD2MP_W172PickRequest and KCD2MP_W172PickRequest(body, orig, user, slot) then return false end
     w.stats.lootBlocked = w.stats.lootBlocked + 1
     mp_log(string.format("WO131-LOOT blocked npc=%s kind=%s -- host-owned; only the host loots for now", tostring(name), kind))
     KCD2MP_ShowNativeToast(kind == "pickpocket" and "Only the host can pickpocket in co-op for now."
@@ -6323,7 +6325,7 @@ function KCD2MP_W131InstallLootBlock()
         local orig = BasicAIActions.OnPickpocketing
         w.pickOrig = orig
         w.pickWrap = function(self, user, slot)
-            if not KCD2MP_W131LootAllowed(self, "pickpocket") then return end
+            if not KCD2MP_W131LootAllowed(self, "pickpocket", orig, user, slot) then return end
             return orig(self, user, slot)
         end
         BasicAIActions.OnPickpocketing = w.pickWrap
