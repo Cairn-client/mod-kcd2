@@ -8,7 +8,7 @@ The artist's knights are 4 colours x 8 rotation frames, 1800x2200 RGBA PNG, in a
 docs/branding/pak-source/Libs/UI/Textures/Icons/Map/ (the folder the game's map reads its icons from; our files all begin kct_,
 so none of them shadows a file of the game's):
 
-    kct_<c><n>_icon.dds              the picture            SIZE x SIZE DXT5, no mips (c = r p b g, n = 0..7)
+    kct_<c><n>[b|c|d][M]_icon.dds    the picture; b, c, d: the same art under the next revisions' names; M: the map's 2x size           SIZE x SIZE DXT5, no mips (c = r p b g, n = 0..7; the game's own map icons are 64 x 64, and the compass draws them at that size)
     kct_<c><n>_undiscovered_icon.dds the same picture (the map asks for this variant of a not-yet-discovered point)
     kct_<c><n>_sh_icon.dds           its shadow             SIZE/2 x SIZE/2 DXT5
 
@@ -61,7 +61,7 @@ def resize_premult(im, size):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--size", type=int, default=128)
+    ap.add_argument("--size", type=int, default=64)
     ap.add_argument("--src", default=os.path.join(ROOT, "assets", "map-markers", "source"))
     ap.add_argument("--out", default=os.path.join(ROOT, "docs", "branding", "pak-source", "Libs", "UI", "Textures", "Icons", "Map"))
     ap.add_argument("--sheet", default=os.path.join(ROOT, "docs", "branding", "map-markers-contact-sheet.png"))
@@ -99,24 +99,32 @@ def main():
 
     os.makedirs(a.out, exist_ok=True)
     cells = {}
+
+    def write_set(icon, base, size):
+        """icon (size x size), its undiscovered variant and its shadow (half size), under base and the revisions' names."""
+        sil = np.zeros((size, size, 4), dtype=np.uint8)
+        al = np.asarray(icon.getchannel("A"), dtype=np.float32) * 0.45
+        sil[..., 3] = np.clip(al, 0, 255).astype(np.uint8)
+        sh = Image.fromarray(sil, "RGBA").filter(ImageFilter.GaussianBlur(size / 40.0)).resize((size // 2, size // 2), Image.LANCZOS)
+        # a revision is the same art under the next name: a name can be loaded into the game's localization once per game run, so a
+        # colour taken over by another name uses the next revision's keys (docs/WO-171-findings.md)
+        for rev in ("", "b", "c", "d"):
+            icon.save(base.replace("@", rev) + "_icon.dds", pixel_format="DXT5")
+            icon.save(base.replace("@", rev) + "_undiscovered_icon.dds", pixel_format="DXT5")
+            sh.save(base.replace("@", rev) + "_sh_icon.dds", pixel_format="DXT5")
+
     for (colour, n), im in sorted(frames.items()):
         letter = dict(COLOURS)[colour]
         canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
         canvas.paste(im.crop(sq), (0, 0))
-        icon = resize_premult(canvas, (a.size, a.size))
-        base = os.path.join(a.out, "kct_%s%d" % (letter, n))
-        icon.save(base + "_icon.dds", pixel_format="DXT5")
-        icon.save(base + "_undiscovered_icon.dds", pixel_format="DXT5")
-        # its shadow: the silhouette, darkened and softened, half the size
-        sil = np.zeros((a.size, a.size, 4), dtype=np.uint8)
-        al = np.asarray(icon.getchannel("A"), dtype=np.float32) * 0.45
-        sil[..., 3] = np.clip(al, 0, 255).astype(np.uint8)
-        sh = Image.fromarray(sil, "RGBA").filter(ImageFilter.GaussianBlur(a.size / 40.0)).resize((a.size // 2, a.size // 2), Image.LANCZOS)
-        sh.save(base + "_sh_icon.dds", pixel_format="DXT5")
-        cells[(colour, n)] = icon
-        chk = Image.open(base + "_icon.dds")
-        assert chk.size == (a.size, a.size), chk.size
-    print("wrote %d icon files (+ undiscovered and shadow variants) under %s" % (len(cells), os.path.relpath(a.out, ROOT)))
+        small = resize_premult(canvas, (a.size, a.size))
+        large = resize_premult(canvas, (a.size * 2, a.size * 2))
+        write_set(small, os.path.join(a.out, "kct_%s%d@" % (letter, n)), a.size)          # the compass draws it 1:1
+        write_set(large, os.path.join(a.out, "kct_%s%d@M" % (letter, n)), a.size * 2)     # the map draws its icons scaled down
+        cells[(colour, n)] = large
+        assert Image.open(os.path.join(a.out, "kct_%s%d_icon.dds" % (letter, n))).size == (a.size, a.size)
+        assert Image.open(os.path.join(a.out, "kct_%s%dM_icon.dds" % (letter, n))).size == (a.size * 2, a.size * 2)
+    print("wrote %d pictures x 4 revisions x 2 sizes (+ undiscovered and shadow variants) under %s" % (len(cells), os.path.relpath(a.out, ROOT)))
 
     # the contact sheet
     cw, ch, lab = 200, 200 + 48, 48
