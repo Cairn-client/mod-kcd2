@@ -22337,6 +22337,48 @@ function KCD2MP_W164SetPartnerPin(arg)
     if ok then KCD2MP_EmitEvent("w164_pin", KCD2MP.w164.partnerPin and "on" or "off") end
     return ok
 end
+-- ---- WO-171 M: the partner's own colour and facing on the map ------------------------------------------------------------------
+-- The pin of mp_partner_marker is a picture of the artist's knight in the partner's colour (player 1 = red, then purple, blue, green
+-- in the order they joined), turned to the partner's facing in eight steps. The agent decides slot, colour and frame; this is the
+-- three switches that tune it, said to the agent as one "w171_cfg" event.
+KCD2MP.w171 = KCD2MP.w171 or { style = "rotating", offset = 0, flip = false }
+local function w171_emit()
+    local w = KCD2MP.w171
+    KCD2MP_EmitEvent("w171_cfg", string.format("style=%s offset=%d flip=%s", w.style, w.offset, w.flip and "on" or "off"))
+end
+function KCD2MP_W171Emit() w171_emit() end   -- the agent asks at every connect (its own copy starts at the defaults)
+function KCD2MP_W171SetStyle(arg)
+    local s = tostring(arg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+    if s == "%line" or s == "" or s == "nil" then s = nil end
+    if s == "on" then s = "rotating" elseif s == "off" then s = "companion" end   -- the mod menu's "Marker style" is an on / off item
+    if s ~= nil and s ~= "rotating" and s ~= "flat" and s ~= "companion" then mp_log("mp_partner_marker_style: expected rotating|flat|companion, got '" .. s .. "'"); return false end
+    if s ~= nil then KCD2MP.w171.style = s end
+    mp_log("WO171-TOGGLE mp_partner_marker_style " .. KCD2MP.w171.style .. " -- rotating: the knight turns with your partner; flat: one picture facing north; companion: the game's own plain pin")
+    w171_emit()
+    return true
+end
+function KCD2MP_W171SetDirOffset(arg)
+    local s = tostring(arg or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    local n = tonumber(s)
+    if s ~= "" and s ~= "%line" and (not n or n < 0 or n > 7 or n ~= math.floor(n)) then mp_log("mp_marker_dir_offset: expected 0..7, got '" .. s .. "'"); return false end
+    if n then KCD2MP.w171.offset = n end
+    mp_log("WO171-TOGGLE mp_marker_dir_offset " .. tostring(KCD2MP.w171.offset) .. " -- the knight's picture is turned by whole steps (if it looks off by a step)")
+    w171_emit()
+    return true
+end
+function KCD2MP_W171SetDirFlip(arg)
+    local v = KCD2MP_Wo122ParseBool(arg)
+    if v == "bad" then mp_log("mp_marker_dir_flip: expected on|off"); return false end
+    if v ~= nil then KCD2MP.w171.flip = v end
+    mp_log("WO171-TOGGLE mp_marker_dir_flip " .. (KCD2MP.w171.flip and "on" or "off") .. " -- on = the knight turns the other way (if it turns the wrong way)")
+    w171_emit()
+    return true
+end
+function KCD2MP_W171Status()
+    local w = KCD2MP.w171
+    mp_log(string.format("WO171-STATUS style=%s offset=%d flip=%s partner_marker=%s", w.style, w.offset, w.flip and "on" or "off", tostring(KCD2MP.w164 ~= nil and KCD2MP.w164.partnerPin)))
+    return true
+end
 function KCD2MP_W164SetJoinerEvents(arg) return w164_toggle("joinerEvents", "mp_joiner_events", arg, "on = a joiner's own random events are off during a session (the host's are the only ones)") end
 -- ---- WO-164 ESC: a quest NPC that follows the joiner ----------------------------------------------------------------------------
 -- Joiner: the quest just made an NPC follow this player (its follow step went to the host): the nearest of this game's own
@@ -24911,6 +24953,9 @@ do
         { id = "partner_marker", group = "Display", label = "Partner on the map", kind = "onoff", save = "PartnerMarker",
           cmd = "mp_partner_marker", fn = "KCD2MP_W164SetPartnerPin", get = function() return KCD2MP.w164 ~= nil and KCD2MP.w164.partnerPin end,
           help = "A pin on the map where your partner is." },
+        { id = "marker_style", group = "Display", label = "Marker style (knight)", kind = "onoff", save = "PartnerMarkerArt",
+          cmd = "mp_partner_marker_style", fn = "KCD2MP_W171SetStyle", get = function() return KCD2MP.w171 ~= nil and KCD2MP.w171.style ~= "companion" end,
+          help = "On: your partner is the artist's knight on the map, in their colour, turning with them. Off: the game's plain pin." },
         { id = "friendly_fire", group = "Gameplay", label = "Friendly fire", kind = "onoff", host = true, save = "FriendlyFire",
           cmd = "mp_friendly_fire", fn = "KCD2MP_Wo121SetFriendlyFire",
           get = function() return KCD2MP.w121 ~= nil and KCD2MP.w121.friendlyFire end,
@@ -26075,6 +26120,10 @@ local ok, err = pcall(function()
     System.AddCCommand("mp_flee_limit", 'KCD2MP_W164SetFleeLimit(%line)', "WO-164: (joiner) no weapon tug-of-war on a fleeing host copy: one re-assert per 2 s, none while it flees, 20 s of rest after 3 in 10 s (default on): mp_flee_limit on|off")
     System.AddCCommand("mp_joiner_events", 'KCD2MP_W164SetJoinerEvents(%line)', "WO-164: (joiner) on = this game's own random events (caravans, riders, ambushes) are off during a session so the host's are the only ones; back when the session ends: mp_joiner_events on|off")
     System.AddCCommand("mp_partner_marker", 'KCD2MP_W164SetPartnerPin(%line)', "WO-164: a pin on the map where your partner is, moved as they walk, gone when they leave (default on): mp_partner_marker on|off")
+    System.AddCCommand("mp_partner_marker_style", 'KCD2MP_W171SetStyle(%line)', "WO-171: the partner's pin on the map: rotating = the artist's knight in their colour, turned to their facing; flat = one picture facing north; companion = the game's own plain pin (default rotating): mp_partner_marker_style rotating|flat|companion")
+    System.AddCCommand("mp_marker_dir_offset", 'KCD2MP_W171SetDirOffset(%line)', "WO-171: turn the knight's picture by whole steps (0..7, one step = 45 degrees) if it looks off by a step (default 0): mp_marker_dir_offset 0..7")
+    System.AddCCommand("mp_marker_dir_flip", 'KCD2MP_W171SetDirFlip(%line)', "WO-171: on = the knight turns the other way, if it turns the wrong way (default off): mp_marker_dir_flip on|off")
+    System.AddCCommand("mp_w171_status", 'KCD2MP_W171Status()', "WO-171: the partner marker's style, offset and flip")
     System.AddCCommand("mp_figure_guard", 'KCD2MP_W170SetFigureGuard(%line)', "WO-170: (host) a partner's figure never attacks, draws or sheathes on its own -- its combat automation stays off and a blow of its that no swing of the partner's matches is put back (default on): mp_figure_guard on|off")
     System.AddCCommand("mp_scene_hold", 'KCD2MP_W170SetSceneHold(%line)', "WO-170: (joiner) a copy is not paused again while its dialogue's scene is still running, 10 s at most (default on): mp_scene_hold on|off")
     System.AddCCommand("mp_w170_status", 'KCD2MP_W170Status()', "WO-170: the figure guard, the dialogue-scene hold and the rider mount gate of this build")

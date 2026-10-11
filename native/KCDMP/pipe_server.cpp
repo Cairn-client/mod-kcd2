@@ -892,7 +892,7 @@ void serve(HANDLE h) {
                     [op, owner, id, x, y, z](bool& result) {
                         if (op == 1) result = actions::mirror_add(owner, id, x, y, z);
                         else if (op == 0) result = actions::mirror_remove(owner, id);
-                        else if (op == 3) result = actions::partner_pin(owner, x, y, z);       // WO-164 C2: a partner's pin set / moved
+                        else if (op == 3) result = actions::partner_pin(owner, x, y, z, static_cast<unsigned>(id & 0xFFu));   // WO-164 C2: a partner's pin set / moved; WO-171: the picture code rides the unused id field
                         else if (op == 4) result = actions::partner_pin_remove(owner);         // WO-164 C2: ... removed
                         else { actions::mirror_clear(owner); result = true; }
                     }, "MirrorGrave", ok, &faultedFlag);

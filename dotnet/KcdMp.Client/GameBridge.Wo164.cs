@@ -600,28 +600,37 @@ public partial class GameBridge
     private readonly ConcurrentDictionary<byte, (float X, float Y)> _w164PinAt = new();
     private long _w164PinSets, _w164PinRemoves;
 
-    /// <summary>Every 2 s: a pin at each partner in this world (moved when it moved more than 3 m); none when not in one session.</summary>
+    /// <summary>
+    /// Every second: a pin at each partner in this world, with the partner's own colour and facing (WO-171 M; Wo171.cs rules). A pin is moved
+    /// when its partner moved more than 2 m (at most once a second, 60 a minute), turned when the heading changes octant, and set again every
+    /// 5 s (the DLL forgets its pins at a load); none when not in a session.
+    /// </summary>
     private async Task W164PinTickAsync()
     {
-        bool want = _w164PinOn && (W137Host || W137Joiner);
+        bool inSession = W137Host || W137Joiner;
+        bool want = _w164PinOn && inSession;
+        if (!inSession) _w171Slots.Reset();
         var fresh = new HashSet<byte>();
         // WO-166 M1: only a live peer has a pin, and one per partner (a crash-rejoin's old id is gone from the relay's set at once)
         var keep = Wo166Rules.PinOwners(LivePartners(), _myGhostId, g => _ghostNames.TryGetValue(g, out var nm) ? nm : null,
                                         g => _ghostLastPos.TryGetValue(g, out var gp) ? gp.AtUtc : DateTime.MinValue, DateTime.UtcNow);
         if (want)
+        {
+            long nowMs = Environment.TickCount64;
             foreach (var (g, p) in _ghostLastPos.ToArray())
             {
                 if (g == _myGhostId || !keep.Contains(g) || (DateTime.UtcNow - p.AtUtc).TotalSeconds > 10) continue;
                 fresh.Add(g);
-                if (_w164PinAt.TryGetValue(g, out var was) && Wo164Rules.PinMoveDue(was.X, was.Y, p.X, p.Y) == false) continue;
-                if (await _combat.MirrorGraveAsync(3, g, 0, p.X, p.Y, p.Z)) { _w164PinAt[g] = (p.X, p.Y); Interlocked.Increment(ref _w164PinSets); }
+                await W171PinOneAsync(g, p.X, p.Y, p.Z, nowMs);
             }
+        }
         foreach (var g in _w164PinAt.Keys.ToArray())
         {
             if (fresh.Contains(g)) continue;
             _w164PinAt.TryRemove(g, out _);
             await _combat.MirrorGraveAsync(4, g, 0, 0, 0, 0);
             Interlocked.Increment(ref _w164PinRemoves);
+            W171Removed(g);
             Console.WriteLine($"WO164-MAPMARK pin of player {g} removed ({(!_w164PinOn ? "mp_partner_marker off" : !(W137Host || W137Joiner) ? "not in a session" : !keep.Contains(g) ? "not a live partner (WO-166 M1)" : "no position for 10 s")})");
         }
     }
@@ -646,7 +655,7 @@ public partial class GameBridge
         await W164TorchOutTickAsync(false);
         await W164FleeTickAsync();
         await W164SitTickAsync();
-        if (n % 2 == 0) await W164PinTickAsync();
+        await W164PinTickAsync();   // WO-171: every second (the move gate and the turn gate decide what is sent)
         if (n % 10 == 0) await Wo166PushConfigAsync();   // WO-166: the DLL's copy-strike / snap-fix / automation switches
         if (n % 2 == 0 && _w164Mism.Count > 0) await W164QuestFixAllAsync("mismatch-10s", Wo164Rules.QuestFixAfterS);
         if (n % 10 == 0 && !_w164MarkersOffTold)
@@ -669,6 +678,8 @@ public partial class GameBridge
             Console.WriteLine("MP-WO170-STATS " + Wo170StatsText());
         if (n % 60 == 0 && Interlocked.Read(ref _w172DeadMarks) + Interlocked.Read(ref _w172RideRepaired) + Interlocked.Read(ref _w172RowsDropped) > 0)
             Console.WriteLine("MP-WO172-STATS " + Wo172StatsText());
+        if (n % 60 == 0 && Interlocked.Read(ref _w171Adds) + Interlocked.Read(ref _w171Removes) > 0)
+            Console.WriteLine("MP-WO171-STATS " + Wo171StatsText());
         if (n % 60 == 0 && (W137JoinerSession || W137Host)) { string? w166n = await _combat.Wo166StatusAsync(); if (w166n is not null && !w166n.Contains("requests=0 ", StringComparison.Ordinal)) Console.WriteLine("MP-WO166 native: " + w166n); }
         if (n % 60 == 0 && (_w164TalkAsks + _w164Sweeps + _w164QFixOk + _w164QFixRefused + _w164FleeDisengaged + _w164SitCleared + _w164TorchSide) > 0)
             Console.WriteLine($"MP-WO164-STATS talks={_w164TalkAsks} started={_w164TalkStarts} failed={_w164TalkFails} preempted={_w164Preempted} sweeps={_w164Sweeps} sweep_found={_w164SweepFound} sweep_still_erroring={_w164SweepStillErr} qfix_ok={_w164QFixOk} qfix_refused={_w164QFixRefused} flee_disengaged={_w164FleeDisengaged} sit_cleared={_w164SitCleared} torch_side={_w164TorchSide} pin_sets={_w164PinSets} pin_removes={_w164PinRemoves} escort_accepted={_w164EscortAccepted} escort_follows={_w164EscortFollows} marks={_w164Marks} mark_pings_in={_w164MarkPingsIn} malformed={_w164Malformed} random_event_lines={_w164RandomEvents}");
