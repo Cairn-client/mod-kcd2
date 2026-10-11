@@ -35,7 +35,8 @@ int wo163_tests(int* passed);              // wo163_tests.cpp (WO-163: sync GUID
 int wo165_tests(int* passed);              // wo165_tests.cpp (WO-165: the replay's call site, structs, outcome)
 int wo166_tests(int* passed);              // wo166_tests.cpp (WO-166: the quest write gates, the striking window, the line limiter)
 int wo167_tests(int* passed);              // wo167_tests.cpp (WO-167: a watched swing installed or not, the stand-in walk pulse)
-int wo170_tests(int* passed);              // wo170_tests.cpp (WO-170: the figure guard's relayed-swing ledger, the put-back, the automation kept off)
+int wo170_tests(int* passed);
+int wo172_tests(int* passed);              // wo172_tests.cpp (WO-172: C1's dead gate)              // wo170_tests.cpp (WO-170: the figure guard's relayed-swing ledger, the put-back, the automation kept off)
 
 static int g_fail = 0, g_pass = 0;
 #define CHECK(cond, ...) do { if (cond) ++g_pass; else { ++g_fail; std::printf("FAIL  %s:%d  ", __FILE__, __LINE__); std::printf(__VA_ARGS__); std::printf("\n"); } } while (0)
@@ -261,6 +262,14 @@ int main() {
     {
         int fp = 0;
         const int ff = wo170_tests(&fp);
+        g_pass += fp;
+        g_fail += ff;
+    }
+
+    // WO-172: C1's dead gate (a soul's IsDead or the mod's mark; a reload's revival)
+    {
+        int fp = 0;
+        const int ff = wo172_tests(&fp);
         g_pass += fp;
         g_fail += ff;
     }

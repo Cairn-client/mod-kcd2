@@ -5,6 +5,7 @@
 #include "wo166.h"
 #include "wo163.h"
 #include "wo166_rules.h"
+#include "wo172.h"
 
 #include "engine.h"
 #include "hits.h"
@@ -81,6 +82,8 @@ void switch_off(const char* site) {
 
 // The prior state and fields back, if the model still reads ours.
 void restore(Strike& s, bool closing) {
+    // WO-172 C1: a body that died inside its window keeps what its death left -- no Guard/Idle written over a corpse
+    if (wo172::skip_dead(s.eid, "strike")) { s.done = true; return; }
     void* ca = nullptr; void* model = nullptr;
     if (!motion::combat_parts(s.eid, false, &ca, &model)) { s.done = true; return; }
     int32_t cur = 0;
@@ -126,6 +129,7 @@ void tick() {
         if (!live && s.wrote && !s.done) { restore(s, true); s.discardUntil = now; }
         if (!s.wrote && !s.done) {
             if (!live || now > s.end) { c_missed.fetch_add(1); s.done = true; s.discardUntil = now; }
+            else if (now >= s.begin && wo172::skip_dead(s.eid, "strike")) { c_missed.fetch_add(1); s.done = true; s.discardUntil = now; }   // WO-172 C1
             else if (now >= s.begin) {
                 void* ca = nullptr; void* model = nullptr;
                 int32_t cur = 0;

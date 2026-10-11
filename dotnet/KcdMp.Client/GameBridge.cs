@@ -6009,6 +6009,12 @@ public partial class GameBridge(ClientConfig config)
             case "w167_fault":       // WO-167: the mod's half of a feature faulted (the standing rule)
                 Wo167OnEvent(name, arg);
                 return;
+            case "w172_dead":        // WO-172 C1: the mod applied the host's death to this copy
+            case "w172_alive":       // WO-172 C1: it reads alive again (a reload)
+            case "w172_mount":       // WO-172 R1: this player's own IsMounted
+            case "w172_cfg":         // WO-172: mp_dead_wins / mp_ride_repair
+                Wo172OnEvent(name, arg);
+                return;
             case "w163_hostile":     // WO-163 A7: the host's 5 s judge asks the engine whether the victim is in a skirmish fight with the host
             case "w163_probe":       // WO-163 Stage B: mp_w163_probe (the maintainer present; reads and the P6 / P8 levers)
                 Wo163OnEvent(name, arg);

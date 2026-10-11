@@ -3,6 +3,7 @@
 // content belong to Warhorse Studios and PLAION. Unofficial, free, not affiliated with or endorsed by them.
 // WO-136 -- see wo136.h.
 #include "wo136.h"
+#include "wo172.h"
 #include "wo165.h"
 #include "fault_guard.h"
 
@@ -200,6 +201,7 @@ uint32_t current_opponent(const motion::NpcCombat& c) {
 }
 
 void decide(uint32_t npc, NpcThreat& t, double now, const char* why) {
+    if (wo172::skip_dead(npc, "retarget")) { t.evs.clear(); return; }   // WO-172 C1: a dead body is never put back into a fight
     for (auto it = t.evs.begin(); it != t.evs.end();) it = (now - it->t > wo136rules::kWindowS) ? t.evs.erase(it) : ++it;
     if (t.evs.empty()) return;
     motion::NpcCombat c{};
@@ -412,6 +414,7 @@ void tick() {
     if (g_pending.empty()) return;
     for (auto it = g_pending.begin(); it != g_pending.end();) {
         if (now < it->next) { ++it; continue; }
+        if (wo172::skip_dead(it->npc, "retarget")) { it = g_pending.erase(it); continue; }   // WO-172 C1: no redo on a body that died meanwhile
         char nb[64], tb[24];
         name_of(it->npc, nb, sizeof nb);
         void* ns = engine::entity_by_id(it->npc) ? hits::soul_of_eid(it->npc) : nullptr;

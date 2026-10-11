@@ -3390,6 +3390,7 @@ local function mp_npc_death_observe(name, dead, hp, src)
             -- transition here, and a peer's living NPC must not die to a
             -- stranger's savegame.
             mp_log(string.format("NPC-DEATH %s first seen already dead (by %s) -- not announced", name, src))
+            if src == "puppet" and KCD2MP_W172CopyDied then pcall(KCD2MP_W172CopyDied, name, "first-seen") end   -- WO-172 C1 (WO-171 F3)
         end
         return false
     end
@@ -3404,6 +3405,7 @@ local function mp_npc_death_observe(name, dead, hp, src)
         if remote then
             mp_log(string.format("NPC-DEATH %s died here (by %s, hp=%s) -- applied from a peer via %s, not announced",
                 name, src, tostring(hp), tostring(remote.via)))
+            if KCD2MP_W172CopyDied then pcall(KCD2MP_W172CopyDied, name, remote.via) end   -- WO-172 C1: the host's death wins
         elseif announced then
             mp_log(string.format("NPC-DEATH %s died here (by %s, hp=%s) -- already announced by %s",
                 name, src, tostring(hp), tostring(announced)))
@@ -3422,6 +3424,7 @@ local function mp_npc_death_observe(name, dead, hp, src)
         -- different entity answering to the name. Forget the death so the
         -- next one can be announced again.
         mp_log(string.format("NPC-DEATH %s reads ALIVE again (by %s) -- was dead; reload? clearing its death marks", name, src))
+        if KCD2MP_W172CopyAlive then pcall(KCD2MP_W172CopyAlive, name) end   -- WO-172 C1
         KCD2MP._npcDeathAnnounced[name] = nil
         KCD2MP._npcDeathRemote[name] = nil
         KCD2MP._npcDeathDiverged[name] = nil
@@ -7204,6 +7207,10 @@ function KCD2MP_W137Session(host, joiner, active)
         -- the agent (re)connected: it follows this toggle (it keeps no value of its own across restarts)
         KCD2MP_EmitEvent("w137_sync", w.sync and "on" or "off")
         if KCD2MP.w170 then KCD2MP_EmitEvent("w166_cfg", "figure_guard=" .. (KCD2MP.w170.figureGuard and "on" or "off")) end   -- WO-170 F1
+        if KCD2MP.w172 then   -- WO-172: the switches the agent acts on
+            KCD2MP_EmitEvent("w172_cfg", "dead_wins=" .. (KCD2MP.w172.deadWins and "on" or "off"))
+            KCD2MP_EmitEvent("w172_cfg", "ride_repair=" .. (KCD2MP.w172.rideRepair and "on" or "off"))
+        end
         if KCD2MP.w167 then   -- WO-167: the switches the agent acts on
             KCD2MP_EmitEvent("w167_cfg", "scene_release=" .. (KCD2MP.w167.sceneRelease and "on" or "off"))
             KCD2MP_EmitEvent("w167_cfg", "talk_fallback=" .. (KCD2MP.w167.talkFallback and "on" or "off"))
@@ -22514,6 +22521,350 @@ function KCD2MP_W170Status()
     return true
 end
 
+-- ---- WO-172 (0.48.8): a dead copy stays dead, riding repaired, the trade hold, the joiner's pickpocket, the black and the HUD ----
+--   C1 mp_dead_wins (default on): a copy the host's death was applied to (or first seen dead) is told to the agent (w172_dead): the
+--      DLL skips it for every activity, tool, retarget and strike, the agent plays no row on it and ends its WO-132 engagement; its
+--      talk and its scene hold end here. A body that reads alive again (a reload) is told too (w172_alive).
+--   R1 mp_ride_repair (default on): this player's own mount answer (IsMounted) goes to the agent on a change and every 2 s while
+--      mounted -- the riding bit survives the engine clearing the horse tag (the field: nine minutes of riding=False in the saddle);
+--      every 2 s a partner's figure whose stream rides but is not mounted (or the reverse), twice in a row, is mounted (dismounted)
+--      again the riding start's own way; a horse copy let go or taken back by the stream is put on the terrain if it fell through.
+--   FT1/UI1: a black lifted the field's way (wh_ui_FaderSuspend 1) is never put back on a timer while a fader may still be faded --
+--      it is given back at the next load (the field: each 60 s restore put the black back, the joiner typed the command 7 times);
+--      a quest travel this game refused while the host travelled has its black lifted 1.5 s after the leash placed this player;
+--      after a travel, a scene release, a load and mp_unstuck the HUD is shown the game's own way (UIAction.ShowElement).
+--   H1 mp_trade_hold (default on): a joiner's conversation with a trader is held -- the host's NPC and this copy -- past the
+--      dialogue's end until the trade screen closes (its own UI sound), the player walks away (4 m for 1 s) or 300 s pass; a
+--      cancelled haggle releases nothing (the field: released 3 s into the trade, the trader walked off on the host's screen).
+--   P1 mp_joiner_pickpocket (default on): a joiner's pickpocket is the game's own minigame on this copy; every item it takes is
+--      WO-134's take: sent to the host, which takes it out of its NPC's pockets, or it is taken back here ("Someone already took
+--      that."). The copy's own list is never rewritten (a living body keeps its clothes).
+--   WO172-DEAD / WO172-RIDE / WO172-FT / WO172-HUD / WO172-TRADE / WO172-PICK ... ; mp_w172_status
+KCD2MP.w172 = KCD2MP.w172 or {
+    deadWins = true, rideRepair = true, tradeHold = true, pickpocket = true, markShot = true,
+    mountSent = nil, mountAt = -1e9, rideAt = -1e9, tickAt = -1e9, ride = {}, faderHold = false, ftRefusedAt = nil,
+    screenOpen = nil, screenAt = -1e9,
+    stats = { deadMarks = 0, alive = 0, remounts = 0, dismounts = 0, gaveUp = 0, snaps = 0, tradeHolds = 0, tradeReleases = 0, picks = 0,
+              pickFails = 0, faderKept = 0, faderLoads = 0, hudRestores = 0, ftLifts = 0 },
+    MOUNT_RESEND_S = 2.0, RIDE_CHECK_S = 2.0, RIDE_MISS_N = 2, RIDE_TRIES = 5, SNAP_BELOW_M = 0.5,
+    TRADE_NEAR_M = 4.0, TRADE_AWAY_S = 1.0, TRADE_MAX_S = 300.0, TRADE_CLOSE_S = 0.5,
+}
+
+-- ---- C1 -----------------------------------------------------------------------------------------------------------------
+function KCD2MP_W172CopyDied(name, via)
+    local W = KCD2MP.w172
+    if not W.deadWins or type(name) ~= "string" or not string.find(name, "^[%w_]+$") then return false end
+    W.stats.deadMarks = W.stats.deadMarks + 1
+    KCD2MP_EmitEvent("w172_dead", name)
+    local w137 = KCD2MP.w137
+    if w137 and w137.talking and w137.talking[name] and KCD2MP_W137TalkEndNow then pcall(KCD2MP_W137TalkEndNow, name, "dead") end
+    if KCD2MP.w170 and KCD2MP.w170.held then KCD2MP.w170.held[name] = nil end
+    mp_log(string.format("WO172-DEAD npc=%s via=%s -- the host's death wins here: no activity, tool, retarget, strike or row on it again", name, tostring(via)))
+    return true
+end
+
+function KCD2MP_W172CopyAlive(name)
+    local W = KCD2MP.w172
+    if type(name) ~= "string" or not string.find(name, "^[%w_]+$") then return false end
+    W.stats.alive = W.stats.alive + 1
+    KCD2MP_EmitEvent("w172_alive", name)
+    return true
+end
+
+-- ---- R1 -----------------------------------------------------------------------------------------------------------------
+-- The pure rule of the figure check: the stream's riding bit, the figure's mount (nil = unknown) and the misses so far -> the
+-- action now ("mount", "dismount" or nil) and the new miss counts.
+function KCD2MP_W172RideRule(streamRiding, mounted, miss, extra, needN)
+    needN = needN or 2
+    if mounted == nil then return nil, 0, 0 end
+    if streamRiding and not mounted then
+        miss = (miss or 0) + 1
+        if miss >= needN then return "mount", 0, 0 end
+        return nil, miss, 0
+    elseif (not streamRiding) and mounted then
+        extra = (extra or 0) + 1
+        if extra >= needN then return "dismount", 0, 0 end
+        return nil, 0, extra
+    end
+    return nil, 0, 0
+end
+
+function KCD2MP_W172RideCheck(now)
+    local W = KCD2MP.w172
+    if not W.rideRepair then return end
+    for id, ghost in pairs(KCD2MP.ghosts or {}) do
+        local st = ghost and ghost.istate
+        if st and ghost.entity and KCD2MP_GhostIsMounted then
+            local r = W.ride[id] or { miss = 0, extra = 0, tries = 0 }
+            W.ride[id] = r
+            local riding = st.isRiding == true
+            if riding ~= r.lastRiding then r.tries = 0; r.lastRiding = riding; r.toldGaveUp = nil end   -- a new ride: new tries
+            local mounted = KCD2MP_GhostIsMounted(ghost)
+            local act
+            act, r.miss, r.extra = KCD2MP_W172RideRule(riding, mounted, r.miss, r.extra, W.RIDE_MISS_N)
+            if act and r.tries >= W.RIDE_TRIES then
+                if not r.toldGaveUp then
+                    r.toldGaveUp = true
+                    W.stats.gaveUp = W.stats.gaveUp + 1
+                    mp_log(string.format("WO172-RIDE gave-up id=%s want=%s after %d tries -- left as it is until the rider mounts or gets off again", tostring(id), act, r.tries))
+                end
+            elseif act == "mount" then
+                local pos = nil
+                pcall(function() pos = ghost.entity:GetWorldPos() end)
+                if pos then
+                    r.tries = r.tries + 1
+                    W.stats.remounts = W.stats.remounts + 1
+                    mp_log(string.format("WO172-RIDE remount id=%s try=%d -- the partner rides but the figure is not on a horse here: the riding start again", tostring(id), r.tries))
+                    pcall(KCD2MP_SpawnHorse, id, pos.x, pos.y, pos.z, st.rotZ or 0)
+                end
+            elseif act == "dismount" then
+                r.tries = r.tries + 1
+                W.stats.dismounts = W.stats.dismounts + 1
+                mp_log(string.format("WO172-RIDE dismount id=%s try=%d -- the partner is off the horse but the figure still rides here", tostring(id), r.tries))
+                pcall(KCD2MP_GhostDismount, id, ghost, "w172-check")
+                pcall(KCD2MP_RemoveHorse, id)
+            end
+        end
+    end
+end
+
+-- A horse body below the terrain is put on it (a released copy falls through the ground while its physics wakes).
+function KCD2MP_W172GroundSnap(name, e, why)
+    local W = KCD2MP.w172
+    if not W.rideRepair then return false end
+    if not e and name then pcall(function() e = System.GetEntityByName(name) end) end
+    if not e then return false end
+    local p, g = nil, nil
+    pcall(function() p = e:GetWorldPos() end)
+    if not p then return false end
+    pcall(function() g = System.GetTerrainElevation({ x = p.x, y = p.y, z = p.z }) end)
+    g = tonumber(g)
+    if not g or p.z >= g - W.SNAP_BELOW_M then return false end
+    local ok = pcall(function() e:SetWorldPos({ x = p.x, y = p.y, z = g + 0.05 }) end)
+    W.stats.snaps = W.stats.snaps + 1
+    mp_log(string.format("WO172-RIDE horse ground-snapped npc=%s why=%s z=%.2f terrain=%.2f ok=%s -- a horse is never under the ground",
+        tostring(name), tostring(why), p.z, g, tostring(ok)))
+    return ok
+end
+
+-- A released horse (a dismount): looked at now and while its physics settles.
+function KCD2MP_W172HorseReleased(name, e)
+    if not name then return end
+    pcall(KCD2MP_W172GroundSnap, name, e, "released")
+    for _, ms in ipairs({ 1500, 3500 }) do
+        Script.SetTimer(ms, function() pcall(KCD2MP_W172GroundSnap, name, nil, "released+" .. ms .. "ms") end)
+    end
+end
+
+-- ---- FT1 / UI1 ----------------------------------------------------------------------------------------------------------
+function KCD2MP_W172HudRestore(why)
+    local W = KCD2MP.w172
+    local ok = pcall(function() UIAction.ShowElement("hud", -1) end)
+    W.stats.hudRestores = W.stats.hudRestores + 1
+    mp_log(string.format("WO172-HUD restored why=%s ok=%s -- the game's own HUD element shown", tostring(why), tostring(ok)))
+    return ok
+end
+
+-- The black lifted (the field's own way out) and held until the next load: a fader still faded under it is never shown again.
+function KCD2MP_W172LiftBlack(name, why)
+    local W = KCD2MP.w172
+    local cur = nil
+    pcall(function() cur = tonumber(System.GetCVar("wh_ui_FaderSuspend")) end)
+    local ok = true
+    if cur ~= 1 then ok = pcall(function() System.SetCVar("wh_ui_FaderSuspend", 1) end) end
+    W.faderHold = true
+    W.stats.ftLifts = W.stats.ftLifts + 1
+    mp_log(string.format("WO172-FT fader restored name=%s why=%s ok=%s -- wh_ui_FaderSuspend held until the next load (a fader the game never faded back in stays hidden)",
+        tostring(name), tostring(why), tostring(ok)))
+    pcall(KCD2MP_W172HudRestore, "black-lifted")
+    return ok
+end
+
+-- WO-167's restore asks first: the 60 s timer's restore (no scene end seen) keeps the black lifted (true = do not restore now);
+-- a scene the engine ended gives the faders back as before.
+function KCD2MP_W172KeepFaderLifted(why)
+    local W = KCD2MP.w172
+    if not string.find(tostring(why), "after the black was lifted", 1, true) then return false end   -- only the timer's restore waits
+    W.faderHold = true
+    W.stats.faderKept = W.stats.faderKept + 1
+    mp_log("WO172-FT fader kept lifted why=" .. tostring(why) .. " -- a fader may still be faded under it: given back at the next load, never on a timer")
+    return true
+end
+
+-- A load (the reload reset): faders start clean -- the suspend held for a stuck black goes back; the HUD is shown.
+function KCD2MP_W172OnLoad(why)
+    local W = KCD2MP.w172
+    if W.faderHold then
+        W.faderHold = false
+        W.stats.faderLoads = W.stats.faderLoads + 1
+        local ok = pcall(function() System.SetCVar("wh_ui_FaderSuspend", 0) end)
+        mp_log("WO172-FT faders given back at a load (wh_ui_FaderSuspend 0) ok=" .. tostring(ok))
+    end
+    Script.SetTimer(2000, function() pcall(KCD2MP_W172HudRestore, "load:" .. tostring(why)) end)
+end
+
+-- This game refused a travel (a quest's own travel on the joiner, the engine switch off): remembered for the host's travel.
+function KCD2MP_W172TravelRefused(how)
+    KCD2MP.w172.ftRefusedAt = os.clock()
+end
+
+-- The leash placed this player beside the host after the host's travel: a refused quest travel here left its black up.
+function KCD2MP_W172AfterHostTravel(why)
+    local W = KCD2MP.w172
+    if not (W.ftRefusedAt and (os.clock() - W.ftRefusedAt) < 120) then
+        Script.SetTimer(1500, function() pcall(KCD2MP_W172HudRestore, "host-travel") end)
+        return false
+    end
+    W.ftRefusedAt = nil
+    Script.SetTimer(1500, function() pcall(KCD2MP_W172LiftBlack, "quest-travel-refused", why) end)
+    return true
+end
+
+-- ---- H1 -----------------------------------------------------------------------------------------------------------------
+function KCD2MP_W172IsTrader(name)
+    local e, shop = nil, false
+    pcall(function() e = System.GetEntityByName(name) end)
+    if not (e and e.soul and type(e.soul.HasScriptContext) == "function") then return false end
+    pcall(function() shop = e.soul:HasScriptContext("shop_sellerReadyToSell") == true end)
+    return shop
+end
+
+function KCD2MP_W172Dist(name)
+    local e, p, q = nil, nil, nil
+    pcall(function() e = System.GetEntityByName(name) end)
+    if e then pcall(function() q = e:GetWorldPos() end) end
+    pcall(function() p = player and player:GetWorldPos() end)
+    if not (p and q) then return nil end
+    return math.sqrt((p.x - q.x) ^ 2 + (p.y - q.y) ^ 2)
+end
+
+-- W137TalkEnd's question at a dialogue's end: keep this talk (a trade follows) -- true = held, the end waits.
+function KCD2MP_W172TradeKeep(name, t)
+    local W = KCD2MP.w172
+    if not W.tradeHold or not t or not KCD2MP.w137 or not KCD2MP.w137.joiner then return false end
+    if t.trade then return true end
+    if not KCD2MP_W172IsTrader(name) then return false end
+    local d = KCD2MP_W172Dist(name)
+    if not d or d > W.TRADE_NEAR_M then return false end
+    t.trade = { since = os.clock(), awaySince = nil }
+    W.stats.tradeHolds = W.stats.tradeHolds + 1
+    mp_log(string.format("WO172-TRADE hold npc=%s d=%.1f -- a trader: the host's NPC and this copy stay until the trade screen closes (or you walk away)", name, d))
+    return true
+end
+
+-- The agent: the inventory/trade screen's own UI sound (1 opened, 0 closed).
+function KCD2MP_W172TradeScreen(open)
+    local W = KCD2MP.w172
+    W.screenOpen = (tonumber(open) or 0) == 1
+    W.screenAt = os.clock()
+end
+
+-- The pure release rule: why the trade hold ends now (nil = keep).
+function KCD2MP_W172TradeDue(since, now, dist, awaySince, screenOpen, screenAt, nearM, awayS, maxS, closeS)
+    if now - since >= maxS then return "max-time" end
+    if screenOpen == false and screenAt > since and now - screenAt >= closeS then return "screen-closed" end
+    if dist and dist > nearM and awaySince and now - awaySince >= awayS then return "walked-away" end
+    return nil
+end
+
+function KCD2MP_W172TradeTick(now)
+    local W = KCD2MP.w172
+    local w137 = KCD2MP.w137
+    if not (w137 and w137.talking and next(w137.talking)) then return end
+    local inDialog = false
+    pcall(function() inDialog = player ~= nil and player.human ~= nil and player.human:IsInDialog() == true end)
+    for name, t in pairs(w137.talking) do
+        local tr = t.trade
+        if tr then
+            local d = KCD2MP_W172Dist(name)
+            if d and d > W.TRADE_NEAR_M then tr.awaySince = tr.awaySince or now else tr.awaySince = nil end
+            local why = nil
+            if not inDialog then
+                why = KCD2MP_W172TradeDue(tr.since, now, d, tr.awaySince, W.screenOpen, W.screenAt, W.TRADE_NEAR_M, W.TRADE_AWAY_S, W.TRADE_MAX_S, W.TRADE_CLOSE_S)
+            end
+            if why then
+                t.trade = nil
+                W.stats.tradeReleases = W.stats.tradeReleases + 1
+                mp_log(string.format("WO172-TRADE release npc=%s why=%s held_s=%.1f", name, why, now - tr.since))
+                pcall(KCD2MP_W137TalkEndNow, name, "trade-" .. why)
+            end
+        end
+    end
+end
+
+-- ---- P1 -----------------------------------------------------------------------------------------------------------------
+-- W131LootAllowed's question for a pickpocket on a host copy: handled here (true) -- the game's own minigame runs on the copy and
+-- every take is WO-134's (sent to the host, taken back if the host's NPC no longer has it).
+function KCD2MP_W172PickRequest(body, orig, user, slot)
+    local W = KCD2MP.w172
+    if not (W.pickpocket and orig and KCD2MP_W134JoinerActive and KCD2MP_W134JoinerActive()) then return false end
+    local w = KCD2MP.w134
+    if not (w and w.bodies and w.sessions) then return false end
+    local name = nil
+    pcall(function() name = body:GetName() end)
+    if not (name and string.find(name, "^[%w_]+$")) then return false end
+    if w.startLoop then pcall(w.startLoop) end   -- running already in a session (a start forgets old sessions: made before ours)
+    local snap = {}
+    pcall(function()
+        local tb = body.inventory:GetInventoryTable()
+        for i = 1, #tb do
+            local it = ItemManager.GetItem(tb[i])
+            if it and it.class then snap[#snap + 1] = { w = tb[i], cls = it.class, amt = it.amount or 1, hp = it.health or 1 } end
+        end
+    end)
+    local pinv = {}
+    pcall(function()
+        local tb = player.inventory:GetInventoryTable()
+        for i = 1, #tb do pinv[tostring(tb[i])] = true end
+    end)
+    w.sessions[name] = w.sessions[name] or { pend = {}, puts = {} }
+    local s = w.sessions[name]
+    s.snap, s.at, s.pinv, s.pick = snap, os.clock(), pinv, true
+    local ok, err = pcall(function() orig(body, user or player, slot) end)
+    W.stats.picks = W.stats.picks + 1
+    if not ok then W.stats.pickFails = W.stats.pickFails + 1 end
+    mp_log(string.format("WO172-PICK start npc=%s items=%d ok=%s%s -- the game's own pickpocket on this copy; every take is asked of the host",
+        name, #snap, tostring(ok), ok and "" or (" err=" .. tostring(err))))
+    return true
+end
+
+-- ---- the tick (from the interp tick; 4 Hz inside) and the switches -----------------------------------------------------
+function KCD2MP_W172Tick()
+    local W = KCD2MP.w172
+    local now = os.clock()
+    if now - W.tickAt < 0.25 then return end
+    W.tickAt = now
+    local m = false
+    pcall(function() m = player ~= nil and player.human ~= nil and player.human:IsMounted() == true end)
+    if m ~= W.mountSent or (m and now - W.mountAt >= W.MOUNT_RESEND_S) then
+        W.mountSent, W.mountAt = m, now
+        KCD2MP_EmitEvent("w172_mount", m and "1" or "0")
+    end
+    if now - W.rideAt >= W.RIDE_CHECK_S then W.rideAt = now; pcall(KCD2MP_W172RideCheck, now) end
+    pcall(KCD2MP_W172TradeTick, now)
+end
+
+function KCD2MP_W172Switch(key, field, arg, what, evt)
+    local v = KCD2MP_Wo122ParseBool(arg)
+    if v == "bad" then mp_log("mp_" .. key .. ": expected on|off"); return false end
+    if v ~= nil then KCD2MP.w172[field] = v end
+    if evt then KCD2MP_EmitEvent("w172_cfg", key .. "=" .. (KCD2MP.w172[field] and "on" or "off")) end
+    mp_log(string.format("WO172-TOGGLE mp_%s %s -- %s", key, KCD2MP.w172[field] and "on" or "off", what))
+    return true
+end
+function KCD2MP_W172SetDeadWins(arg) return KCD2MP_W172Switch("dead_wins", "deadWins", arg, "a copy the host's death reached is never worked again (no activity, tool, retarget, strike or row)", true) end
+function KCD2MP_W172SetRideRepair(arg) return KCD2MP_W172Switch("ride_repair", "rideRepair", arg, "riding is kept right: your own mount is sent as the game says it, a figure is mounted/dismounted again every 2 s, a horse is never under the ground", true) end
+function KCD2MP_W172SetTradeHold(arg) return KCD2MP_W172Switch("trade_hold", "tradeHold", arg, "(joiner) a trader stays until your trade screen closes or you walk away") end
+function KCD2MP_W172SetPickpocket(arg) return KCD2MP_W172Switch("joiner_pickpocket", "pickpocket", arg, "(joiner) you can pickpocket the host's people: each item is asked of the host's NPC (taken back if it no longer has it)") end
+function KCD2MP_W172Status()
+    local W = KCD2MP.w172
+    local s = W.stats
+    mp_log(string.format("WO172-STATUS dead_wins=%s ride_repair=%s trade_hold=%s joiner_pickpocket=%s fader_held=%s | dead_marks=%d alive=%d remounts=%d dismounts=%d gave_up=%d snaps=%d | trade holds=%d releases=%d | picks=%d pick_fails=%d | fader kept=%d loads=%d ft_lifts=%d hud_restores=%d",
+        W.deadWins and "on" or "off", W.rideRepair and "on" or "off", W.tradeHold and "on" or "off", W.pickpocket and "on" or "off", tostring(W.faderHold),
+        s.deadMarks, s.alive, s.remounts, s.dismounts, s.gaveUp, s.snaps, s.tradeHolds, s.tradeReleases, s.picks, s.pickFails, s.faderKept, s.faderLoads, s.ftLifts, s.hudRestores))
+    return true
+end
+
 -- ---- WO-164 R2: a host rider and its horse as one unit (joiner) ----------------------------------------------------------------
 -- The host streams a mounted NPC and its horse as two bodies; the joiner's copies were written apart (the rider at saddle height
 -- with no horse under it, the horse idling). A rider copy whose stream stays on a horse copy's (within 1 m across, 0.3-2.6 m
@@ -25706,6 +26057,12 @@ local ok, err = pcall(function()
     System.AddCCommand("mp_figure_guard", 'KCD2MP_W170SetFigureGuard(%line)', "WO-170: (host) a partner's figure never attacks, draws or sheathes on its own -- its combat automation stays off and a blow of its that no swing of the partner's matches is put back (default on): mp_figure_guard on|off")
     System.AddCCommand("mp_scene_hold", 'KCD2MP_W170SetSceneHold(%line)', "WO-170: (joiner) a copy is not paused again while its dialogue's scene is still running, 10 s at most (default on): mp_scene_hold on|off")
     System.AddCCommand("mp_w170_status", 'KCD2MP_W170Status()', "WO-170: the figure guard, the dialogue-scene hold and the rider mount gate of this build")
+    System.AddCCommand("mp_dead_wins", 'KCD2MP_W172SetDeadWins(%line)', "WO-172: (joiner) an enemy the host killed stays dead on your screen -- no activity, tool, retarget, strike or swing on its body again (default on): mp_dead_wins on|off")
+    System.AddCCommand("mp_ride_repair", 'KCD2MP_W172SetRideRepair(%line)', "WO-172: riding stays right -- your mount is sent as the game says it, your partner's figure is put back on (or off) its horse every 2 s if it differs, a horse is never under the ground (default on): mp_ride_repair on|off")
+    System.AddCCommand("mp_trade_hold", 'KCD2MP_W172SetTradeHold(%line)', "WO-172: (joiner) a trader you talk to stays until your trade screen closes or you walk away, a cancelled haggle included (default on): mp_trade_hold on|off")
+    System.AddCCommand("mp_joiner_pickpocket", 'KCD2MP_W172SetPickpocket(%line)', "WO-172: (joiner) you can pickpocket the host's people; every item is asked of the host's NPC and taken back if it no longer has it (default on): mp_joiner_pickpocket on|off")
+    System.AddCCommand("mp_mark_shot", 'KCD2MP_W172SetMarkShot(%line)', "WO-172: a mark (mark_odd, the menu's 'Something's wrong here') also takes the game's own screenshot into its screenshots folder (default on): mp_mark_shot on|off")
+    System.AddCCommand("mp_w172_status", 'KCD2MP_W172Status()', "WO-172: the dead-copy gate, riding repair, trade hold, pickpocket, black and HUD counters of this build")
     System.AddCCommand("mp_rider_unit", 'KCD2MP_W164SetRiderUnit(%line)', "WO-164: (joiner) a host rider is mounted on its horse's copy -- one unit, carried by the horse's stream (default on): mp_rider_unit on|off")
     System.AddCCommand("mp_w164_status", "KCD2MP_W164Status()", "WO-164: the sweep, the talk guard, the flee limiter, the random-event switch (WO164-STATUS here; MP-WO164-STATS in agent.log)")
     System.AddCCommand("mp_w164_sweep", 'KCD2MP_W164SweepCmd(%line)', "WO-164: sweep one host copy now (a test): mp_w164_sweep <npc>")
