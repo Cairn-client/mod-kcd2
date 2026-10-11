@@ -303,8 +303,14 @@ uint32_t avatar_swing(uint32_t avatarEid) {
     if (!pos_of(avatarEid, n.p)) return 0;
     n.reach = kSwingReachM; n.skip1 = avatarEid; n.skip2 = player_eid();
     engine::for_each_entity(&near_visit, &n);
-    if (!n.best) { n.needFight = false; n.reach = 2.5f; engine::for_each_entity(&near_visit, &n); }
-    if (!n.best) { c_swingNone.fetch_add(1); return 0; }
+    // WO-172 (WO-171 F1): a swing only threatens whom it hits -- with no fighter in reach it threatens nobody. The old fallback took
+    // any NPC within 2.5 m that was NOT fighting, made it the figure's opponent and threatened it: a bystander pulled into a fight
+    // by a swing that hit no one.
+    if (!n.best) {
+        const uint32_t k = c_swingNone.fetch_add(1) + 1;
+        if (k <= 20 || k % 100 == 0) logf("WO136-SWING avatar eid=0x%X: no fighter within %.0f m -- the swing threatens nobody (a bystander is never pulled in) [n=%u]", avatarEid, kSwingReachM, k);
+        return 0;
+    }
     // The avatar is a combatant in this fight: the NPC is ITS opponent.
     motion::NpcCombat ac{};
     const bool readA = motion::read_npc_combat(avatarEid, &ac);
