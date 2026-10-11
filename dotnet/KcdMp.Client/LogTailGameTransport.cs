@@ -384,6 +384,8 @@ public sealed class LogTailGameTransport : IGameTransport
         // WO-166 W1: the game's own weather layer profiles (rain, flies...) -- counted; on the host a new one re-reads the rain at once
         "[Info] C_GameProfileManager: Activating profile 'weather_",
         "[Info] C_GameProfileManager: Deactivating profile 'weather_",
+        // WO-172 H1: the inventory/trade screen's own UI sounds (ApseOpen / ApseClose): a joiner's trade holds its trader until the close
+        "PlayAudio: Apse",
     ];
 
     public static readonly string[] Wo144Contains =
