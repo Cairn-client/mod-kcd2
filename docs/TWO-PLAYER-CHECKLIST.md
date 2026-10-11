@@ -1105,6 +1105,35 @@ Two players. Nothing here has been played by two people yet. The host needs 0.48
      conversation — the people stay awake until their scene is over. * Joiner: `WO170-SCENE hold npc=…` then `WO170-SCENE repause …
      why=scene-ended`. If a black screen does come, it is ended after 20 s as in 0.48.5 (`WO167-SCENE`).
 
+## WO-172 — weapons, dead enemies, riding, travelling, the HUD, trading, pickpocketing (0.48.8)
+
+Two players, both on 0.48.8 (and the relay). Nothing here has been played by two people yet. **Type `mark_odd` (or press "Something's wrong
+here") at every miss** — it now also saves a screenshot in the game's screenshots folder; please send the screenshot with the logs.
+
+236. **Weapons on the host's screen** (host). Before anything else, look at a guard or any armed villager and at your own sword (draw it).
+     Then: ride with your partner, travel together once, and talk to someone with a conversation scene; after each, look again. **Every
+     weapon stays visible.** The moment they are gone: `mark_odd` at once, then save, load that save and say whether they came back.
+237. **If weapons vanished (host):** type `mp_oneshots off` and `mp_hand_items off`, load your save, play on and say whether it happens
+     again. If it does, try one session with the photo-mode mod taken out of the game's `Mods` folder.
+238. **Kill an enemy the joiner is fighting** (host kills it, or the joiner's blows finish it). **It falls on both screens at the same
+     moment and stays down** on the joiner's screen: it does not stand up, does not keep swinging, and the joiner's character stops
+     fighting it. * Joiner: `WO172-DEAD npc=… via=owner-death`, `dispatch=dropped-dead` for any swing of it that still arrives.
+239. **Two enemies on two players** (each of you fights one of a pair of bandits). They split between you and **do not twitch between
+     you**: an enemy turns to the player who is hitting it, at most once every 4 s.
+240. **Ride together for 15 minutes** (both on horses; get off and on again a few times; one of you saves on the way, or tries to). Both
+     of you **stay on your horses on both screens**, and **no horse is ever under the ground**. * Either: `WO172-RIDE remount|dismount`
+     (a repair) or `flag repaired`; `WO172-RIDE horse ground-snapped` if a horse fell through.
+241. **A quest that forces a travel** (the host plays it, the joiner is with him). **No black screen** for the joiner afterwards, and the
+     HUD is there. * Joiner: `WO172-FT fader restored name=quest-travel-refused` if the black was lifted. If the screen is still black:
+     `mp_unstuck`, then `mark_odd`.
+242. **The joiner haggles, cancels, haggles again** (with a trader). **The trader stays** for the whole trade on the host's screen, and the
+     haggle option is still there the second time. After the joiner closes the trade screen, the trader goes back to work. (The game's
+     own "you're wasting my time" after a cancelled haggle is normal.) * Joiner: `WO172-TRADE hold`, then `WO172-TRADE release …
+     why=screen-closed`.
+243. **The joiner pickpockets someone** (host: watch the person). The joiner **gets the item once**; on the host the person no longer has
+     it. If the host stole it first, the joiner's item is taken back with "Someone already took that." If the joiner is caught, it is
+     **the joiner's crime**, not the host's. * Joiner: `WO172-PICK start npc=…`, `WO134-BODY take … result … ok|gone`.
+
 ## Logs to send afterwards
 
 Both machines: Report a bug in the launcher. Since 0.42.2 it also collects the
