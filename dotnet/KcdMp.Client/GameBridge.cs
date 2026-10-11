@@ -632,6 +632,7 @@ public partial class GameBridge(ClientConfig config)
     private string? _localQuest;                       // lowercase quest from our marker (null = side content / unknown)
     private readonly ConcurrentDictionary<byte, string> _peerApproach = new();   // ghostId -> last approach path
     private readonly ConcurrentDictionary<byte, (float X, float Y, float Z, DateTime AtUtc)> _ghostLastPos = new();
+    private readonly ConcurrentDictionary<byte, float> _ghostLastYaw = new();   // WO-171 M: the partner's streamed yaw (radians), for the map marker's facing
     private readonly ConcurrentDictionary<byte, (string Beat, DateTime AtUtc)> _peerCatchup = new();
     private (string Beat, DateTime AtUtc)? _localCatchup;
 
@@ -4704,6 +4705,7 @@ public partial class GameBridge(ClientConfig config)
                         }
                     }
                     _ghostLastPos[ghostId] = (x, y, z, DateTime.UtcNow);
+                    _ghostLastYaw[ghostId] = rotZ;
                     _voice?.UpdateGhostPos(ghostId, x, y, z);
                     // The backlog fix: behind, a sample a newer one supersedes (no state block of its own) is not pushed.
                     if (!Wo147GhostSkip(ghostId, frame.Arrival, gs.State2 is not null))
@@ -5959,6 +5961,9 @@ public partial class GameBridge(ClientConfig config)
             case "w164_pin":         // WO-164 C2: mp_partner_marker
             case "w164_escort":      // WO-164 ESC: a quest NPC follows this joiner
                 Wo164OnEvent(name, arg);
+                return;
+            case "w171_cfg":         // WO-171 M: the partner marker's style / direction offset / flip
+                Wo171OnCfg(arg);
                 return;
             case "w141":             // WO-141: mp_activities on|off / kinds <n> / status
                 Wo141OnModLine(arg);

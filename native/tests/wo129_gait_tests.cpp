@@ -36,6 +36,7 @@ int wo165_tests(int* passed);              // wo165_tests.cpp (WO-165: the repla
 int wo166_tests(int* passed);              // wo166_tests.cpp (WO-166: the quest write gates, the striking window, the line limiter)
 int wo167_tests(int* passed);              // wo167_tests.cpp (WO-167: a watched swing installed or not, the stand-in walk pulse)
 int wo170_tests(int* passed);
+int wo171_tests(int* passed);              // wo171_tests.cpp (WO-171: the marker picture's names and the literal swap)
 int wo172_tests(int* passed);              // wo172_tests.cpp (WO-172: C1's dead gate)              // wo170_tests.cpp (WO-170: the figure guard's relayed-swing ledger, the put-back, the automation kept off)
 
 static int g_fail = 0, g_pass = 0;
@@ -270,6 +271,14 @@ int main() {
     {
         int fp = 0;
         const int ff = wo172_tests(&fp);
+        g_pass += fp;
+        g_fail += ff;
+    }
+
+    // WO-171: the marker picture's names and the literal swap
+    {
+        int fp = 0;
+        const int ff = wo171_tests(&fp);
         g_pass += fp;
         g_fail += ff;
     }

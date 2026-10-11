@@ -147,6 +147,7 @@ public partial class GameBridge
         _needsMenuTold = false;
         _gameQuitting = false;
         _ = ExecLuaAsync("if KCD2MP_Wo124CfgEmit then KCD2MP_Wo124CfgEmit() end");
+        _ = ExecLuaAsync("if KCD2MP_W171Emit then KCD2MP_W171Emit() end");   // WO-171: the marker's style / offset / flip as the mod has them
         _ = Wo124LoopAsync(ct);
     }
 

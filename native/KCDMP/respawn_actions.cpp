@@ -9,6 +9,7 @@
 #include "local_state.h"
 #include "pe_exports.h"
 #include "log.h"
+#include "wo171_rules.h"
 
 #include <windows.h>
 #include <atomic>
@@ -427,6 +428,7 @@ constexpr size_t kAimgrByWuid   = 0x20;
 // map+0x648 is set (0x55D10); the type in use is g_markType.
 constexpr int    kMarkGrave     = 0x2B;
 constexpr int    kMarkSource    = 2;
+constexpr int    kMarkGeneralPoi = 0x30;
 
 struct SharedPtr { void* p; void* ctrl; };
 
@@ -511,9 +513,34 @@ bool mark_ready(const char** why) {
     return true;
 }
 
-bool mark_add_typed(void* ent, SharedPtr* out, int type);
+// WO-171 M: the picture of a partner's mark. See wo171_rules.h: the game's name literal for the type is swapped for our picture's
+// name for the one call that makes the mark, then put back. Found port-aware: GUIModule's type -> name function is the one
+// function that holds the string "In level is poi with invalid type"; asking it for 0x30 returns the literal itself.
+void*              g_typeNameFn = nullptr;
+char*              g_poiLiteral = nullptr;
+size_t             g_poiSlot = 0;
+bool               g_picArmed = false;
+std::atomic<bool>  g_picOff{false};
+std::atomic<uint32_t> c_picMade{0}, c_picRefused{0}, c_picFaults{0};
+constexpr const char* kPoiLiteral = "GeneralPoi";
+
+bool literal_write(char* lit, size_t slot, const char* expect, const char* name, char* saved, bool restore) {
+    KCDMP_FAULT_READ(site, "respawn_actions::poi_literal");
+    DWORD old = 0;
+    bool ok = false;
+    if (!VirtualProtect(lit, slot, PAGE_READWRITE, &old)) return false;
+    ok = fault::guarded(site, [&] {
+        if (restore) { wo171rules::literal_restore(lit, slot, saved); ok = true; }
+        else ok = wo171rules::literal_swap(lit, slot, expect, name, saved);
+    });
+    DWORD ignore = 0;
+    VirtualProtect(lit, slot, old, &ignore);
+    return ok;
+}
+
+bool mark_add_typed(void* ent, SharedPtr* out, int type, unsigned picCode = 0);
 bool mark_add(void* ent, SharedPtr* out) { return mark_add_typed(ent, out, g_markType); }
-bool mark_add_typed(void* ent, SharedPtr* out, int type) {
+bool mark_add_typed(void* ent, SharedPtr* out, int type, unsigned picCode) {
     if (!g_markArmed || g_markOff.load()) return false;
     const char* why = "";
     if (!mark_ready(&why)) {
@@ -536,7 +563,22 @@ bool mark_add_typed(void* ent, SharedPtr* out, int type) {
     }
     SharedPtr sp{};
     void* ret = nullptr;
-    if (!vcall(map, kMapCreate, &ret, &sp, type, lo, kMarkSource) || !sp.p || !sp.ctrl) {
+    // WO-171 M: the picture. Only for a pin of the general-poi type, only while the literal is armed; the bytes are back before
+    // anything else can run (this thread is the main thread and nothing yields between the swap and the restore).
+    char picName[8]{}, picSaved[wo171rules::kNameMax]{};
+    bool swapped = false;
+    if (picCode != 0 && g_picArmed && !g_picOff.load() && type == kMarkGeneralPoi && wo171rules::picture_name(picCode, picName, sizeof picName)) {
+        swapped = literal_write(g_poiLiteral, g_poiSlot, kPoiLiteral, picName, picSaved, false);
+        if (!swapped) c_picRefused.fetch_add(1, std::memory_order_relaxed);
+    }
+    const bool created = vcall(map, kMapCreate, &ret, &sp, type, lo, kMarkSource);
+    if (swapped && !literal_write(g_poiLiteral, g_poiSlot, kPoiLiteral, picName, picSaved, true)) {
+        // never silent: the literal must be back. A failed restore leaves the game's own icon name changed -- off for good, loudly.
+        g_picOff = true; c_picFaults.fetch_add(1, std::memory_order_relaxed);
+        logf("WO171-MARK FAULT site=poi_literal restore -- the game's name literal could not be put back; marker pictures are OFF this session");
+    }
+    if (swapped && created) c_picMade.fetch_add(1, std::memory_order_relaxed);
+    if (!created || !sp.p || !sp.ctrl) {
         logf("MP-GRAVE marker: C_UIMap create refused");
         return false;
     }
@@ -613,6 +655,23 @@ void resolve_marker() {
     logf("ACTIONS: marker %s (C_UIApse/C_UIMap RTTI %s, XGenAI AIObjectManager/ai_cast exports %s; map now %s)",
          g_markArmed ? "armed" : "NOT armed", (g_vftApse && g_vftMap) ? "ok" : "MISSING",
          (g_aiObjectManager && g_aiCastLinkable) ? "ok" : "MISSING", g_markArmed && ui_map() ? "found" : "not found yet");
+    // WO-171 M: the type-name function and the general-poi literal it returns (a read-only probe call, validated by content)
+    if (const uint8_t* tn = anchor::function_by_string(gm, "In level is poi with invalid type")) {
+        g_typeNameFn = const_cast<uint8_t*>(tn);
+        const char* lit = nullptr;
+        if (fcall(g_typeNameFn, &lit, 0x30) && lit) {
+            char buf[32]{};
+            KCDMP_FAULT_READ(site, "respawn_actions::poi_literal_probe");
+            const bool rd_ok = fault::guarded(site, [&] { std::memcpy(buf, lit, 24); });
+            if (rd_ok && std::strcmp(buf, kPoiLiteral) == 0) {
+                g_poiLiteral = const_cast<char*>(lit);
+                g_poiSlot = wo171rules::literal_slot(buf);
+                g_picArmed = g_poiSlot >= 7 && g_poiSlot <= wo171rules::kNameMax;
+            }
+        }
+    }
+    logf("WO171-MARK picture literal %s (type-name function %s, literal %s, slot %zu bytes)", g_picArmed ? "armed" : "NOT armed -- pins keep the game's own icon",
+         g_typeNameFn ? "found" : "MISSING", g_poiLiteral ? "GeneralPoi" : "not found", g_poiSlot);
 }
 
 // ---------------------------------------------------------------------------
@@ -668,12 +727,13 @@ struct Pin {
     uint32_t  eid = 0;
     SharedPtr mark{};
     float     x = 0, y = 0, z = 0;
+    unsigned  wantPic = 0;   // WO-171 M: the picture code the agent asked for (0 = the game's own icon)
+    unsigned  pic = 0;       // ... and the one this pin's mark was made with
 };
 std::vector<Pin> g_pins;
 constexpr const char* kPinPrefix = "kcdmp_partner_";
 constexpr float kPinDepthM = 30.0f;
 constexpr float kPinMoveM = 3.0f;
-constexpr int   kMarkGeneralPoi = 0x30;
 std::atomic<uint32_t> c_pinSpawned{0}, c_pinMoved{0}, c_pinMarked{0}, c_pinRemoved{0};
 
 bool                g_graveArmed = false;
@@ -1233,7 +1293,7 @@ bool pin_alive(const Pin& pn) {
 // 97 categories the map draws (the record the WO asked for; the names are docs/WO-166-findings.md's list).
 constexpr int kMarkCompanion = 0x09;
 bool g_drawnLogged = false;
-int pin_mark_type() {
+int pin_mark_type(unsigned* pic) {
     void* map = g_markArmed ? ui_map() : nullptr;
     if (map && !g_drawnLogged) {
         g_drawnLogged = true;
@@ -1245,6 +1305,11 @@ int pin_mark_type() {
         logf("%s", line);
     }
     uint8_t b = 0;
+    // WO-171 M: a picture rides the general-poi type (its literal is the one with room for our names); without it, the old rule
+    if (pic && *pic) {
+        if (g_picArmed && !g_picOff.load() && map && rd8(map, 0x648 + static_cast<size_t>(kMarkGeneralPoi), &b) && b) return kMarkGeneralPoi;
+        *pic = 0;
+    }
     if (map && rd8(map, 0x648 + static_cast<size_t>(kMarkCompanion), &b) && b) return kMarkCompanion;
     if (map && rd8(map, 0x648 + static_cast<size_t>(kMarkGeneralPoi), &b) && b) return kMarkGeneralPoi;
     return g_markType;
@@ -1270,10 +1335,12 @@ void marks_guard() {
         for (Pin& pn : g_pins) {
             if (pn.mark.ctrl || g_markOff.load() || !pin_alive(pn)) continue;
             void* e = engine::entity_by_id(pn.eid);
-            const int type = pin_mark_type();
-            if (e && mark_add_typed(e, &pn.mark, type)) {
+            unsigned pic = pn.wantPic;
+            const int type = pin_mark_type(&pic);
+            if (e && mark_add_typed(e, &pn.mark, type, pic)) {
+                pn.pic = pic;
                 c_pinMarked.fetch_add(1, std::memory_order_relaxed);
-                logf("WO164-MAPMARK pin owner=%u added (type 0x%X) at (%.1f, %.1f)", static_cast<unsigned>(pn.owner), static_cast<unsigned>(type), pn.x, pn.y);
+                logf("WO164-MAPMARK pin owner=%u added (type 0x%X, picture %u) at (%.1f, %.1f)", static_cast<unsigned>(pn.owner), static_cast<unsigned>(type), pic, pn.x, pn.y);
             }
         }
         for (Mirror& m : g_mirrors) {
@@ -1316,18 +1383,26 @@ void on_world_changed() { world_changed("a load", nullptr, 0); }
 
 int marker_status(char* out, int n) {
     return _snprintf_s(out, static_cast<size_t>(n), _TRUNCATE,
-                       "markers=%s mark_faults=%u mark_queued=%u mark_added=%u mark_half_removed=%u pins=%zu pin_spawned=%u pin_moved=%u pin_marked=%u pin_removed=%u",
+                       "markers=%s mark_faults=%u mark_queued=%u mark_added=%u mark_half_removed=%u pins=%zu pin_spawned=%u pin_moved=%u pin_marked=%u pin_removed=%u pic=%s pic_made=%u pic_refused=%u pic_faults=%u",
                        !g_markArmed ? "unarmed" : g_markOff.load() ? "off" : "on", c_markFaults.load(), c_markQueued.load(), c_markAdded.load(),
-                       c_markHalfRemoved.load(), g_pins.size(), c_pinSpawned.load(), c_pinMoved.load(), c_pinMarked.load(), c_pinRemoved.load());
+                       c_markHalfRemoved.load(), g_pins.size(), c_pinSpawned.load(), c_pinMoved.load(), c_pinMarked.load(), c_pinRemoved.load(),
+                       !g_picArmed ? "unarmed" : g_picOff.load() ? "off" : "on", c_picMade.load(), c_picRefused.load(), c_picFaults.load());
 }
 
-bool partner_pin(uint8_t owner, float x, float y, float z) {
+bool partner_pin(uint8_t owner, float x, float y, float z, unsigned pic) {
     if (!engine::ready()) return false;
+    if (!wo171rules::picture_code_ok(pic)) pic = 0;
     Pin* pn = nullptr;
     for (Pin& q : g_pins) if (q.owner == owner) { pn = &q; break; }
     const float below[3] = {x, y, z - kPinDepthM};
     if (pn && !pin_alive(*pn)) { mark_remove(&pn->mark); pn->eid = 0; }
     if (!pn) { g_pins.push_back(Pin{}); pn = &g_pins.back(); pn->owner = owner; }
+    // WO-171 M: another picture = a new mark (the map reads a mark's name when it is made): the old one comes off first
+    pn->wantPic = pic;
+    if (pn->mark.ctrl && pn->pic != pic && !g_markOff.load()) {
+        mark_remove(&pn->mark);
+        logf("WO171-MARK pin owner=%u picture %u -> %u (the mark is made again)", static_cast<unsigned>(owner), pn->pic, pic);
+    }
     if (!pn->eid) {
         char name[64]{};
         _snprintf_s(name, sizeof(name), _TRUNCATE, "%s%u", kPinPrefix, static_cast<unsigned>(owner));
@@ -1351,10 +1426,12 @@ bool partner_pin(uint8_t owner, float x, float y, float z) {
     }
     if (!pn->mark.ctrl && !g_markOff.load()) {
         void* e = engine::entity_by_id(pn->eid);
-        const int type = pin_mark_type();
-        if (e && mark_add_typed(e, &pn->mark, type)) {
+        unsigned usePic = pic;
+        const int type = pin_mark_type(&usePic);
+        if (e && mark_add_typed(e, &pn->mark, type, usePic)) {
+            pn->pic = usePic;
             c_pinMarked.fetch_add(1, std::memory_order_relaxed);
-            logf("WO164-MAPMARK pin owner=%u added (type 0x%X) at (%.1f, %.1f)", static_cast<unsigned>(owner), static_cast<unsigned>(type), x, y);
+            logf("WO164-MAPMARK pin owner=%u added (type 0x%X, picture %u) at (%.1f, %.1f)", static_cast<unsigned>(owner), static_cast<unsigned>(type), usePic, x, y);
         }
     }
     return true;
