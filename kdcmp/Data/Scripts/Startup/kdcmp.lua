@@ -7520,6 +7520,7 @@ function KCD2MP_W137TalkEnd(name, why, keep)   -- keep (WO-167 T1): the copy is 
     -- WO-144 3.2: a conversation that ended well may be the start of a minigame with this NPC (dice):
     -- the end waits endDeferS (KCD2MP_W137TalkTick finishes it, or it becomes the minigame's hold)
     if why == "dialog-ended" and t.started and not t.endAt and not t.minigame then
+        if KCD2MP_W172TradeKeep and KCD2MP_W172TradeKeep(name, t) then return end   -- WO-172 H1: a trader stays until the trade screen closes
         t.endAt, t.endWhy = os.clock() + w.endDeferS, why
         return
     end
@@ -7616,7 +7617,7 @@ function KCD2MP_W137TalkTick()
     pcall(function() inDialog = player ~= nil and player.human ~= nil and player.human:IsInDialog() == true end)
     local ending = {}
     for name, t in pairs(w.talking) do
-      if not (t.minigame or t.endAt) then   -- WO-144 3.2: a deferred end / a minigame hold is decided above
+      if not (t.minigame or t.endAt or t.trade) then   -- WO-144 3.2: a deferred end / a minigame hold is decided above (WO-172 H1: a trade too)
         local age = now - t.since
         if inDialog then
             t.notInDialogSince, t.sawDialog = nil, true
