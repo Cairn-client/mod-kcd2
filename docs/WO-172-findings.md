@@ -227,3 +227,12 @@ exactly the items the host gave up.
 - The game was minimised by a watcher at launch (the window was in front for under a second, two minimise calls); no key, mouse or game
   input was injected. Scripted game calls on the throwaway only (teleports, a draw, travel commands, a load).
 - Harness: `tools/wo118/run172.py` (`c1`, `r1`, `ft1`, `h1`, `w1`, `shot`).
+
+## The installer (local, unsigned, release candidate)
+
+Fresh clone of `e75111d`, the three start saves copied in (SHA-1 as recorded for 0.48.5), `tools\Build-Installer.ps1 -SoakWaiver "<the
+standing rule in the WO-172 run prompt (2026-10-10): 'Ends in a release-candidate installer, always (soak waived under the standing
+rule)'; built unattended 2026-10-11, no soak run>"`: `release\KingdomComeTogether-Setup-0.48.8.exe`, **106,519,331 bytes**, sha256
+`712743b38d2132c359c5ddb486f9777397cfa90688f253579c8a3b4ba2318ebb`, header version **0.48.8** (checked), build gates green (native 682,
+the build's unit and round-trip gates `failed: 0`, 26/26, 41/41), unsigned (no signing settings on this machine). Local only: nothing
+uploaded.
