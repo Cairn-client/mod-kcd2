@@ -6017,6 +6017,10 @@ public partial class GameBridge(ClientConfig config)
             case "w172_dead":        // WO-172 C1: the mod applied the host's death to this copy
             case "w172_alive":       // WO-172 C1: it reads alive again (a reload)
             case "w172_mount":       // WO-172 R1: this player's own IsMounted
+            case "w173_cfg":         // WO-173: mp_real_hits
+            case "w173_status":
+                Wo173OnEvent(name, arg);
+                return;
             case "w172_cfg":         // WO-172: mp_dead_wins / mp_ride_repair
                 Wo172OnEvent(name, arg);
                 return;

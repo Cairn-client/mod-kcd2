@@ -49,6 +49,11 @@ void note_avatar(uint32_t eid, void* soul, bool on);
 struct AttribResult { bool ok = false; uint8_t steps = 0; uint8_t reason = 0; uint64_t attackerWuid = 0, victimWuid = 0; };
 // 0x19, main thread: [guid:16][st:4f][hp:4f][flags:1][attackerEid:4][nameLen:1][name]
 AttribResult apply_attributed(const uint8_t* body, size_t len);
+// WO-173 (main thread), the same body: rawDamage = the TakeDamage step runs (false: the engine already applied the blow -- only the
+// victim-side history, the skirmish and, with threat, WO-136's avatar-hit threat run; steps bit 0 then means "the engine applied it");
+// stCap >= 0 caps the stamina of the raw step (the capped fallback); threat = WO-136's note_threat (the substitute for a hit the engine
+// cannot perceive).
+AttribResult apply_attributed_ex(const uint8_t* body, size_t len, bool rawDamage, float stCap, bool threat);
 
 // 0x1A, main thread: [st:4f][hp:4f][flags:1][attackerGhost:1]
 bool apply_pvp_hit(const uint8_t* body, size_t len);

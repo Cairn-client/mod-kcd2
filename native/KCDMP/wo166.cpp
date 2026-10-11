@@ -32,7 +32,8 @@ double now_s() { LARGE_INTEGER q, f; QueryPerformanceCounter(&q); QueryPerforman
 constexpr double kDiscardTailS = 1.5;     // the copy stays on the discard list this long after its window (a late contact)
 constexpr double kRecentS = 2.0;          // striking_recently's horizon
 constexpr size_t kMaxStrikes = 32;
-constexpr unsigned kLogFirst = 30;        // the first windows each get a line; then every 50th
+constexpr unsigned kLogFirst = 30;
+constexpr double kFigureTailS = 0.45;     // WO-173: a figure's window runs on this long after the row's own end        // the first windows each get a line; then every 50th
 
 struct Strike {
     uint32_t eid = 0;
@@ -40,7 +41,7 @@ struct Strike {
     double begin = 0, end = 0, discardUntil = 0, lastEnd = 0;
     motion::AttackFields fields{}, priorFields{};
     int32_t prior = 0;
-    bool wrote = false, done = false, midRead = false, discardAdded = false;
+    bool wrote = false, done = false, midRead = false, discardAdded = false, waited = false;
     unsigned n = 0;
 };
 
@@ -50,7 +51,7 @@ std::atomic<bool> g_faulted{false};       // switched off for the session by a f
 std::atomic<uint8_t> g_autoMode{kAutoAllOff};
 std::atomic<uint32_t> c_requests{0}, c_queued{0}, c_wrote{0}, c_refusedState{0}, c_refusedModel{0}, c_refusedFields{0}, c_missed{0},
     c_restored{0}, c_engineMovedOn{0}, c_midStriking{0}, c_midOther{0}, c_playerOpp{0}, c_faults{0}, c_localDropped{0}, c_localDroppedStriking{0},
-    c_merged{0};
+    c_merged{0}, c_figureWaited{0};
 unsigned g_windowN = 0;
 std::string g_faultSite;
 
@@ -135,7 +136,11 @@ void tick() {
                 int32_t cur = 0;
                 if (!motion::combat_parts(s.eid, false, &ca, &model)) { c_refusedModel.fetch_add(1); s.done = true; s.discardUntil = now; }
                 else if (!motion::read_state(model, &cur)) { c_refusedModel.fetch_add(1); s.done = true; s.discardUntil = now; }
-                else if (!strike_state_ok(cur)) {
+                else if (!strike_state_ok(cur) && motion::is_avatar_eid(s.eid)) {
+                    // WO-173: a partner's figure in a reaction of its own (an NPC's blow on it) waits for the reaction to end inside its
+                    // window -- never cut off -- and strikes then (the partner's blow that follows needs the window to go through the engine)
+                    if (!s.waited) { s.waited = true; c_figureWaited.fetch_add(1); }
+                } else if (!strike_state_ok(cur)) {
                     c_refusedState.fetch_add(1);
                     if (c_refusedState.load() <= 20) logf("WO166-STRIKE npc=%s refused: the copy's state is 0x%X (an engine reaction of its own: never cut off)", s.name.c_str(), static_cast<unsigned>(cur));
                     s.done = true; s.discardUntil = now;
@@ -221,7 +226,7 @@ uint8_t handle(uint8_t op, const uint8_t* body, size_t len, uint8_t* out, size_t
             // a swing on a copy whose window is still open: the window runs on with the new row's fields
             for (auto& s : g_strikes) {
                 if (s.eid == eid && !s.done) {
-                    s.end = (std::max)(s.end, w.end_ms / 1000.0);
+                    s.end = (std::max)(s.end, w.end_ms / 1000.0 + (motion::is_avatar_eid(eid) ? kFigureTailS : 0.0));
                     s.fields = f;
                     if (s.wrote) {
                         void* ca = nullptr; void* model = nullptr;
@@ -236,6 +241,9 @@ uint8_t handle(uint8_t op, const uint8_t* body, size_t len, uint8_t* out, size_t
             Strike s;
             s.eid = eid; s.name = name; s.fields = f;
             s.begin = w.begin_ms / 1000.0; s.end = w.end_ms / 1000.0;
+            // WO-173: a partner's figure stays striking until the partner's measured hit has arrived (his game reports it a sampler period
+            // after his blow lands, then the network): the host's engine judges that hit against a striker, as the victim saw it
+            if (motion::is_avatar_eid(eid)) s.end += kFigureTailS;
             g_strikes.push_back(s);
             c_queued.fetch_add(1);
             text("queued window_ms=%.0f..%.0f", (s.begin - now) * 1000.0, (s.end - now) * 1000.0);
@@ -270,11 +278,11 @@ int status_text(char* out, int n) {
     return std::snprintf(out, n,
         "wo166 copy_strikes=%s faulted=%s requests=%u queued=%u merged=%u wrote=%u refused_state=%u refused_model=%u refused_fields=%u missed=%u "
         "restored=%u engine_moved_on=%u mid_striking=%u mid_other=%u player_opponent_copy=%u faults=%u local_dropped=%u local_dropped_striking=%u "
-        "active=%zu auto_mode=%u snap_fix=%s",
+        "active=%zu auto_mode=%u snap_fix=%s figure_waited=%u",
         g_on.load() ? "on" : "off", g_faulted.load() ? "yes" : "no", c_requests.load(), c_queued.load(), c_merged.load(), c_wrote.load(),
         c_refusedState.load(), c_refusedModel.load(), c_refusedFields.load(), c_missed.load(), c_restored.load(), c_engineMovedOn.load(),
         c_midStriking.load(), c_midOther.load(), c_playerOpp.load(), c_faults.load(), c_localDropped.load(), c_localDroppedStriking.load(),
-        g_strikes.size(), g_autoMode.load(), npcdrive::snap_fix() ? "on" : "off");
+        g_strikes.size(), g_autoMode.load(), npcdrive::snap_fix() ? "on" : "off", c_figureWaited.load());
 }
 
 void on_pipe_closed() {

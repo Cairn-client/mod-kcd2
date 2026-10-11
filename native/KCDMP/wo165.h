@@ -28,6 +28,11 @@ constexpr uint8_t kFlagCreateCa = 0x08;     // a dummy without a combat actor ge
 // A victim holding block (State PreparingToParry 0x80 or ParryInPlace 0x100) is not replayed: the engine honours a block only against an
 // attacker it sees Striking, which a copy never is (WO-165 P3, live) -- the host's verdict decides that blow instead.
 constexpr uint8_t kFlagReferBlocking = 0x10;
+// WO-173: after an engine-processed blow the collision handler's own reaction tail runs (wo173.h react: the victim's hit / block reaction
+// is created by the engine's CreateHitAction and handed to its action director) -- what a real contact does after RPGProcessHit.
+constexpr uint8_t kFlagReact = 0x20;
+// WO-173: the attacker's "intended target" mark is set around the call (wo173.h mark_intended), as the collision handler does before it.
+constexpr uint8_t kFlagIntended = 0x40;
 
 struct Request {
     uint32_t attackerEid = 0;
@@ -51,6 +56,8 @@ struct Result {
     uint8_t recBlock = 0, recSecond = 0, recPerfect = 0, recBroken = 0, recZoneMismatch = 0;
     motion::AttackFields before, written;
     motion::ModelRead victimModel;   // the victim's block fields as they were when the call was made
+    uint8_t react = 0;               // WO-173: wo173rules::React (0 = not run)
+    int32_t reactKind = -1;          // WO-173: the reaction kind the engine's rule picked
 };
 
 // main thread
