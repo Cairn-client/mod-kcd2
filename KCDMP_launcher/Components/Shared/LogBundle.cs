@@ -48,7 +48,7 @@ namespace KCDMP_launcher.Components.Shared
         /// there was nothing here to collect regardless of this parameter --
         /// see docs/WO-81-findings.md.
         /// </param>
-        public static string Collect(string gameRoot, string agentDirectory, string relayDirectory = "")
+        public static string Collect(string gameRoot, string agentDirectory, string relayDirectory = "", bool includeEarlierLaunches = true)
         {
             string zipPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
@@ -60,21 +60,62 @@ namespace KCDMP_launcher.Components.Shared
             // agent.log; Serilog holds the current app log. Everything is
             // therefore read with full sharing rather than ZipArchive's own
             // exclusive CreateEntryFromFile.
-            void AddIfPresent(string? path, string entryName)
+            foreach (var sf in Gather(gameRoot, agentDirectory, relayDirectory, includeEarlierLaunches))
             {
                 try
                 {
-                    if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
-                    using var src = new FileStream(path, FileMode.Open, FileAccess.Read,
-                        FileShare.ReadWrite | FileShare.Delete);
-                    var entry = zip.CreateEntry(entryName, CompressionLevel.Optimal);
+                    var entry = zip.CreateEntry(sf.EntryName, CompressionLevel.Optimal);
                     using var dst = entry.Open();
+                    if (sf.Bytes is not null) { dst.Write(sf.Bytes); continue; }
+                    using var src = new FileStream(sf.Path!, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
                     src.CopyTo(dst);
                 }
                 catch
                 {
                     // One unreadable file must not sink the bundle.
                 }
+            }
+            return zipPath;
+        }
+
+        /// <summary>
+        /// WO-171 L: the bundle as parts of at most 19 MB (Discord's free upload limit is 20 MB): a tar compressed with zstd
+        /// (<c>.tzst</c>; 7-Zip opens it), repeated noise lines collapsed, identical files stored once, a manifest in part 1.
+        /// The current launch by default; the earlier launches (history\) only when asked for. Falls back to the old zip,
+        /// and says so, when the packer cannot run.
+        /// </summary>
+        public static CollectResult CollectPacked(string gameRoot, string agentDirectory, string relayDirectory, bool includeEarlierLaunches, Action<string>? progress = null)
+        {
+            string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            string baseName = $"KCDMP-logs-{DateTime.Now:yyyyMMdd-HHmmss}";
+            var sources = Gather(gameRoot, agentDirectory, relayDirectory, includeEarlierLaunches);
+            try
+            {
+                var r = KcdMp.LogPack.Packer.Pack(sources, desktop, baseName, new KcdMp.LogPack.PackOptions(), progress);
+                return new CollectResult(r.Parts, r.OriginalBytes, r.PartBytes, false, "");
+            }
+            catch (Exception ex)
+            {
+                string zip = Collect(gameRoot, agentDirectory, relayDirectory, includeEarlierLaunches);
+                long size = new FileInfo(zip).Length;
+                return new CollectResult(new[] { zip }, 0, size, true, ex.Message);
+            }
+        }
+
+        public sealed record CollectResult(IReadOnlyList<string> Files, long OriginalBytes, long PackedBytes, bool UsedZipFallback, string FallbackReason);
+
+        /// <summary>Everything a bundle holds, as (entry name, file or bytes); a file that is not there is simply not listed.</summary>
+        internal static List<KcdMp.LogPack.SourceFile> Gather(string gameRoot, string agentDirectory, string relayDirectory, bool includeEarlierLaunches)
+        {
+            var list = new List<KcdMp.LogPack.SourceFile>();
+            void AddIfPresent(string? path, string entryName)
+            {
+                try
+                {
+                    if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
+                    list.Add(new KcdMp.LogPack.SourceFile(entryName, path));
+                }
+                catch { }
             }
 
             string? kcdLog = FindKcdLog(gameRoot);
@@ -128,11 +169,7 @@ namespace KCDMP_launcher.Components.Shared
                             raw = mem.ToArray();
                         }
                         if (KCDMP_launcher.Models.ModSettingsReport.Filter(raw) is string filtered)
-                        {
-                            var entry = zip.CreateEntry("mod-settings.json", CompressionLevel.Optimal);
-                            using var w = new StreamWriter(entry.Open());
-                            w.Write(filtered);
-                        }
+                            list.Add(new KcdMp.LogPack.SourceFile("mod-settings.json", Bytes: System.Text.Encoding.UTF8.GetBytes(filtered)));
                     }
                 }
                 catch { }
@@ -186,7 +223,7 @@ namespace KCDMP_launcher.Components.Shared
             try
             {
                 var hist = new DirectoryInfo(HistoryFolder);
-                if (hist.Exists)
+                if (includeEarlierLaunches && hist.Exists)
                     foreach (var d in hist.GetDirectories("launch-*").OrderByDescending(d => d.Name).Take(HistoryKeep))
                         foreach (var f in d.GetFiles())
                             AddIfPresent(f.FullName, $"history/{d.Name}/{f.Name}");
@@ -200,7 +237,7 @@ namespace KCDMP_launcher.Components.Shared
                 "settings.launcher-dir.json");
             AddIfPresent(Globals.ConfigFilePath, "config.json");
 
-            return zipPath;
+            return list;
         }
 
         /// <summary>WO-144: where KeepHistory puts the logs of earlier launches (one folder per launch).</summary>
