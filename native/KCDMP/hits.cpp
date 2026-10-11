@@ -214,6 +214,8 @@ void* hit_common(bool missile, HitFn orig, void* self, void* out, const uint8_t*
         if (r0) {
             std::lock_guard<std::mutex> lock(g_qMutex);
             g_newWatches.push_back({vs, veid, hp0, st0, 0, mat, static_cast<uint8_t>(kWatchReplay), g_replay.seq});
+            // WO-173: a put-back watch of a dropped figure blow on this victim must not undo the engine's own blow
+            if (g_figureWatchesOpen.load(std::memory_order_relaxed) > 0 && g_cancelFigure.size() < 64) g_cancelFigure.push_back(veid);
         }
         return res;
     }
@@ -485,13 +487,16 @@ void note_avatar(uint32_t eid, void* soul, bool on) {
     }
 }
 
-AttribResult apply_attributed(const uint8_t* body, size_t len) {
+AttribResult apply_attributed(const uint8_t* body, size_t len) { return apply_attributed_ex(body, len, true, -1.0f, true); }
+
+AttribResult apply_attributed_ex(const uint8_t* body, size_t len, bool rawDamage, float stCap, bool threat) {
     AttribResult r{};
     if (len < 16 + 4 + 4 + 1 + 4 + 1 || len != static_cast<size_t>(30 + body[29])) { r.reason = 8; return r; }
     float st = 0, hp = 0; uint32_t avatarEid = 0;
     std::memcpy(&st, body + 16, 4); std::memcpy(&hp, body + 20, 4); std::memcpy(&avatarEid, body + 25, 4);
     std::string name(reinterpret_cast<const char*>(body + 30), body[29]);
     if (!std::isfinite(st) || !std::isfinite(hp)) { r.reason = 8; return r; }
+    if (stCap >= 0.0f && st > stCap) st = stCap;   // WO-173: the capped fallback
     void* victimSoulR = rttr::find_soul_by_guid(body);   // the RTTR Soul (TakeDamage)
     void* avatarActor = actor_by_eid(avatarEid);
     void* avatarSoul = soul_of_actor(avatarActor);
@@ -499,8 +504,11 @@ AttribResult apply_attributed(const uint8_t* body, size_t len) {
     if (!avatarSoul) { r.reason = 4; return r; }
     void* avatarEnt = engine::entity_by_id(avatarEid);
     r.attackerWuid = avatarEnt ? actions::entity_wuid(avatarEnt) : 0;
-    // 1. damage with the avatar as the attacker
-    if (rttr::apply_damage_soul(victimSoulR, st, hp, buffs::as_c_soul(avatarSoul) ? buffs::as_c_soul(avatarSoul) : avatarSoul)) {
+    // 1. damage with the avatar as the attacker (WO-173: skipped when the engine's hit processor already applied this blow)
+    if (!rawDamage) {
+        r.steps |= 1;
+        rttr::note_remote_damage(body, hp);   // the LocalHit observer must not report the engine's drop as ours either
+    } else if (rttr::apply_damage_soul(victimSoulR, st, hp, buffs::as_c_soul(avatarSoul) ? buffs::as_c_soul(avatarSoul) : avatarSoul)) {
         r.steps |= 1;
         if (!name.empty()) note_applied_damage(eid_by_name(name), st, hp);   // WO-170: never put back with a dropped figure blow
         // The plain path's echo guard: without it the LocalHit observer
@@ -557,7 +565,7 @@ AttribResult apply_attributed(const uint8_t* body, size_t len) {
         }
         // WO-136: the hit the engine cannot perceive (no hit volume) counts as the
         // avatar's threat; the NPC turns to it the way it would to a real attacker.
-        kcdmp::wo136::note_threat(veid, avatarEid, 2, "avatar-hit", hp);   // WO-163 (A6): the hit's own measured damage
+        if (threat) kcdmp::wo136::note_threat(veid, avatarEid, 2, "avatar-hit", hp);   // WO-163 (A6): the hit's own measured damage
     }
     r.ok = (r.steps & 1) != 0;
     return r;

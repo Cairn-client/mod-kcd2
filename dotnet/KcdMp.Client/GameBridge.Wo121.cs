@@ -382,6 +382,7 @@ public partial class GameBridge
             {
                 if (!AttackEvent.TryFromBytes(a.Payload, out var ae)) { Console.WriteLine($"MP-ACTION section=inbound ghost={a.SourceGhostId} kind=Attack dispatch=dropped-malformed len={a.Payload.Length}"); return true; }
                 _peerV8AttackAt[a.SourceGhostId] = DateTime.UtcNow;
+                Wo173OnAvatarAttack(a.SourceGhostId, ae.Row, catalog, ct);   // WO-173 C1: the row his next hit belongs to; his figure strikes for its window
                 await PlayAvatarRowAsync(a, ae.Row, catalog, ae.ToString(), ct);
                 Wo136OnAvatarAttack(a.SourceGhostId);   // WO-136 Phase 4: the avatar fights what it swings at; the swing threatens it
                 return true;
@@ -534,7 +535,9 @@ public partial class GameBridge
     {
         if (!_npcAttribution || !_isDamageAuthority || (flags & Protocol.NpcDamageFlagAttributed) == 0) return null;
         if (!_ghostEntityIds.TryGetValue(source.ToString(), out uint avatarEid)) return null;
-        var r = await _combat.AttributedDamageAsync(localGuid, stamina, health, flags, avatarEid, npcName, ct);
+        // WO-173 C1: a real hit through the engine (or the capped raw path); an older DLL -> WO-121's path as before
+        var r = await Wo173AttributedAsync(source, npcName, localGuid, stamina, health, flags, avatarEid, ct)
+                ?? await _combat.AttributedDamageAsync(localGuid, stamina, health, flags, avatarEid, npcName, ct);
         _w121AttribIn++;
         string steps = $"damage={((r.Steps & 1) != 0 ? 1 : 0)} history={((r.Steps & 2) != 0 ? 1 : 0)} skirmish={((r.Steps & 4) != 0 ? 1 : 0)}";
         bool brain = false;

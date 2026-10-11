@@ -21,6 +21,7 @@
 #include "local_state.h"
 #include "log.h"
 #include "rttr_abi.h"
+#include "wo173.h"
 
 namespace kcdmp::wo165 {
 namespace {
@@ -224,11 +225,16 @@ Result replay(const Request& rq) {
     bool ret = false;
     hits::ReplayCapture cap{};
     if (ok) {
+        uint8_t prevIntended = 0;
+        const bool marked = (rq.flags & kFlagIntended) && wo173::mark_intended(aModel, true, &prevIntended);
         hits::replay_begin(rq.attackerEid, veid, res.seq, vSoul, victimIsPlayer);
         ok = call_process(g_fnProcess, rpg, result, hitIn, flags, &ret);
         hits::replay_end(&cap);
+        if (marked && !prevIntended) wo173::mark_intended(aModel, false, nullptr);
         res.called = true;
     }
+    // WO-173: the collision handler's reaction tail, in the same frame, with the result struct the processor filled
+    if (ok && ret && cap.seen && (rq.flags & kFlagReact)) res.react = wo173::react(aCa, vCa, result, &res.reactKind);
     if (!(rq.flags & (kFlagKeepFields | kFlagOwnFields))) motion::write_attack_fields(aModel, res.before);
     if (!ok) {
         switch_off(res.called ? "RPGProcessHit" : "the result constructor");

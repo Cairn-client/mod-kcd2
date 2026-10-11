@@ -6517,7 +6517,10 @@ do
             -- ragdolled, and StandUp does nothing then (observed, run J1). The
             -- engine's actor:Revive(false) puts it on its feet (observed); its
             -- health keeps following the host's (WO-131 FollowHp).
-            Script.SetTimer(1500, function()
+            local fw = KCD2MP.w173 and KCD2MP.w173.fastWake and KCD2MP.w173.fastWake[name]
+            local wakeMs = (fw and (os.clock() - fw) < 5) and 300 or 1500   -- WO-173 C2: the host's NPC is up: its copy within 0.5 s
+            if fw then KCD2MP.w173.fastWake[name] = nil end
+            Script.SetTimer(wakeMs, function()
                 local e2 = w135_body(name)
                 if not (e2 and e2.actor) or w135_dead(e2) or w135_down(e2) then return end
                 local rok = pcall(function() e2.actor:Revive(false) end)
@@ -7213,6 +7216,7 @@ function KCD2MP_W137Session(host, joiner, active)
         -- the agent (re)connected: it follows this toggle (it keeps no value of its own across restarts)
         KCD2MP_EmitEvent("w137_sync", w.sync and "on" or "off")
         if KCD2MP.w170 then KCD2MP_EmitEvent("w166_cfg", "figure_guard=" .. (KCD2MP.w170.figureGuard and "on" or "off")) end   -- WO-170 F1
+        if KCD2MP.w173 then KCD2MP_EmitEvent("w173_cfg", "real_hits=" .. (KCD2MP.w173.realHits and "on" or "off")) end   -- WO-173
         if KCD2MP.w172 then   -- WO-172: the switches the agent acts on
             KCD2MP_EmitEvent("w172_cfg", "dead_wins=" .. (KCD2MP.w172.deadWins and "on" or "off"))
             KCD2MP_EmitEvent("w172_cfg", "ride_repair=" .. (KCD2MP.w172.rideRepair and "on" or "off"))
@@ -21412,6 +21416,40 @@ function KCD2MP_W166SetAutoMode(arg)
     return true
 end
 
+-- WO-173 (0.49.0): the joiner's blows become real hits in the host's world (docs/WO-173-findings.md).
+--   mp_real_hits (host; the agent and the DLL act on it): the joiner's blow on a host NPC goes through the host game's own hit processor --
+--      the NPC's own rules decide hit / block / parry, it reacts as to the host's blows; off = the old raw damage, its stamina capped so
+--      one blow never knocks a fighter out.
+--   KCD2MP_W173Down(name, state) (joiner, from the agent): the host's NPC is up (0) / knocked out (1) / dead (2) -- its copy follows now.
+--   WO173-TOGGLE ...   WO173-DOWN npc=<n> state=<0|1|2> ...
+KCD2MP.w173 = KCD2MP.w173 or { realHits = false, fastWake = {}, stats = { down = 0, up = 0, dead = 0 } }
+function KCD2MP_W173SetRealHits(arg)
+    local v = KCD2MP_Wo122ParseBool(arg)
+    if v == "bad" then mp_log("mp_real_hits: expected on|off"); return false end
+    if v ~= nil then KCD2MP.w173.realHits = v end
+    KCD2MP_EmitEvent("w173_cfg", "real_hits=" .. (KCD2MP.w173.realHits and "on" or "off"))
+    mp_log("WO173-TOGGLE mp_real_hits " .. (KCD2MP.w173.realHits and "on" or "off")
+        .. " -- your partner's blows are real hits in your world (the enemy blocks, parries and reacts by its own rules); off: the old raw damage, never a knock-out from one blow")
+    return true
+end
+function KCD2MP_W173Status()
+    local w = KCD2MP.w173
+    mp_log(string.format("WO173-STATUS real_hits=%s down=%d up=%d dead=%d", w.realHits and "on" or "off", w.stats.down, w.stats.up, w.stats.dead))
+    KCD2MP_EmitEvent("w173_status", "")
+end
+function KCD2MP_W173Down(name, state)
+    local w = KCD2MP.w173
+    local p = KCD2MP.npcPuppets and KCD2MP.npcPuppets[name]
+    if state == 2 then w.stats.dead = w.stats.dead + 1 elseif state == 1 then w.stats.down = w.stats.down + 1 else w.stats.up = w.stats.up + 1 end
+    if p and state ~= 2 then
+        p.ko = state == 1
+        -- the WO-135 tick must not ask again for what the agent is doing now
+        if KCD2MP.w135 and KCD2MP.w135.ko then KCD2MP.w135.ko[name] = { want = state == 1, at = os.clock() } end
+        if state == 0 then w.fastWake[name] = os.clock() end
+    end
+    mp_log(string.format("WO173-DOWN npc=%s state=%d copy=%s", tostring(name), state, p and "yes" or "no"))
+end
+
 function KCD2MP_W166SetTalkResumeFirst(arg)
     local v = KCD2MP_Wo122ParseBool(arg)
     if v == "bad" then mp_log("mp_talk_resume_first: expected on|off"); return false end
@@ -26155,6 +26193,8 @@ local ok, err = pcall(function()
     System.AddCCommand("mp_host_lock", 'KCD2MP_W165SetHostLock(%line)', "WO-165: (host) you can lock onto an NPC that is beating your partner: near it (6 m) and facing it, you join its fight as its foe; it keeps fighting your partner until you hit it (default on): mp_host_lock on|off")
     System.AddCCommand("mp_victim_decides", 'KCD2MP_W165SetVictimDecides(%line)', "WO-165: (joiner) your own game judges an enemy's blow and applies it; while you hold block the host's game decides, as before (UNTESTED with two players; default off since 0.48.2): mp_victim_decides on|off")
     System.AddCCommand("mp_block_recoil", 'KCD2MP_W165SetBlockRecoil(%line)', "WO-165: (joiner) an enemy whose blow you blocked plays the game's own bounce-back (UNTESTED with two players; default on): mp_block_recoil on|off")
+    System.AddCCommand("mp_real_hits", 'KCD2MP_W173SetRealHits(%line)', "WO-173: (host) your partner's blows are real hits in your world: the enemy blocks, parries, staggers and fights back by its own rules, the same on both screens; off = the old raw damage, never a knock-out from one blow (UNTESTED with two players; default off in 0.49.0): mp_real_hits on|off")
+    System.AddCCommand("mp_w173_status", 'KCD2MP_W173Status()', "WO-173: real-hit counters (WO173-STATUS here; MP-WO173-STATS in agent.log)")
     System.AddCCommand("mp_copy_strikes", 'KCD2MP_W166SetCopyStrikes(%line)', "WO-166: (joiner) an enemy swinging at you counts as a real strike on your screen: the game's own block and riposte prompts; the host still decides the damage (UNTESTED with two players; default on): mp_copy_strikes on|off")
     System.AddCCommand("mp_snap_fix", 'KCD2MP_W166SetSnapFix(%line)', "WO-166: (joiner) an enemy's swing holds its figure only as long as the swing, never for seconds (less snapping in fights; default on): mp_snap_fix on|off")
     System.AddCCommand("mp_w166_automode", 'KCD2MP_W166SetAutoMode(%line)', "WO-166: test tool -- the partner figure's combat automation pattern while it is in combat (0 all off, 1 all on, 2-9 patterns)")

@@ -32,6 +32,12 @@ namespace KcdMp.Wire;
 //                 s <seq> <dest>          host -> joiners: the host's travel started (its own pick, a joiner's, or a quest's: dest "-")
 //                 e <seq> <x,y,z> <0|1>   host -> joiners: the host's travel ended there (1 = interrupted midway, a road encounter)
 //               dest: "@<name>" (a travel point the engine's wh_pl_FastTravelTo knows by name), "<x>,<y>,<z>" (a world position) or "-"
+//   7 RealHit   "<npc> <verdict> <react> <how> <hp> <st>"   WO-173 C2, host -> the joiner whose blow it was: the host's engine's outcome
+//                of his blow on its NPC -- verdict hit|blocked|pb|broken|none, react the engine's reaction tail (wo173_rules.h React as a
+//                number: 1 queued), how e (the engine applied it) | r (the capped raw path), the health / stamina his game measured (the
+//                amounts the host's NPC lost are brought to his for a landed hit). The joiner logs it (WO173-OUTCOME) and shows it on his copy
+//   8 NpcDown   "<npc> <0|1|2>"   WO-173 C2, host -> joiners: the host's NPC is up (0), knocked out (1) or dead (2); sent on every change
+//                and every 3 s while down, for the NPCs a figure fought or a joiner hit in the last 2 minutes. The joiner's copy follows at once
 //
 // An older peer never sees these (a mixed release is refused at the relay, WO-110 R9); a receiver that meets an unknown
 // kind ignores it (counted). No protocol bump.
@@ -44,7 +50,7 @@ public static partial class Protocol
     public const int W164TextMax = 80;
 
     // ---- kinds (APPEND-ONLY) ----
-    public const byte W164MarkPing = 1, W164Torch = 2, W164Escort = 3, W164HitOutcome = 4, W164Weather = 5, W164Travel = 6;
+    public const byte W164MarkPing = 1, W164Torch = 2, W164Escort = 3, W164HitOutcome = 4, W164Weather = 5, W164Travel = 6, W164RealHit = 7, W164NpcDown = 8;
 
     /// <summary>While the torch is out, the side-channel repeats it this often (a lost edge recovers).</summary>
     public const int W164TorchRepeatMs = 10_000;
@@ -52,7 +58,7 @@ public static partial class Protocol
     public static string W164KindName(byte k) => k switch
     {
         W164MarkPing => "mark-ping", W164Torch => "torch", W164Escort => "escort", W164HitOutcome => "hit-outcome", W164Weather => "weather",
-        W164Travel => "travel", _ => $"unknown-{k}",
+        W164Travel => "travel", W164RealHit => "real-hit", W164NpcDown => "npc-down", _ => $"unknown-{k}",
     };
 }
 
@@ -80,6 +86,46 @@ public static class W164Text
     public static string Torch(byte ghost, bool on) => $"{ghost} {(on ? 1 : 0)}";
 
     public static string Escort(string npc, bool on) => $"{npc} {(on ? 1 : 0)}";
+
+    /// <summary>WO-173: an NPC name as the W164 texts carry it: [A-Za-z0-9_], 1..48 (the escort rule, shorter so a RealHit fits the text max).</summary>
+    public static bool IsNpcName(string? s)
+    {
+        if (s is null || s.Length is 0 or > 48) return false;
+        foreach (char c in s) if (!(char.IsAsciiLetterOrDigit(c) || c == '_')) return false;
+        return true;
+    }
+
+    /// <summary>WO-173 C2: "&lt;npc&gt; &lt;verdict&gt; &lt;react&gt; &lt;e|r&gt; &lt;hp&gt; &lt;st&gt;" -- the host's engine's outcome of a joiner's blow.</summary>
+    public static string RealHit(string npc, HitVerdict verdict, byte react, bool byEngine, float hp, float st) =>
+        FormattableString.Invariant($"{npc} {(verdict == HitVerdict.None ? "none" : HitVerdictMsg.VerdictName(verdict))} {react} {(byEngine ? 'e' : 'r')} {Stat(hp):F1} {Stat(st):F1}");
+
+    private static float Stat(float v) => !float.IsFinite(v) || v < 0 ? 0f : Math.Min(v, 999.9f);
+
+    public static bool TryParseRealHit(string? text, out string npc, out HitVerdict verdict, out byte react, out bool byEngine, out float hp, out float st)
+    {
+        npc = ""; verdict = HitVerdict.None; react = 0; byEngine = false; hp = st = 0;
+        var f = (text ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        if (f.Length != 6 || !IsNpcName(f[0])) return false;
+        if (f[1] != "none" && (!HitVerdictMsg.TryParseVerdict(f[1], out verdict) || verdict is HitVerdict.Parried or HitVerdict.Missed)) return false;
+        if (!byte.TryParse(f[2], System.Globalization.NumberStyles.None, inv, out react) || f[3] is not ("e" or "r")) return false;
+        if (!float.TryParse(f[4], System.Globalization.NumberStyles.Float, inv, out hp) || !float.TryParse(f[5], System.Globalization.NumberStyles.Float, inv, out st)) return false;
+        if (!float.IsFinite(hp) || !float.IsFinite(st) || hp < 0 || st < 0 || hp > 999.9f || st > 999.9f) return false;
+        npc = f[0]; byEngine = f[3] == "e";
+        return true;
+    }
+
+    /// <summary>WO-173 C2: "&lt;npc&gt; &lt;0|1|2&gt;" -- up, knocked out, dead.</summary>
+    public static string NpcDown(string npc, byte state) => $"{npc} {state}";
+
+    public static bool TryParseNpcDown(string? text, out string npc, out byte state)
+    {
+        npc = ""; state = 0;
+        var f = (text ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (f.Length != 2 || !IsNpcName(f[0]) || f[1] is not ("0" or "1" or "2")) return false;
+        npc = f[0]; state = (byte)(f[1][0] - '0');
+        return true;
+    }
 
     /// <summary>WO-166 W1: "&lt;rain&gt; &lt;profile|-&gt;" -- the host's rain (0..1, two decimals) and its time-of-day profile name.</summary>
     public static string Weather(float rain, string? profile)

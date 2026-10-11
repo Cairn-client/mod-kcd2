@@ -342,6 +342,14 @@ public partial class GameBridge
             case Protocol.W164Travel:   // WO-167 FT2: one shared fast travel
                 await Wo167OnTravelAsync(src, m.Text);
                 return;
+            case Protocol.W164RealHit:   // WO-173 C2: the host's engine's outcome of this joiner's blow
+                if (W137Host) { Interlocked.Increment(ref _w164Malformed); return; }
+                await Wo173OnRealHitInAsync(m.Text);
+                return;
+            case Protocol.W164NpcDown:   // WO-173 C2: the host's NPC is down / up
+                if (W137Host) { Interlocked.Increment(ref _w164Malformed); return; }
+                await Wo173OnNpcDownInAsync(m.Text);
+                return;
             case Protocol.W164Weather when W164Text.TryParseWeather(m.Text, out float wrain, out string? wprof):   // WO-166 W1
                 if (W137Host) { Interlocked.Increment(ref _w164Malformed); return; }   // only the host's weather is the session's
                 await Wo166OnHostWeatherAsync(wrain, wprof);
