@@ -7,8 +7,8 @@
 <strong>Not affiliated with or endorsed by Warhorse Studios or PLAION.</strong></p>
 
 <p align="center">
-  <a href="docs/releases/RELEASE-NOTES-0.48.8.md"><img alt="main" src="https://img.shields.io/badge/main-0.48.8-b8860b?style=flat-square"></a>
-  <a href="https://github.com/DeepFriedDepp/KingdomCome-Together/releases/latest"><img alt="latest release" src="https://img.shields.io/github/v/release/DeepFriedDepp/KingdomCome-Together?label=latest%20release&color=8a3324&style=flat-square"></a>
+  <a href="docs/releases/RELEASE-NOTES-0.49.0.md"><img alt="main" src="https://img.shields.io/badge/main-0.49.0-b8860b?style=flat-square"></a>
+  <a href="https://github.com/DeepFriedDepp/KingdomCome-Together/releases/latest"><img alt="latest release" src="https://img.shields.io/badge/latest%20release-v0.48.6-8a3324?style=flat-square"></a>
   <a href="LICENSE"><img alt="License: GPLv3" src="https://img.shields.io/badge/license-GPLv3-2c3e50?style=flat-square"></a>
   <a href="docs/LAUNCHING.md"><img alt="Platform" src="https://img.shields.io/badge/platform-Windows-555555?style=flat-square"></a>
   <a href="https://dsc.gg/kcd2-together"><img alt="Discord" src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white&style=flat-square"></a>
@@ -28,7 +28,7 @@ against each other from inside the game itself.
 > Kingdom Come: Deliverance II, its assets and its content belong to Warhorse
 > Studios and PLAION; this is a free, non-commercial fan project.
 
-> **The current version is 0.48.8**, a release candidate for the maintainer and one tester (not on the releases
+> **The current version is 0.49.0**, a release candidate for the maintainer and one tester (not on the releases
 > page). `main` (this repo's source) is ahead of the last published installer; the feature list below describes
 > `main`. Installing from the
 > [releases page](https://github.com/DeepFriedDepp/KingdomCome-Together/releases)
@@ -38,6 +38,10 @@ against each other from inside the game itself.
 >
 > **What 0.48.5 is, in plain words**
 >
+> - **0.49.0 (after 0.48.9's partner knight on the map):** one blow of the joiner never knocks an enemy out on the host any more (at most a
+>   third of its stamina; the field's "guards fall over at once"), and a knock-out or get-up in the host's world shows on the joiner's screen
+>   at once. New and **off**: `mp_real_hits` (host) makes the joiner's blows real hits in the host's game, so the enemy blocks, parries and
+>   reacts by the game's own rules on both screens. Not played by two people yet.
 > - **A patch on 0.48.6 (0.48.8):** a dead enemy stays dead on the joiner's screen (`mp_dead_wins`); enemies turn to the player hitting
 >   them, at most once every 4 s; riding stays right (a player's riding as the game says it, figures put back on their horses, no horse under
 >   the ground: `mp_ride_repair`); no black screen after a quest's forced travel and the HUD comes back by itself; a trader stays for the

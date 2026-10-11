@@ -25,6 +25,16 @@ How to play together (0.48.2):
 Nobody clicks CONNECT any more, and you don't need anyone's save file. First time ever starting the game? Start it once from Steam and accept its two first-run pages, then use the launcher.
 ```
 
+## Version 0.49.0 — the joiner's blows, enemies that fall over (WO-173)
+
+```
+Kingdom Come: Together 0.49.0
+- Enemies no longer fall over from a single blow of the joiner. Until now the joiner's hits were added straight onto the enemy's stamina in the host's world, which could knock a fighting guard out at once while it kept fighting on the joiner's screen. One blow can now take at most about a third of an enemy's stamina; it only goes down the game's own way.
+- When an enemy in the host's world is knocked out or gets up, the joiner's screen now shows it at once (it used to wait a second or more).
+- New and switched OFF for now: mp_real_hits. With it on (the host types mp_real_hits on in the console), the joiner's blows become real hits in the host's game: the enemy blocks, parries, flinches and staggers by the game's own rules, and both screens show the same fight. It was tested on one machine against a stand-in partner, not yet by two people, so it is off until you have tried it. Please try it and tell us (mark_odd at anything odd).
+Both players and the relay need 0.49.0.
+```
+
 ## Version 0.48.9 — your partner on the map, smaller bug reports (WO-171)
 
 ```
