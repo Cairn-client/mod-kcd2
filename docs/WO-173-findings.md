@@ -198,3 +198,11 @@ The soak was run (15 min, not waived) for C1; the installer build's own frame-ra
 - A blocked / perfect-blocked outcome shown on the joiner's copy as a block (the copy's own block row) and the WO-165 recoil on the joiner: not
   built; the joiner logs the outcome (`WO173-OUTCOME`) and plays the host NPC's own reaction rows as before.
 - T-pose after a get-up: not measurable by script; the WO-155 gait pulse is unchanged.
+
+## The installer (local, unsigned, release candidate)
+
+Fresh clone of `3528880` (`release\c0490`), the three start saves copied in (SHA-1 equal to the 0.48.5 record), `tools\Build-Installer.ps1
+-SoakWaiver "<the maintainer's standing rule, quoted in the WO-173 run prompt (2026-10-11): 'Ends in a release-candidate installer, always (soak
+waived under the standing rule, quoted and dated)'; built unattended 2026-10-11>"`: `release\KingdomComeTogether-Setup-0.49.0.exe`,
+**106,815,230 bytes**, sha256 `c5a79e9f3e0a84a69e5c4ac0c82452dead7605c66607c9f38e38cfde5b06455b`, header version **0.49.0** (checked), build gates
+green (native 9,305, the installer cases 26/26 and 41/41, no FAIL line), unsigned (no signing settings on this machine). Local only: nothing uploaded.
