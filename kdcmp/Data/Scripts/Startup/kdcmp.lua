@@ -4379,6 +4379,7 @@ function KCD2MP_OnChainDeadRestart(key)
     end
     mp_log(string.format("MP-RELOAD-RESET chain=%s death_seen_cleared=%d dwells_forgotten=%d puppets_reset=%d n=%d",
         tostring(key), deaths, dwells, puppets, KCD2MP._reloadResetN))
+    if KCD2MP_W172OnLoad then pcall(KCD2MP_W172OnLoad, "reload-reset") end   -- WO-172 FT1/UI1
 end
 
 -- WO-110 Phase 6 (WO-109 s2.3): the four human:IsInDialog guards used to
@@ -5532,6 +5533,7 @@ function KCD2MP_Wo114Msg(text)
     w.msgs = w.msgs + 1
     mp_log("WO114-MSG " .. tostring(text))
     pcall(KCD2MP_ShowInteractionMsg, tostring(text))
+    if tostring(text) == "Your host fast-travelled." and KCD2MP_W172AfterHostTravel then pcall(KCD2MP_W172AfterHostTravel, "leash-placed") end   -- WO-172 FT1
 end
 
 -- The countdown row: n seconds left (0 clears). The host sends one a second;
@@ -5659,6 +5661,7 @@ end
 -- the game's own HUD toast now, and the plain line again once the map closes.
 function KCD2MP_Wo114FastTravelTried(how)
     local w = KCD2MP.w114
+    if KCD2MP_W172TravelRefused then pcall(KCD2MP_W172TravelRefused, how) end   -- WO-172 FT1: any refused travel here (a quest's own)
     if not w.ftBlocked then return false end
     -- WO-167 FT2: with the session's fast travel on, this player's pick is asked of the host (the shared travel starts, or "Your partner
     -- can't travel right now"): the engine's own refusal here says nothing. FT4: off -> the session's off message (WO-154), never "only the host"
@@ -21903,6 +21906,7 @@ function KCD2MP_W167SceneReleased(ended, why)
     end
     KCD2MP_ShowNativeToast("That scene couldn't play here \226\128\148 your partner's world runs it.")
     mp_log(string.format("WO167-SCENE released ended=%s fader=%s stood=%s why=%s -- the player was told", tostring(ended == true), fader, stood, tostring(why)))
+    if KCD2MP_W172HudRestore then pcall(KCD2MP_W172HudRestore, "scene-release") end   -- WO-172 UI1
     return true
 end
 
@@ -21911,6 +21915,8 @@ function KCD2MP_W167FaderRestore(why)
     local S = KCD2MP.w167.scene
     if not S.faderHeldAt then return false end
     S.faderHeldAt = nil
+    -- WO-172 FT1: a black lifted with no scene end seen stays lifted until the next load (the field: each 60 s restore put it back)
+    if KCD2MP_W172KeepFaderLifted and KCD2MP_W172KeepFaderLifted(why) then return false end
     -- the restore runs even after a scene-release fault (pcall: the black must not stay suspended); its own failure is said once
     local okR, errR = pcall(function() System.SetCVar("wh_ui_FaderSuspend", 0) end)
     if not okR then KCD2MP.w167.try("t4-restore", "scene-release", function() error(errR) end) end
@@ -24388,6 +24394,7 @@ do
     -- picker), the actor's own StandUp (out of a bed, up from a knockdown). "hard" adds the game's own hit
     -- reaction as the interrupt, with no damage (TakeDamage 0 / 0, the DLL), and stands him up after it.
     function KCD2MP_W151Unstuck(arg)
+        if KCD2MP_W172HudRestore then pcall(KCD2MP_W172HudRestore, "mp_unstuck") end   -- WO-172 UI1: step 1 brings the HUD back too
         local hard = tostring(arg or ""):find("hard", 1, true) ~= nil
         local did = {}
         if KCD2MP_W164Unstuck then   -- WO-164 S3: a seat / bed / work station let go too; a second press within 10 s: beside the partner
