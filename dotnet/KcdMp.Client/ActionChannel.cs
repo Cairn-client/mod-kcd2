@@ -110,6 +110,10 @@ public sealed class ActionInbox
     private readonly Dictionary<byte, ActionGen> _gen = new();
 
     public long Accepted { get; private set; }
+
+    /// <summary>WO-170 F2: what was accepted, per kind -- "accepted=" alone hid that a swing's Attack arrives here and plays as an MP-SWING (the field's "0 received").</summary>
+    private readonly Dictionary<ActionKind, long> _perKind = new();
+    public IReadOnlyDictionary<ActionKind, long> AcceptedByKind => _perKind;
     public long Stale { get; private set; }
     public long Expired { get; private set; }
     public long Unknown { get; private set; }
@@ -181,11 +185,14 @@ public sealed class ActionInbox
         _lastSeq[slot] = seq;
 
         Accepted++;
+        _perKind[kind] = _perKind.GetValueOrDefault(kind) + 1;
         return new InboundAction(sender, kind, seq, phase, gen, body);
     }
 
     public string SummaryLine() => FormattableString.Invariant(
-        $"MP-ACTION section=inbound accepted={Accepted} stale={Stale} expired={Expired} unknown_kind={Unknown} malformed={Malformed}");
+        $"MP-ACTION section=inbound accepted={Accepted} stale={Stale} expired={Expired} unknown_kind={Unknown} malformed={Malformed} kinds={KindsText()}");
+
+    private string KindsText() => _perKind.Count == 0 ? "-" : string.Join(',', _perKind.OrderBy(kv => kv.Key.ToString(), StringComparer.Ordinal).Select(kv => $"{kv.Key}:{kv.Value}"));
 }
 
 /// <summary>

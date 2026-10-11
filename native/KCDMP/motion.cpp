@@ -26,6 +26,7 @@
 #include "anchors.h"
 #include "wo166.h"
 #include "wo167_rules.h"
+#include "wo170_rules.h"
 #include "buffs.h"
 #include "engine.h"
 #include "gait_logic.h"
@@ -801,7 +802,11 @@ void apply_combat(Body& b, const State2* st, double now) {
         b.ca = nullptr; b.caBadUntil = now + 1.0;   // read back wrong: try again in a second, from the owner
         return;
     }
-    if (want) {
+    // WO-170 F1: a partner's figure never acts on its own -- its combat automation stays off for the whole life of its body, not only while
+    // the partner's combat bit is set (0.48.5: released at 16:18:49, "automation back on", the figure's own brain then fought the villager it
+    // had been put in a skirmish with, and the blows landed in the host's world). mp_figure_guard off = the 0.48.5 behaviour.
+    const bool autoOff = b.avatar ? kcdmp::wo170rules::want_automation_off(kcdmp::hits::figure_guard(), want) : want;
+    if (autoOff) {
         // WO-166 C1: a partner's figure keeps the automation pattern of the lever (the attack gate's A/B); an NPC copy is always all off
         // (a copy never acts on its own). A pattern change re-applies from all-on.
         const uint8_t amode = b.avatar ? kcdmp::wo166::auto_mode() : kcdmp::wo166::kAutoAllOff;
@@ -822,9 +827,12 @@ void apply_combat(Body& b, const State2* st, double now) {
             b.automationOff = true;
             b.autoMode = amode;
             c_autoOff.fetch_add(1);
-            logf("WO121-MOTION body=%s combat automation %s (combat_EnableAutomation path, amode %u)", b.key.c_str(),
-                 amode == kcdmp::wo166::kAutoAllOff ? "OFF" : amode == kcdmp::wo166::kAutoAllOn ? "left ON" : "pattern", amode);
+            logf("WO121-MOTION body=%s combat automation %s (combat_EnableAutomation path, amode %u%s)", b.key.c_str(),
+                 amode == kcdmp::wo166::kAutoAllOff ? "OFF" : amode == kcdmp::wo166::kAutoAllOn ? "left ON" : "pattern", amode,
+                 (b.avatar && !want) ? ", kept off for the whole body: WO-170 figure guard" : "");
         }
+    }
+    if (want) {
         uint8_t mode = 0;
         rd(model, kPropCombatMode.off + 8, &mode);
         if (!mode && now - b.lastCombatAssert > 0.25) {
@@ -877,10 +885,16 @@ void release_body(Body& b, const char* why) {
     if (b.ca && is_a(b.ca, A.vftCa)) {
         if (b.blockApplied) call_setblock(A.fnSetBlock, b.ca, false, 0);
         if (b.combatHeld) set_guard_flag(b, 0);
-        if (b.automationOff && A.fnAuto && g_autoCmdOn) call_auto(A.fnAuto, g_autoCmdOn, b.ca, true);
+        // WO-170 F1: an unbound figure keeps its automation off (only a closed combat feature gives it back); an NPC copy as before
+        const bool toggleOff = std::strcmp(why, "toggle off") == 0;
+        const bool giveBack = !b.avatar || kcdmp::wo170rules::give_automation_back(
+            kcdmp::hits::figure_guard(), toggleOff ? kcdmp::wo170rules::Release::ToggleOff : kcdmp::wo170rules::Release::Unbind);
+        if (b.automationOff && A.fnAuto && g_autoCmdOn && giveBack) call_auto(A.fnAuto, g_autoCmdOn, b.ca, true);
+        else if (b.automationOff && !giveBack) logf("WO170-GUARD body=%s released (%s) -- its automation stays OFF (the figure never acts on its own)", b.key.c_str(), why);
     }
     if (b.automationOff || b.combatHeld || b.crouchApplied)
-        logf("WO121-MOTION body=%s released (%s) -- automation back on, flag cleared", b.key.c_str(), why);
+        logf("WO121-MOTION body=%s released (%s) -- automation %s, flag cleared", b.key.c_str(), why,
+             (b.avatar && b.automationOff && kcdmp::hits::figure_guard() && std::strcmp(why, "toggle off") != 0) ? "kept OFF" : "back on");
     b.automationOff = b.combatHeld = b.blockApplied = false;
 }
 

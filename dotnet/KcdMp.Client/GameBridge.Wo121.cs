@@ -474,6 +474,9 @@ public partial class GameBridge
         long rsid = ++_stats.SwingsRecv;
         _w121Swings++;
         Console.WriteLine($"MP-SWING hop=recv rsid={rsid} ghost={gid} kind={a.Kind} seq={a.Seq} table={row.Table} spec=\"{row.Spec}\" {detail}");
+        // WO-170 F2: an inbound Attack is dispatched here, as an MP-SWING (the field's 4 swings of the joiner were all received and queued; the
+        // MP-ACTION inbound lines only named the kinds that log a dispatch of their own). Said once, with the swing's id.
+        Console.WriteLine($"MP-ACTION section=inbound ghost={gid} kind={a.Kind} seq={a.Seq} dispatch=swing-queued rsid={rsid}");
         _ = _combat.NpcHoldAsync("kcd2mp_" + gid, 900, ct);
         EnsureSwingInbox(ct).TryEnqueue(new SwingInbox.Entry(gid, a.Seq, rsid, GhostGeneration(gid), row.Spec, DateTime.UtcNow));
         await ExecLuaAsync($"if KCD2MP_GhostNativeSwingHold then KCD2MP_GhostNativeSwingHold(\"{gid}\") end");

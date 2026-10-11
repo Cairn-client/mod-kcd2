@@ -7,7 +7,7 @@
 <strong>Not affiliated with or endorsed by Warhorse Studios or PLAION.</strong></p>
 
 <p align="center">
-  <a href="docs/releases/RELEASE-NOTES-0.48.5.md"><img alt="main" src="https://img.shields.io/badge/main-0.48.5-b8860b?style=flat-square"></a>
+  <a href="docs/releases/RELEASE-NOTES-0.48.6.md"><img alt="main" src="https://img.shields.io/badge/main-0.48.6-b8860b?style=flat-square"></a>
   <a href="https://github.com/DeepFriedDepp/KingdomCome-Together/releases/latest"><img alt="latest release" src="https://img.shields.io/github/v/release/DeepFriedDepp/KingdomCome-Together?label=latest%20release&color=8a3324&style=flat-square"></a>
   <a href="LICENSE"><img alt="License: GPLv3" src="https://img.shields.io/badge/license-GPLv3-2c3e50?style=flat-square"></a>
   <a href="docs/LAUNCHING.md"><img alt="Platform" src="https://img.shields.io/badge/platform-Windows-555555?style=flat-square"></a>
@@ -28,7 +28,7 @@ against each other from inside the game itself.
 > Kingdom Come: Deliverance II, its assets and its content belong to Warhorse
 > Studios and PLAION; this is a free, non-commercial fan project.
 
-> **The current version is 0.48.5**, a release candidate for the maintainer and one tester (not on the releases
+> **The current version is 0.48.6**, a release candidate for the maintainer and one tester (not on the releases
 > page). `main` (this repo's source) is ahead of the last published installer; the feature list below describes
 > `main`. Installing from the
 > [releases page](https://github.com/DeepFriedDepp/KingdomCome-Together/releases)
@@ -38,6 +38,10 @@ against each other from inside the game itself.
 >
 > **What 0.48.5 is, in plain words**
 >
+> - **A patch on 0.48.5 (0.48.6):** the host's view of the partner's figure no longer fights on its own (its combat automation stays off and a
+>   blow of its that the partner did not send is put back: `mp_figure_guard`, on); a riding noble is put on his horse only when the horse is really there
+>   (the joiner's crash when one appeared); after a conversation with a scene the people in it are not put to sleep until the scene ends
+>   (`mp_scene_hold`, on). Not played by two people yet.
 > - **Fast travel together** (new in 0.48.5): on by default and shared — one travel for both, no vote. When the host travels,
 >   the joiner's game travels to the same place too (the travel map and route on both screens) and you arrive together, the
 >   same time on both clocks; when the joiner picks a place, the host's game travels there for both, or says "Your partner

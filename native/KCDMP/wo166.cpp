@@ -244,16 +244,17 @@ uint8_t handle(uint8_t op, const uint8_t* body, size_t len, uint8_t* out, size_t
             return wo163::kROk;
         }
         case kOpConfig: {
-            if ((len != 3 && len != 4) || cap < 3) return wo163::kRBadRequest;
-            if (len == 4 && body[3] != 255) npcdrive::set_snap_fix(body[3] != 0);   // C4
+            if ((len != 3 && len != 4 && len != 5) || cap < 4) return wo163::kRBadRequest;
+            if (len >= 4 && body[3] != 255) npcdrive::set_snap_fix(body[3] != 0);   // C4
+            if (len == 5 && body[4] != 255) hits::set_figure_guard(body[4] != 0);   // WO-170 F1: mp_figure_guard
             const bool was = g_on.exchange(body[1] != 0);
             if (was != g_on.load()) logf("WO166-CFG mp_copy_strikes %s", g_on.load() ? "on" : "off");
             if (body[2] != 255 && body[2] <= kAutoMax) {
                 const uint8_t old = g_autoMode.exchange(body[2]);
                 if (old != body[2]) logf("WO166-CFG figure automation mode %u -> %u (0 all off, 1 all on, 2+ the lever's byte patterns)", old, body[2]);
             }
-            out[0] = g_on.load() ? 1 : 0; out[1] = g_autoMode.load(); out[2] = npcdrive::snap_fix() ? 1 : 0;
-            *outLen = 3;
+            out[0] = g_on.load() ? 1 : 0; out[1] = g_autoMode.load(); out[2] = npcdrive::snap_fix() ? 1 : 0; out[3] = hits::figure_guard() ? 1 : 0;
+            *outLen = 4;
             return wo163::kROk;
         }
         default:

@@ -54,6 +54,7 @@
 
 #include "combat_swing.h"
 #include "fault_guard.h"
+#include "hits.h"
 #include "engine.h"
 #include "pe_exports.h"
 #include "log.h"
@@ -956,6 +957,7 @@ SwingResult ghost_swing(uint32_t entityId, const char* fragSpec) {
     if (!watched) call_release(anim);
     logf("SWING: entity=%u queued fragment %d status=%u ref(controller)=%u%s spec=\"%s\"",
          entityId, out.fragmentID, status, refc ? refc - 1 : 0, watched ? " watched" : "", fragSpec);
+    kcdmp::hits::note_figure_swing(entityId);   // WO-170 F1: a partner's figure's swing the partner sent -- one blow of it is licensed (hits.cpp)
     return SwingResult::Ok;
 }
 

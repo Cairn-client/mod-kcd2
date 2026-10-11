@@ -25,6 +25,17 @@ How to play together (0.48.2):
 Nobody clicks CONNECT any more, and you don't need anyone's save file. First time ever starting the game? Start it once from Steam and accept its two first-run pages, then use the launcher.
 ```
 
+## Version 0.48.6 — the partner's figure, riders, the dialogue scene (WO-170)
+
+```
+Kingdom Come: Together 0.48.6 — a small patch.
+• The host: your partner's figure no longer fights on its own. A villager who picked a fight with your partner used to be hit by the figure itself (and a witness ran to the guards). The figure now only does what your partner does: it swings when he swings, never draws or puts away its weapon by itself, and a blow it makes that your partner did not send is put back (mp_figure_guard, on).
+• The joiner: a riding noble (the men on horses on the road) could crash the game when he appeared. He now stays on foot until his horse is really there, then is put on it (waits at most 20 s).
+• The joiner: after a conversation that has a scene (the jugglers), the people in it are not put to sleep again until the scene is over — the long black screen should not come (mp_scene_hold, on).
+• Logs: the host's log says why a villager started on a figure (WO170-AGGRO) and counts the joiner's swings it received.
+None of this has been played by two people yet. If something looks wrong, turn the switch off in the console (mp_figure_guard off / mp_scene_hold off) and press "Something's wrong here". Both players and the relay need 0.48.6.
+```
+
 ## Version 0.48.5 — talking and trading, the stuck scene, ambush bandits, shared fast travel (WO-167)
 
 ```

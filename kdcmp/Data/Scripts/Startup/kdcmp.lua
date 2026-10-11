@@ -7203,6 +7203,7 @@ function KCD2MP_W137Session(host, joiner, active)
     if fresh then
         -- the agent (re)connected: it follows this toggle (it keeps no value of its own across restarts)
         KCD2MP_EmitEvent("w137_sync", w.sync and "on" or "off")
+        if KCD2MP.w170 then KCD2MP_EmitEvent("w166_cfg", "figure_guard=" .. (KCD2MP.w170.figureGuard and "on" or "off")) end   -- WO-170 F1
         if KCD2MP.w167 then   -- WO-167: the switches the agent acts on
             KCD2MP_EmitEvent("w167_cfg", "scene_release=" .. (KCD2MP.w167.sceneRelease and "on" or "off"))
             KCD2MP_EmitEvent("w167_cfg", "talk_fallback=" .. (KCD2MP.w167.talkFallback and "on" or "off"))
@@ -7226,6 +7227,7 @@ function KCD2MP_W137Session(host, joiner, active)
     if wasHost and not host then KCD2MP_W137HoldReleaseAll("no-longer-host") end
     if (wasJoiner and not joiner) or (wasHost and not host) then pcall(KCD2MP_W160ConvReleaseAll, "no longer in the session") end   -- WO-160 3
     pcall(KCD2MP_W137TalkTick)
+    pcall(KCD2MP_W170SceneTick)   -- WO-170 F4: a held copy goes back to its pause when its scene ends (or 10 s)
     pcall(KCD2MP_W137HoldTick)
     pcall(KCD2MP_W160ConvTick)   -- WO-160 3: the host's own conversations end here
     pcall(KCD2MP_W166WeatherTick, host and active, false, joiner and active)   -- WO-166 W1
@@ -7520,8 +7522,14 @@ function KCD2MP_W137TalkEnd(name, why, keep)   -- keep (WO-167 T1): the copy is 
     if p and keep then
         how = "kept running and free: talked to again at once (WO-167)"
     elseif p then
-        if t.resumed or not KCD2MP._npcPaused[name] then mp_wo102_pause(name, p, "w137-talk-end") end
-        how = KCD2MP._npcPaused[name] and "paused again" or "not paused (a corpse, or the pause lever is off)"
+        -- WO-170 F4: not while the engine's interactive scene of this dialogue still runs -- its participants are fast-forwarded to
+        -- their places behind the fader once the dialogue ends, and a paused copy cannot finish that (WO-167 0.4: the black screen)
+        if why == "dialog-ended" and KCD2MP_W170SceneHold and KCD2MP_W170SceneHold(name, t.resumed or not KCD2MP._npcPaused[name]) then
+            how = "left running: its dialogue's scene is still on (WO-170)"
+        else
+            if t.resumed or not KCD2MP._npcPaused[name] then mp_wo102_pause(name, p, "w137-talk-end") end
+            how = KCD2MP._npcPaused[name] and "paused again" or "not paused (a corpse, or the pause lever is off)"
+        end
     elseif KCD2MP_W131IsActive and KCD2MP_W131IsActive() then
         KCD2MP_W131ParkReleased(name, "talk-ended:" .. tostring(t.parkAfter or "no-stream"))
         how = "parked (the host's stream stopped meanwhile)"
@@ -22393,6 +22401,119 @@ function KCD2MP_W164EscortTick()
     end
 end
 
+-- ---- WO-170 (0.48.6): riders mount only onto a ready horse; a dialogue's scene keeps its participants; the figure guard's switch ------
+-- F3  KCD2MP_W170RiderReady: the horse copy and the rider copy are bound to the DLL's writer with physics, within 3 m, outside a WO-138
+--     hold -- else he stays on foot (mount=wait every 2 s for 20 s, then mount=gave-up).
+-- F4  a talk's end does not re-pause its copy while the engine's interactive scene of that dialogue still runs (the agent counts the
+--     InteractiveSceneManager lines and tells KCD2MP_W170Scene(n)); the normal end when the scene ends or 10 s pass.
+-- F1  mp_figure_guard (the DLL's figure guard: a partner's figure never acts on its own); the agent and the DLL act on it (w166_cfg).
+KCD2MP.w170 = KCD2MP.w170 or {
+    figureGuard = true,      -- mp_figure_guard
+    sceneHold = true,        -- mp_scene_hold
+    sceneRunning = 0,        -- interactive scenes the engine runs (the agent's count)
+    sceneAt = nil,
+    riderRetryS = 2.0, riderGiveUpS = 20.0, riderMaxM = 3.0, sceneHoldS = 10.0,
+    held = {},               -- [npc] = { since = os.clock(), resumed = bool }
+    stats = { riderWaits = 0, riderGaveUp = 0, sceneHolds = 0, sceneReleased = 0, sceneTimeouts = 0 },
+}
+local function w170_physics(e)
+    local ph = nil
+    pcall(function() ph = e:GetPhysicalStats() end)
+    return ph ~= nil and ph.mass ~= nil
+end
+local function w170_bound(p)
+    if not KCD2MP_NpcNativeHealthy() then return true end   -- no DLL writer: Lua writes both bodies (physics is still checked)
+    return p ~= nil and p.nativeOwned == true
+end
+-- (ready, why): the rider and its horse copy, as the mount call needs them.
+function KCD2MP_W170RiderReady(name, p, e, horseName, he, hp, ep)
+    if not he then return false, "no-horse-entity" end
+    local dead = false
+    pcall(function() dead = he.actor ~= nil and he.actor:IsDead() == true end)
+    if dead then return false, "horse-dead" end
+    local hpup = KCD2MP.npcPuppets[horseName]
+    if not w170_bound(hpup) then return false, "horse-not-bound" end
+    if not w170_bound(p) then return false, "rider-not-bound" end
+    if not w170_physics(he) then return false, "horse-physics=none-yet" end
+    if not w170_physics(e) then return false, "rider-physics=none-yet" end
+    if KCD2MP_W138Holding and KCD2MP_W138Holding() then return false, "w138-hold" end
+    if not (hp and ep) then return false, "no-position" end
+    local dx, dy, dz = hp.x - ep.x, hp.y - ep.y, (hp.z or 0) - (ep.z or 0)
+    local d = math.sqrt(dx * dx + dy * dy + dz * dz)
+    if d > KCD2MP.w170.riderMaxM then return false, string.format("apart-%.0fm", d) end
+    return true, "ready"
+end
+
+-- F4: the order, pure. nil = keep holding; otherwise the reason the copy is paused again now.
+function KCD2MP_W170RepauseDue(sceneRunning, since, now, holdS)
+    if (tonumber(sceneRunning) or 0) <= 0 then return "scene-ended" end
+    if now - since >= (holdS or 10) then return "10s" end
+    return nil
+end
+-- The agent: how many interactive scenes the engine runs right now (EnqueueScene minus EndScene).
+function KCD2MP_W170Scene(n)
+    local w = KCD2MP.w170
+    n = tonumber(n) or 0
+    if n ~= w.sceneRunning then
+        mp_log(string.format("WO170-SCENE running=%d (was %d) held=%d", n, w.sceneRunning, (function() local c = 0; for _ in pairs(w.held) do c = c + 1 end; return c end)()))
+    end
+    w.sceneRunning = n
+    w.sceneAt = os.clock()
+    pcall(KCD2MP_W170SceneTick)
+end
+-- TalkEnd's question: keep this copy running a while longer (true) or pause it now (false).
+function KCD2MP_W170SceneHold(name, resumed)
+    local w = KCD2MP.w170
+    if not w.sceneHold or w.sceneRunning <= 0 then return false end
+    if w.held[name] then return true end
+    w.held[name] = { since = os.clock(), resumed = resumed == true }
+    w.stats.sceneHolds = w.stats.sceneHolds + 1
+    mp_log(string.format("WO170-SCENE hold npc=%s scenes=%d -- its dialogue's scene is still running: not paused until it ends (or %.0f s)", name, w.sceneRunning, w.sceneHoldS))
+    return true
+end
+function KCD2MP_W170SceneTick()
+    local w = KCD2MP.w170
+    local now = os.clock()
+    for name, h in pairs(w.held) do
+        local why = KCD2MP_W170RepauseDue(w.sceneRunning, h.since, now, w.sceneHoldS)
+        local talking = KCD2MP.w137 and KCD2MP.w137.talking and KCD2MP.w137.talking[name] ~= nil
+        if talking then w.held[name] = nil   -- talked to again: that talk's own end decides
+        elseif why then
+            w.held[name] = nil
+            local p = KCD2MP.npcPuppets[name]
+            if why == "10s" then w.stats.sceneTimeouts = w.stats.sceneTimeouts + 1 else w.stats.sceneReleased = w.stats.sceneReleased + 1 end
+            local paused = false
+            if p and (h.resumed or not KCD2MP._npcPaused[name]) then
+                pcall(mp_wo102_pause, name, p, "w170-scene-" .. why)
+                paused = KCD2MP._npcPaused[name] ~= nil
+            end
+            mp_log(string.format("WO170-SCENE repause npc=%s why=%s held_s=%.1f paused=%s", name, why, now - h.since, tostring(paused)))
+        end
+    end
+end
+local function w170Switch(key, field, arg, what, evt)
+    local v = KCD2MP_Wo122ParseBool(arg)
+    if v == "bad" then mp_log("mp_" .. key .. ": expected on|off"); return false end
+    if v ~= nil then KCD2MP.w170[field] = v end
+    if evt then KCD2MP_EmitEvent(evt, key .. "=" .. (KCD2MP.w170[field] and "on" or "off")) end
+    mp_log(string.format("WO170-TOGGLE mp_%s %s -- %s", key, KCD2MP.w170[field] and "on" or "off", what))
+    return true
+end
+function KCD2MP_W170SetFigureGuard(arg)
+    return w170Switch("figure_guard", "figureGuard", arg, "(host) a partner's figure never attacks, draws or sheathes on its own: its combat automation stays off and a blow of its that no swing of the partner's matches is put back", "w166_cfg")
+end
+function KCD2MP_W170SetSceneHold(arg)
+    return w170Switch("scene_hold", "sceneHold", arg, "(joiner) a copy is not paused again while its dialogue's scene still runs (10 s at most)")
+end
+function KCD2MP_W170Status()
+    local w, held = KCD2MP.w170, 0
+    for _ in pairs(w.held) do held = held + 1 end
+    mp_log(string.format("WO170-STATUS figure_guard=%s scene_hold=%s scenes_running=%d held=%d holds=%d released=%d timeouts=%d rider_waits=%d rider_gave_up=%d",
+        w.figureGuard and "on" or "off", w.sceneHold and "on" or "off", w.sceneRunning, held, w.stats.sceneHolds, w.stats.sceneReleased, w.stats.sceneTimeouts,
+        w.stats.riderWaits, w.stats.riderGaveUp))
+    return true
+end
+
 -- ---- WO-164 R2: a host rider and its horse as one unit (joiner) ----------------------------------------------------------------
 -- The host streams a mounted NPC and its horse as two bodies; the joiner's copies were written apart (the rider at saddle height
 -- with no horse under it, the horse idling). A rider copy whose stream stays on a horse copy's (within 1 m across, 0.3-2.6 m
@@ -22445,13 +22566,32 @@ function KCD2MP_W164RiderHeld(name, p, e)
         end
         return true   -- the horse's writer carries it
     end
-    if r.n < 3 then return false end
+    if r.n < 3 or r.gaveUp then return false end
     local he = nil
     pcall(function() he = System.GetEntityByName(r.horse) end)
     local hp, ep = nil, nil
     if he then pcall(function() hp = he:GetWorldPos(); ep = e:GetWorldPos() end) end
     local pp = w164_ppos()
     if not (hp and ep and pp) or w164_dist2(hp, pp) > 80 * 80 then return false end   -- never a ForceMount far away (WO-157 3.1)
+    -- WO-170 F3: only onto a READY horse. The field (0.48.5, the joiner's first rider of a session) mounted a stand-in on a horse copy
+    -- whose physics was not there yet, and the game died ~0.1 s later (WO-158's refused-mount class). Both bodies bound to the DLL's
+    -- writer and physicalized, within 3 m, outside any WO-138 hold; else he stays on foot, asked again every 2 s for 20 s, then given up.
+    local ready, why = KCD2MP_W170RiderReady(name, p, e, r.horse, he, hp, ep)
+    if not ready then
+        local now = os.clock()
+        r.waitSince = r.waitSince or now
+        if now < (r.nextTry or 0) then return false end
+        if now - r.waitSince >= KCD2MP.w170.riderGiveUpS then
+            r.gaveUp = true
+            KCD2MP.w170.stats.riderGaveUp = KCD2MP.w170.stats.riderGaveUp + 1
+            mp_log(string.format("WO170-RIDER mount=gave-up npc=%s horse=%s why=%s waited_s=%.0f -- he stays on foot", name, r.horse, tostring(why), now - r.waitSince))
+            return false
+        end
+        r.nextTry = now + KCD2MP.w170.riderRetryS
+        KCD2MP.w170.stats.riderWaits = KCD2MP.w170.stats.riderWaits + 1
+        mp_log(string.format("WO170-RIDER mount=wait npc=%s horse=%s why=%s waited_s=%.0f -- no mount call; asked again in %.0f s", name, r.horse, tostring(why), now - r.waitSince, KCD2MP.w170.riderRetryS))
+        return false
+    end
     KCD2MP_NpcNativeSync(name, p, e, false, "rider")
     pcall(function() e:SetWorldPos({ x = hp.x, y = hp.y, z = hp.z }) end)
     local ok = pcall(function() e.human:ForceMount(he.id) end)
@@ -22460,6 +22600,7 @@ function KCD2MP_W164RiderHeld(name, p, e)
     r.mounted = ok
     w.stats.riders = (w.stats.riders or 0) + 1
     mp_log(string.format("WO164-RIDER mount rider=%s horse=%s ok=%s mounted=%s -- one unit: the horse's stream carries both", name, r.horse, tostring(ok), tostring(now)))
+    mp_log(string.format("WO170-RIDER mount=%s npc=%s horse=%s why=ready waited_s=%.0f", ok and "ok" or "failed", name, r.horse, r.waitSince and (os.clock() - r.waitSince) or 0))
     if not ok then w.riders[name] = nil; r.n = -30 end
     return ok
 end
@@ -25562,6 +25703,9 @@ local ok, err = pcall(function()
     System.AddCCommand("mp_flee_limit", 'KCD2MP_W164SetFleeLimit(%line)', "WO-164: (joiner) no weapon tug-of-war on a fleeing host copy: one re-assert per 2 s, none while it flees, 20 s of rest after 3 in 10 s (default on): mp_flee_limit on|off")
     System.AddCCommand("mp_joiner_events", 'KCD2MP_W164SetJoinerEvents(%line)', "WO-164: (joiner) on = this game's own random events (caravans, riders, ambushes) are off during a session so the host's are the only ones; back when the session ends: mp_joiner_events on|off")
     System.AddCCommand("mp_partner_marker", 'KCD2MP_W164SetPartnerPin(%line)', "WO-164: a pin on the map where your partner is, moved as they walk, gone when they leave (default on): mp_partner_marker on|off")
+    System.AddCCommand("mp_figure_guard", 'KCD2MP_W170SetFigureGuard(%line)', "WO-170: (host) a partner's figure never attacks, draws or sheathes on its own -- its combat automation stays off and a blow of its that no swing of the partner's matches is put back (default on): mp_figure_guard on|off")
+    System.AddCCommand("mp_scene_hold", 'KCD2MP_W170SetSceneHold(%line)', "WO-170: (joiner) a copy is not paused again while its dialogue's scene is still running, 10 s at most (default on): mp_scene_hold on|off")
+    System.AddCCommand("mp_w170_status", 'KCD2MP_W170Status()', "WO-170: the figure guard, the dialogue-scene hold and the rider mount gate of this build")
     System.AddCCommand("mp_rider_unit", 'KCD2MP_W164SetRiderUnit(%line)', "WO-164: (joiner) a host rider is mounted on its horse's copy -- one unit, carried by the horse's stream (default on): mp_rider_unit on|off")
     System.AddCCommand("mp_w164_status", "KCD2MP_W164Status()", "WO-164: the sweep, the talk guard, the flee limiter, the random-event switch (WO164-STATUS here; MP-WO164-STATS in agent.log)")
     System.AddCCommand("mp_w164_sweep", 'KCD2MP_W164SweepCmd(%line)', "WO-164: sweep one host copy now (a test): mp_w164_sweep <npc>")

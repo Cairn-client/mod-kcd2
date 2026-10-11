@@ -93,7 +93,7 @@ public static class Wo166Rules
             int eq = part.IndexOf('=');
             if (eq <= 0 || eq == part.Length - 1) continue;
             string k = part[..eq], v = part[(eq + 1)..];
-            if (k is "copy_strikes" or "snap_fix" && v is "on" or "off") yield return (k, v);
+            if (k is "copy_strikes" or "snap_fix" or "figure_guard" && v is "on" or "off") yield return (k, v);
             else if (k == "auto_mode" && v.Length <= 2 && v.All(char.IsAsciiDigit)) yield return (k, v);
         }
     }

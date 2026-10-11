@@ -1085,6 +1085,26 @@ Built and checked unattended with a stand-in partner (the synthetic peer); nothi
      or a lunge**. * Joiner: `WO167-PULSE npc=… asked=ok` for each new bandit, `WO167-WEAPON npc=… drawn=…`, never `re-asserted
      sheathed`; `WO161-HIT … shown=yes|generic`, never `applied=dup`.
 
+## WO-170 — the partner's figure never fights on its own, riders, the dialogue scene (0.48.6)
+
+Two players. Nothing here has been played by two people yet. The host needs 0.48.6 for the first two; the joiner for the last two.
+
+232. **A villager picks a fight with the joiner** (the host: walk away and let an NPC start on your partner's figure — a push, an insult,
+     the joiner hits first and stops). The host sees the figure **defend only as the joiner does**: it swings only when the joiner
+     swings, it never draws or puts away its weapon by itself, **no blow of its own lands on anyone**, and **no guard is called on the
+     joiner** for something he did not do. The villager still fights the joiner on the joiner's screen. * Host:
+     `WO170-AGGRO npc=… target=figure reason=…` (the engine's own reason: please send it), `WO121-MOTION … combat automation OFF …
+     kept off for the whole body`, never a `WO170-FIGUREHIT dropped` followed by a hurt bystander; a stray blow, if one ever happens,
+     reads `WO170-FIGUREHIT dropped npc=… why=not-relayed … put back`.
+233. **The joiner swings at an enemy** (host: watch his figure). Every swing the joiner makes is a swing of his figure on the host's
+     screen, and its hit lands once. * Host: one `MP-ACTION section=inbound … kind=Attack … dispatch=swing-queued` per swing (the
+     `kinds=Attack:N` in the summary line counts them), `WO170-FIGUREHIT relayed` at most once for each.
+234. **Meet a riding noble on the road** (joiner: the "dummyWanderer" men on horses): **no crash**; he stays on foot for a moment and
+     is then put on his horse. * Joiner: `WO170-RIDER mount=wait|ok|gave-up npc=… horse=… why=…`.
+235. **Talk to the jugglers, or any quest giver whose conversation ends with a scene** (joiner): **no long black screen** after the
+     conversation — the people stay awake until their scene is over. * Joiner: `WO170-SCENE hold npc=…` then `WO170-SCENE repause …
+     why=scene-ended`. If a black screen does come, it is ended after 20 s as in 0.48.5 (`WO167-SCENE`).
+
 ## Logs to send afterwards
 
 Both machines: Report a bug in the launcher. Since 0.42.2 it also collects the
