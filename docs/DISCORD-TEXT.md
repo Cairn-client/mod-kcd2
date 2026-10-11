@@ -25,6 +25,15 @@ How to play together (0.48.2):
 Nobody clicks CONNECT any more, and you don't need anyone's save file. First time ever starting the game? Start it once from Steam and accept its two first-run pages, then use the launcher.
 ```
 
+## Version 0.48.9 — your partner on the map, smaller bug reports (WO-171)
+
+```
+Kingdom Come: Together 0.48.9
+- Your partner is now a little knight on the map, drawn by our artist, in their own colour: the host is red, then purple, blue and green in the order players joined. The knight turns to face the way your partner faces, and hovering over it shows their name. On the compass it is small, like the other icons.
+- Bug reports are much smaller. Collect Logs in the launcher now makes a file of a few MB that fits in a Discord message (a very long session comes as a few numbered parts). Open it with 7-Zip: the .tzst first, then the .tar inside. Only the current game run is included unless you tick "include earlier launches".
+If the knight looks turned the wrong way, type mp_marker_dir_flip on, or mp_marker_dir_offset 1 (up to 7) and tell us which looked right. mp_partner_marker_style companion brings back the old plain pin. Not played by two people yet. Both players and the relay need 0.48.9.
+```
+
 ## Version 0.48.8 — dead enemies, riding, travelling, trading, pickpocketing (WO-172)
 
 ```

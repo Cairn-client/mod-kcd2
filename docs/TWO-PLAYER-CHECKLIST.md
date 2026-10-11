@@ -1134,8 +1134,37 @@ here") at every miss** — it now also saves a screenshot in the game's screensh
      it. If the host stole it first, the joiner's item is taken back with "Someone already took that." If the joiner is caught, it is
      **the joiner's crime**, not the host's. * Joiner: `WO172-PICK start npc=…`, `WO134-BODY take … result … ok|gone`.
 
+## WO-171 — the partner's own knight on the map, smaller bug-report bundles (0.48.9)
+
+Two players, both on 0.48.9 (and the relay). The map marker was checked live on one machine against a synthetic partner (both roles; its
+colour, turning, name, compass and map sizes by eye); never between two real players. **Type `mark_odd` at every miss.**
+
+244. **Open the map** (both). **The host is a red knight on the joiner's map, the joiner a purple one on the host's.** Your own figure stays
+     the game's own. The game's own markers (the golden pins, the quest shields, the others) look as before.
+245. **Walk in a circle** (one of you, the other watches the map). The partner's knight **turns with them**, in eight steps, and **its back
+     shows when they face north**. If it is off by a step: `mp_marker_dir_offset 1` (try 1..7). If it turns the wrong way:
+     `mp_marker_dir_flip on`. Tell us the values that looked right. * Either: `WO171-MARK slot=… dir=… turned`.
+246. **Hover the partner's knight.** The scroll says **their name** (the same name the name badge shows).
+247. **Look at the compass** (the strip at the top). The partner's knight is **small there, like the other compass icons**, and large on the
+     map.
+248. **Ride a horse** (the one who is watched). The knight keeps up and turns with the horse.
+249. **A rejoin keeps the colour.** The joiner leaves and comes back (or crashes and comes back): the **same colour**, and the name still shows.
+     A different player taking the joiner's place gets the same colour with his own name.
+250. **Three or four players, if you can** (host + 2–3 joiners): red, purple, blue, green, in the order they joined; a fifth gets the game's
+     plain pin. (Slots are worked out on each machine in the order it first sees a player: with three or more, two machines may disagree on who
+     is blue and who is green. Tell us.)
+251. **The switches:** `mp_partner_marker off` (no marker at all), `mp_partner_marker_style flat` (one picture, facing north),
+     `mp_partner_marker_style companion` (the game's plain pin, no name), the mod menu's "Partner on the map" and "Marker style (knight)".
+252. **Report a bug → Collect logs** after a session (both). **The file fits in Discord** (a normal session is 2–9 MB; a very long one comes as
+     numbered parts, `…-part1of3.tzst`, each under 19 MB — send all of them). It opens with 7-Zip: open the `.tzst`, then the `.tar` inside
+     (or `tar --zstd -xf <file>`); `MANIFEST.txt` is the first file of part 1. Tick "include earlier launches" only if the problem was in an
+     earlier run of the game. If the lines look thin around a `mark_odd`, tell us: everything within five minutes of a mark is kept in full.
+
+Switches (console): `mp_partner_marker`, `mp_partner_marker_style rotating|flat|companion`, `mp_marker_dir_offset 0..7`,
+`mp_marker_dir_flip on|off`, `mp_w171_status`.
+
 ## Logs to send afterwards
 
-Both machines: Report a bug in the launcher. Since 0.42.2 it also collects the
-logs of the six launches before (the launcher keeps them), so a restart no
-longer loses the logs of a crash.
+Both machines: Report a bug in the launcher. Since 0.48.9 it collects the current launch by default as a small file (or a few numbered
+parts) that fits a Discord message; tick "include earlier launches" for the logs of the launches before (the launcher keeps the last six), so a
+restart does not lose the logs of a crash.
