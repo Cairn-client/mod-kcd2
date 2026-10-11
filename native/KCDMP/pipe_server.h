@@ -331,6 +331,8 @@ constexpr uint8_t kWo147Reply         = 0xAA;
 constexpr uint8_t kWo151              = 0x2A;
 constexpr uint8_t kWo151Reply         = 0xAB;
 // WO-163: shared combat (native wo163.h): 0x2B [op][...] -> 0xAC [ok][seq][op][reason][payload].
+// WO-171: a partner's name for its map pin: 0x2C [owner:1][len:1][utf8 len<=31] -> 0x81 (the hover title of the pin's mark)
+constexpr uint8_t kPinLabel           = 0x2C;
 constexpr uint8_t kWo163              = 0x2B;
 constexpr uint8_t kWo163Reply         = 0xAC;
 constexpr uint8_t kSaveListReply      = 0x8D;   // [ok][seq][listed][idx:2][count:2][current][contPl][contIdx:2][nameLen][contName]

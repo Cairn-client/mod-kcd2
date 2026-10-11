@@ -95,7 +95,7 @@ def relay(dll):
 def peer(tag, plan, opts):
     st = load_state()
     log = os.path.join(live.LOGS, 'run165.peer.%s.log' % tag)
-    h = subprocess.Popen([live.dotnet(), PEER, '--port', '7778', '--name', 'synth-host', '--plan', os.path.abspath(plan),
+    h = subprocess.Popen([live.dotnet(), PEER, '--port', '7778', '--name', os.environ.get('PEER_NAME', 'synth-host'), '--plan', os.path.abspath(plan),
                           '--version-file', os.path.abspath(VERSION)] + opts,
                          stdout=open(log, 'w'), stderr=subprocess.STDOUT, creationflags=DETACHED)
     st['peer'] = h.pid; st['peerlog'] = log; save_state(st)

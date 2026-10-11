@@ -22346,6 +22346,19 @@ local function w171_emit()
     local w = KCD2MP.w171
     KCD2MP_EmitEvent("w171_cfg", string.format("style=%s offset=%d flip=%s", w.style, w.offset, w.flip and "on" or "off"))
 end
+-- the hover names: the map's tooltip for a marker is the key "@ui_maplegend_<picture name>"; the agent writes a file giving each of
+-- a slot's pictures the player's name and asks this to load it (the engine reads loose files from the install folder).
+function KCD2MP_W171LoadNames(path)
+    local w = KCD2MP.w171
+    w.loadedNames = w.loadedNames or {}
+    path = tostring(path or "")
+    if not path:find("^Mods/kdcmp/Localization/kct_n_[%w_%-]+%.xml$") then mp_log("WO171-NAMES refused a path: " .. path); return false end
+    if w.loadedNames[path] then return true end   -- the engine refuses a key it already has with a modal error: each file once per game run
+    w.loadedNames[path] = true
+    local ok, err = pcall(System.LoadLocalizationXml, path)
+    mp_log("WO171-NAMES loaded " .. path .. " ok=" .. tostring(ok) .. (ok and "" or (" " .. tostring(err))))
+    return ok
+end
 function KCD2MP_W171Emit() w171_emit() end   -- the agent asks at every connect (its own copy starts at the defaults)
 function KCD2MP_W171SetStyle(arg)
     local s = tostring(arg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")

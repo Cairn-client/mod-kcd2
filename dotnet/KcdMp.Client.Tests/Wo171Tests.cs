@@ -123,20 +123,23 @@ public class Wo171Tests
     // ------------------------------------------------------------------ the pictures
 
     [Fact]
-    public void The_codes_and_names_cover_32_pictures_and_match_the_native_table()
+    public void The_codes_and_names_cover_128_pictures_and_match_the_native_table()
     {
-        var names = Enumerable.Range(1, 32).Select(Wo171Rules.PictureName).ToList();
-        Assert.Equal(32, names.Distinct().Count());
+        var names = Enumerable.Range(1, 128).Select(Wo171Rules.PictureName).ToList();
+        Assert.Equal(128, names.Distinct().Count());
         Assert.Equal("kct_r0", names[0]); Assert.Equal("kct_r7", names[7]);
         Assert.Equal("kct_p0", names[8]); Assert.Equal("kct_b3", names[8 * 2 + 3]); Assert.Equal("kct_g7", names[31]);
-        Assert.Equal("-", Wo171Rules.PictureName(0)); Assert.Equal("-", Wo171Rules.PictureName(33));
+        Assert.Equal("kct_r0b", names[32]); Assert.Equal("kct_p3c", names[64 + 8 + 3]); Assert.Equal("kct_g7d", names[127]);
+        Assert.Equal("-", Wo171Rules.PictureName(0)); Assert.Equal("-", Wo171Rules.PictureName(129));
         Assert.Equal(1, Wo171Rules.PictureCode(1, 0)); Assert.Equal(32, Wo171Rules.PictureCode(4, 7)); Assert.Equal(0, Wo171Rules.PictureCode(0, 3)); Assert.Equal(0, Wo171Rules.PictureCode(5, 3));
+        Assert.Equal(33, Wo171Rules.PictureCode(1, 0, 1)); Assert.Equal(128, Wo171Rules.PictureCode(4, 7, 3)); Assert.Equal(0, Wo171Rules.PictureCode(1, 0, 4));
     }
 
     [Fact]
     public void Styles_pick_the_picture()
     {
         Assert.Equal(Wo171Rules.PictureCode(2, Wo171Rules.FrameOfOctant(3)), Wo171Rules.CodeFor(Wo171Rules.Style.Rotating, 2, 3, 0));
+        Assert.Equal(Wo171Rules.PictureCode(2, Wo171Rules.FrameOfOctant(3), 2), Wo171Rules.CodeFor(Wo171Rules.Style.Rotating, 2, 3, 0, 2));   // the third revision of the same picture
         Assert.Equal(Wo171Rules.PictureCode(2, Wo171Rules.FrameOfOctant(0)), Wo171Rules.CodeFor(Wo171Rules.Style.Flat, 2, 3, 0));   // flat = the north-facing one
         Assert.Equal(0, Wo171Rules.CodeFor(Wo171Rules.Style.Companion, 2, 3, 0));
         Assert.Equal(0, Wo171Rules.CodeFor(Wo171Rules.Style.Rotating, 0, 3, 0));   // no slot = the game's own icon
@@ -152,12 +155,12 @@ public class Wo171Tests
     }
 
     [Fact]
-    public void The_pak_source_holds_all_32_pictures_with_their_variants_and_the_manifest_matches_the_names()
+    public void The_pak_source_holds_all_128_pictures_with_their_variants_and_the_manifest_matches_the_names()
     {
         string dir = Path.Combine(RepoRoot(), "docs", "branding", "pak-source", "Libs", "UI", "Textures", "Icons", "Map");
         var want = Wo171Rules.ManifestFiles().ToList();
-        Assert.Equal(32, want.Count);
-        Assert.Equal(32, want.Distinct().Count());
+        Assert.Equal(256, want.Count);                      // 32 pictures (4 colours x 8 directions) x 4 revisions x 2 sizes (compass, map)
+        Assert.Equal(256, want.Distinct().Count());
         foreach (var f in want)
         {
             Assert.True(File.Exists(Path.Combine(dir, f)), f + " is in the pak source");
@@ -166,16 +169,19 @@ public class Wo171Tests
         }
         // only our files are in the pak's icon folder, and all begin kct_ (none can shadow a game file)
         Assert.All(Directory.GetFiles(dir), f => Assert.StartsWith("kct_", Path.GetFileName(f)));
-        Assert.Equal(32 * 3, Directory.GetFiles(dir).Length);
-        // every picture file is the DXT5 128 x 128 the converter writes: the DDS header says so
+        Assert.Equal(256 * 3, Directory.GetFiles(dir).Length);
+        // every picture file is DXT5, 64 x 64 for the compass and 128 x 128 for the map (the M names): the DDS header says so
         foreach (var f in want)
         {
+            int px = f.EndsWith("M_icon.dds", StringComparison.Ordinal) ? 128 : 64;
             var h = File.ReadAllBytes(Path.Combine(dir, f)).AsSpan(0, 128);
             Assert.Equal((byte)'D', h[0]);
-            Assert.Equal(128, BitConverter.ToInt32(h[12..16]));    // height
-            Assert.Equal(128, BitConverter.ToInt32(h[16..20]));    // width
+            Assert.Equal(px, BitConverter.ToInt32(h[12..16]));    // height
+            Assert.Equal(px, BitConverter.ToInt32(h[16..20]));    // width
             Assert.Equal("DXT5", System.Text.Encoding.ASCII.GetString(h[84..88]));
         }
+        // a revision is the same art under another name
+        Assert.Equal(File.ReadAllBytes(Path.Combine(dir, "kct_p3_icon.dds")), File.ReadAllBytes(Path.Combine(dir, "kct_p3c_icon.dds")));
     }
 
     // ------------------------------------------------------------------ the throttles
@@ -237,5 +243,59 @@ public class Wo171Tests
         Assert.Equal(24, Wo171Rules.SanitizeLabel(longName).Length);
         Assert.Equal("Dragan Žižek", Wo171Rules.SanitizeLabel("Dragan Žižek"));                 // letters of any script stay
         Assert.True(Wo171Rules.SanitizeLabel(string.Concat(Enumerable.Repeat("\U0001F600", 30))).Length <= 24);       // astral characters are never cut in half
+    }
+
+    // ------------------------------------------------------------------ the hover names
+
+    [Fact]
+    public void A_names_file_gives_the_eight_pictures_of_one_colour_and_revision_the_players_name_as_the_tooltip_key()
+    {
+        var rows = Wo171Rules.NamesXml(2, 0, "LongPlayerNam").Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal("<Table>", rows[0]);
+        Assert.Equal("</Table>", rows[^1]);
+        Assert.Equal(8, rows.Length - 2);
+        for (int f = 0; f < 8; f++)
+            Assert.Contains($"<Row><Cell>ui_maplegend_kct_p{f}M</Cell><Cell>LongPlayerNam</Cell><Cell>LongPlayerNam</Cell></Row>", rows);
+        var rev2 = Wo171Rules.NamesXml(3, 2, "Ann").Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Contains("<Row><Cell>ui_maplegend_kct_b5cM</Cell><Cell>Ann</Cell><Cell>Ann</Cell></Row>", rev2);   // blue, frame 5, revision c
+    }
+
+    [Fact]
+    public void A_name_with_xml_characters_is_escaped()
+    {
+        Assert.Contains("A&lt;B&gt;&amp;C", Wo171Rules.NamesXml(3, 0, "A<B>&C"));
+    }
+
+    [Fact]
+    public void Two_files_never_share_a_key_so_the_engine_never_sees_a_duplicate()
+    {
+        var keys = new HashSet<string>();
+        for (int slot = 1; slot <= 4; slot++)
+            for (int rev = 0; rev < Wo171Rules.Revisions; rev++)
+                foreach (var row in Wo171Rules.NamesXml(slot, rev, "x").Split('\n').Where(r => r.StartsWith("<Row>")))
+                    Assert.True(keys.Add(row.Split("</Cell>")[0]), "duplicate key " + row);
+        Assert.Equal(128, keys.Count);
+        Assert.All(keys, k => Assert.EndsWith("M", k));   // the map's names
+        Assert.Equal("kct_n_20261010-200621_p1.xml", Wo171Rules.NamesFileName("20261010-200621", 2, 1));
+    }
+
+    [Fact]
+    public void The_game_runs_start_comes_from_the_log_header()
+    {
+        Assert.Equal("20261010-200621", Wo171Rules.RunStamp(new[] { "Connecting messages...", "", "Log Started at 2026-10-10  20:06:21", "Build info:" }));
+        Assert.Null(Wo171Rules.RunStamp(new[] { "nothing here" }));
+    }
+
+    [Fact]
+    public void A_new_name_takes_the_next_revision_the_same_name_keeps_its_and_a_fifth_keeps_the_last_ones_text()
+    {
+        var taken = new List<string>();
+        Assert.Equal(0, Wo171Rules.RevFor(taken, "Ann", out bool isNew)); Assert.True(isNew); taken.Add("Ann");
+        Assert.Equal(0, Wo171Rules.RevFor(taken, "Ann", out isNew)); Assert.False(isNew);            // a rejoin: no new key
+        Assert.Equal(1, Wo171Rules.RevFor(taken, "Bob", out isNew)); Assert.True(isNew); taken.Add("Bob");
+        Assert.Equal(0, Wo171Rules.RevFor(taken, "Ann", out isNew)); Assert.False(isNew);            // Ann is back: her revision again
+        taken.Add("Cy"); taken.Add("Di");
+        Assert.Equal(3, Wo171Rules.RevFor(taken, "Ed", out isNew)); Assert.False(isNew);             // four names carried: nothing more can be loaded
+        Assert.Equal(2, Wo171Rules.RevFor(taken, "Cy", out isNew)); Assert.False(isNew);
     }
 }
