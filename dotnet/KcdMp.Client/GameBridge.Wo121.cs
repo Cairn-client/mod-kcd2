@@ -417,6 +417,7 @@ public partial class GameBridge
                 _npcRowAt[ne.Name] = DateTime.UtcNow;
                 Wo161NoteRowIn(ne.Name);   // WO-161: a row of this NPC came in (the victim's check of the next hit)
                 if (!_npcRows) { Wo161NoteRowRefused(ne.Name, "rows-off"); return true; }
+                if (Wo172RowOnDead(ne.Name)) { Wo161NoteRowRefused(ne.Name, "dead"); return true; }   // WO-172 C1: no row on a corpse
                 if (catalog is null || !catalog.TryGet(ne.Row, out var row)) { _w121EvNoRow++; Wo161NoteRowRefused(ne.Name, "unknown-row"); Console.WriteLine($"MP-ACTION section=inbound kind=NpcAttack npc={ne.Name} row={ne.Row} dispatch=dropped-unknown-row"); return true; }
                 if (!_npcEntityIds.TryGetValue(ne.Name, out uint neid))
                 {

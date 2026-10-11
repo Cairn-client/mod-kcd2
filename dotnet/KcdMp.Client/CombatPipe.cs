@@ -1175,6 +1175,32 @@ public sealed class CombatPipe : IAsyncDisposable
                 System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(x.Payload.AsSpan(5)));
     }
 
+    /// <summary>WO-172 op 15 (C1): this copy is dead -- the DLL skips it for every activity, tool, retarget and strike. The DLL's text answer.</summary>
+    public async Task<string?> Wo172DeadAsync(string npc, CancellationToken ct = default)
+    {
+        var name = System.Text.Encoding.ASCII.GetBytes(npc);
+        if (name.Length is 0 or > 63) return null;
+        var a = new byte[1 + name.Length];
+        a[0] = (byte)name.Length;
+        name.CopyTo(a, 1);
+        var r = await Wo163Async(15, a, ct);
+        return r is { } x ? (x.Ok ? "" : "refused ") + System.Text.Encoding.ASCII.GetString(x.Payload) : null;
+    }
+
+    /// <summary>WO-172 op 16: the native half's counters.</summary>
+    public async Task<string?> Wo172StatusAsync(CancellationToken ct = default)
+    {
+        var r = await Wo163Async(16, [], ct);
+        return r is { Ok: true } x ? System.Text.Encoding.ASCII.GetString(x.Payload) : null;
+    }
+
+    /// <summary>WO-172 op 17: mp_dead_wins (255 = unchanged) -> on; null = no answer.</summary>
+    public async Task<bool?> Wo172ConfigAsync(byte deadWins, CancellationToken ct = default)
+    {
+        var r = await Wo163Async(17, [deadWins], ct);
+        return r is { Ok: true, Payload.Length: >= 1 } x ? x.Payload[0] != 0 : null;
+    }
+
     /// <summary>WO-167 op 13: the native half's counters.</summary>
     public async Task<string?> Wo167StatusAsync(CancellationToken ct = default)
     {

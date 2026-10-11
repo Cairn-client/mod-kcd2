@@ -10,6 +10,7 @@
 #include "wo165.h"
 #include "wo166.h"
 #include "wo167.h"
+#include "wo172.h"
 
 #include <atomic>
 #include <cstdio>
@@ -190,6 +191,10 @@ uint8_t handle(const uint8_t* body, size_t len, uint8_t* out, size_t cap, size_t
         case kcdmp::wo167::kOpStatus:
         case kcdmp::wo167::kOpConfig:
             return kcdmp::wo167::handle(body[0], body, len, out, cap, outLen);
+        case kcdmp::wo172::kOpDead:   // WO-172 C1
+        case kcdmp::wo172::kOpStatus:
+        case kcdmp::wo172::kOpConfig:
+            return kcdmp::wo172::handle(body[0], body, len, out, cap, outLen);
         default:
             return kRBadRequest;
     }

@@ -667,6 +667,8 @@ public partial class GameBridge
             Console.WriteLine("MP-WO167-STATS " + Wo167StatsText());
         if (n % 60 == 0 && Interlocked.Read(ref _w170Aggro) + Interlocked.Read(ref _w170ScenePushes) > 0)
             Console.WriteLine("MP-WO170-STATS " + Wo170StatsText());
+        if (n % 60 == 0 && Interlocked.Read(ref _w172DeadMarks) + Interlocked.Read(ref _w172RideRepaired) + Interlocked.Read(ref _w172RowsDropped) > 0)
+            Console.WriteLine("MP-WO172-STATS " + Wo172StatsText());
         if (n % 60 == 0 && (W137JoinerSession || W137Host)) { string? w166n = await _combat.Wo166StatusAsync(); if (w166n is not null && !w166n.Contains("requests=0 ", StringComparison.Ordinal)) Console.WriteLine("MP-WO166 native: " + w166n); }
         if (n % 60 == 0 && (_w164TalkAsks + _w164Sweeps + _w164QFixOk + _w164QFixRefused + _w164FleeDisengaged + _w164SitCleared + _w164TorchSide) > 0)
             Console.WriteLine($"MP-WO164-STATS talks={_w164TalkAsks} started={_w164TalkStarts} failed={_w164TalkFails} preempted={_w164Preempted} sweeps={_w164Sweeps} sweep_found={_w164SweepFound} sweep_still_erroring={_w164SweepStillErr} qfix_ok={_w164QFixOk} qfix_refused={_w164QFixRefused} flee_disengaged={_w164FleeDisengaged} sit_cleared={_w164SitCleared} torch_side={_w164TorchSide} pin_sets={_w164PinSets} pin_removes={_w164PinRemoves} escort_accepted={_w164EscortAccepted} escort_follows={_w164EscortFollows} marks={_w164Marks} mark_pings_in={_w164MarkPingsIn} malformed={_w164Malformed} random_event_lines={_w164RandomEvents}");
