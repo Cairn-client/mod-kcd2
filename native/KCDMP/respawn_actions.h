@@ -97,6 +97,8 @@ int marker_status(char* out, int n);
 // WO-164 C2: a map pin at a partner's position (set / move), and its removal (0xFF = every pin). Main thread.
 // WO-171 M: `pic` = the picture code (0 = the game's own icon, 1..32 = colour * 8 + frame + 1); another code makes the mark again.
 bool partner_pin(uint8_t owner, float x, float y, float z, unsigned pic = 0);
+// WO-171 M: the partner's name (UTF-8, cleaned to at most 31 bytes): the hover title of the pin's mark.
+bool partner_label(uint8_t owner, const uint8_t* text, size_t n);
 bool partner_pin_remove(uint8_t owner);
 
 // Every sample, session or not: a NO_SAVE sentinel entity is purged by any

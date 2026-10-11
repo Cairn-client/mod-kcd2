@@ -28,6 +28,7 @@
 //   timed <npc> <yaw> t0 x0 y0 z0 t1 x1 y1 z1 ...              (piecewise linear in time)
 //   fight <npc> <cx> <cy> <cz> <r> [phase]   (circles; flag 0x04 drawn, a 0x08 swing cue every 2.5 s; WO-165 phase in radians)
 //   ghost <x0> <y0> <z0> <ux> <uy> <len> <speed> [ms]          (a player position stream, ping-pong)
+//   gcircle <cx> <cy> <cz> <r> <period_s> [ms] / gspin <x> <y> <z> <period_s> [ms]   (WO-171: the ghost walks a circle / turns on the spot, clockwise)
 //   ride <t0_s> <t1_s>                                         (WO-124 6a: the ghost rides between t0 and t1)
 //   start <seconds>                                             (delay before streaming)
 //   die <t_s> <npc>                                             (WO-131: that mover streams dead, hp 0, from t on)
@@ -89,6 +90,18 @@ static class P
             else if (s > Len) s = Len;
             float yaw = (float)Math.Atan2(-Ux * dir, Uy * dir);
             return ((float)(X0 + Ux * s), (float)(Y0 + Uy * s), Z0, yaw);
+        }
+    }
+    // WO-171: `gcircle <cx> <cy> <cz> <r> <period_s> [ms]` -- the ghost walks a circle clockwise (seen from above, compass heading =
+    // its position angle + 90 degrees); `gspin <x> <y> <z> <period_s> [ms]` -- it stands and turns clockwise through all 360 degrees.
+    sealed class Circle : Mover
+    {
+        public float Cx, Cy, Cz, R, Period; public bool Spin;
+        public override (float, float, float, float) At(double t)
+        {
+            double a = 2 * Math.PI * t / Math.Max(0.5, Period);                  // compass angle, clockwise from north
+            if (Spin) return (Cx, Cy, Cz, (float)(-a));                         // the engine's yaw is the negative of the compass heading
+            return ((float)(Cx + R * Math.Sin(a)), (float)(Cy + R * Math.Cos(a)), Cz, (float)(-(a + Math.PI / 2)));
         }
     }
     sealed class Hold : Mover
@@ -227,7 +240,7 @@ static class P
         if (a.Contains("--join")) return await JoinPeer.RunJoinerAsync(a, release);
         if (a.Contains("--join-host")) return await JoinPeer.RunHostAsync(a, release);
 
-        var movers = new List<Mover>(); double startDelay = 0; Line? ghost = null; int ghostMs = 30;
+        var movers = new List<Mover>(); double startDelay = 0; Mover? ghost = null; int ghostMs = 30;
         var rides = new List<(double T0, double T1)>();
         // WO-121: `row <t_s> <npc> <rowGuid>` -- the host NPC committed that
         // attack row at stream time t: an NpcAttack action event (v8).
@@ -282,6 +295,14 @@ static class P
                 case "ghost":
                     ghost = new Line { Name = "ghost", X0 = F(f[1]), Y0 = F(f[2]), Z0 = F(f[3]), Ux = F(f[4]), Uy = F(f[5]), Len = F(f[6]), Speed = F(f[7]), PingPong = true };
                     ghostMs = f.Length > 8 ? int.Parse(f[8]) : 30;
+                    break;
+                case "gcircle":
+                    ghost = new Circle { Name = "ghost", Cx = F(f[1]), Cy = F(f[2]), Cz = F(f[3]), R = F(f[4]), Period = F(f[5]) };
+                    ghostMs = f.Length > 6 ? int.Parse(f[6]) : 30;
+                    break;
+                case "gspin":
+                    ghost = new Circle { Name = "ghost", Cx = F(f[1]), Cy = F(f[2]), Cz = F(f[3]), Period = F(f[4]), Spin = true };
+                    ghostMs = f.Length > 5 ? int.Parse(f[5]) : 30;
                     break;
                 // WO-124 (6a): `ride <t0_s> <t1_s>` -- the ghost's Position carries the
                 // riding flag between t0 and t1 of the stream (mount, ride, dismount).

@@ -513,34 +513,145 @@ bool mark_ready(const char** why) {
     return true;
 }
 
-// WO-171 M: the picture of a partner's mark. See wo171_rules.h: the game's name literal for the type is swapped for our picture's
-// name for the one call that makes the mark, then put back. Found port-aware: GUIModule's type -> name function is the one
-// function that holds the string "In level is poi with invalid type"; asking it for 0x30 returns the literal itself.
+// WO-171 M: the picture and the hover name of a partner's mark. See wo171_rules.h. GUIModule's type -> name function (the one function
+// that holds the string "In level is poi with invalid type") ends in a jump table; the entries of the four reserved, otherwise unused
+// types (0x3C..0x3F, one per player slot) are pointed at stubs of ours that return the DLL's own per-slot string. Everything is found in
+// the function's own bytes and checked by calling it; any disagreement leaves the game's table untouched and the pins keep the plain icon.
 void*              g_typeNameFn = nullptr;
-char*              g_poiLiteral = nullptr;
-size_t             g_poiSlot = 0;
 bool               g_picArmed = false;
 std::atomic<bool>  g_picOff{false};
 std::atomic<uint32_t> c_picMade{0}, c_picRefused{0}, c_picFaults{0};
-constexpr const char* kPoiLiteral = "GeneralPoi";
+char*              g_slotBuf[wo171rules::kColours]{};            // each slot's string (the stub returns it)
+uint8_t*           g_slotStub[wo171rules::kColours]{};
+uint32_t*          g_tableEntry[wo171rules::kColours]{};         // the game's table entries we changed, ...
+uint32_t           g_tableOrig[wo171rules::kColours]{};          // ... and what they were
 
-bool literal_write(char* lit, size_t slot, const char* expect, const char* name, char* saved, bool restore) {
-    KCDMP_FAULT_READ(site, "respawn_actions::poi_literal");
-    DWORD old = 0;
-    bool ok = false;
-    if (!VirtualProtect(lit, slot, PAGE_READWRITE, &old)) return false;
-    ok = fault::guarded(site, [&] {
-        if (restore) { wo171rules::literal_restore(lit, slot, saved); ok = true; }
-        else ok = wo171rules::literal_swap(lit, slot, expect, name, saved);
-    });
-    DWORD ignore = 0;
-    VirtualProtect(lit, slot, old, &ignore);
-    return ok;
+const char* type_name(int t) {
+    const char* r = nullptr;
+    if (!g_typeNameFn || !fcall(g_typeNameFn, &r, t)) return nullptr;
+    return r;
 }
 
-bool mark_add_typed(void* ent, SharedPtr* out, int type, unsigned picCode = 0);
+bool slot_set(int slot, const char* text) {
+    if (slot < 0 || slot >= wo171rules::kColours || !g_slotBuf[slot]) return false;
+    KCDMP_FAULT_READ(site, "respawn_actions::slot_buf");
+    return fault::guarded(site, [&] {
+        char tmp[wo171rules::kSlotBuf]{};
+        std::strncpy(tmp, text, wo171rules::kSlotBuf - 1);
+        std::memcpy(g_slotBuf[slot], tmp, wo171rules::kSlotBuf);
+    });
+}
+
+void pic_types_undo() {
+    for (int i = 0; i < wo171rules::kColours; ++i) {
+        if (!g_tableEntry[i]) continue;
+        DWORD old = 0, ign = 0;
+        if (VirtualProtect(g_tableEntry[i], 4, PAGE_EXECUTE_READWRITE, &old)) {
+            KCDMP_FAULT_READ(site, "respawn_actions::type_table_undo");
+            fault::guarded(site, [&] { *g_tableEntry[i] = g_tableOrig[i]; });
+            VirtualProtect(g_tableEntry[i], 4, old, &ign);
+        }
+        g_tableEntry[i] = nullptr;
+    }
+    g_picArmed = false;
+}
+
+// Arms the four reserved types. Fails closed with the reason (nothing of the game's changed unless every check passed).
+bool pic_types_install(HMODULE gm, const uint8_t* fn, const char** why) {
+    const uintptr_t base = reinterpret_cast<uintptr_t>(gm);
+    uint8_t head[128]{};
+    {
+        KCDMP_FAULT_READ(site, "respawn_actions::type_name_bytes");
+        if (!fault::guarded(site, [&] { std::memcpy(head, fn, sizeof head); })) { *why = "the type-name function's bytes could not be read"; return false; }
+    }
+    wo171rules::TypeTable tt;
+    if (!wo171rules::parse_type_table(head, sizeof head, reinterpret_cast<uintptr_t>(fn), base, &tt)) { *why = "the jump table was not found in the function's bytes"; return false; }
+    auto* table = reinterpret_cast<uint32_t*>(base + tt.tableRva);
+    // the game's own entries, checked against the game's own answers: a real type's stub returns what the function returns
+    const char* nm30 = type_name(0x30);
+    const char* nm09 = type_name(0x09);
+    if (!nm30 || !nm09 || std::strcmp(nm30, "GeneralPoi") != 0 || std::strcmp(nm09, "Dog") != 0) { *why = "the function does not answer 0x30 / 0x09 as expected"; return false; }
+    uint32_t e30 = 0;
+    {
+        KCDMP_FAULT_READ(site, "respawn_actions::type_table_read");
+        if (!fault::guarded(site, [&] { e30 = table[0x30 + 1]; })) { *why = "the table could not be read"; return false; }
+    }
+    uint8_t stubBytes[wo171rules::kStubLen]{};
+    {
+        KCDMP_FAULT_READ(site, "respawn_actions::type_stub_read");
+        if (!fault::guarded(site, [&] { std::memcpy(stubBytes, reinterpret_cast<const void*>(base + e30), sizeof stubBytes); })) { *why = "a stub could not be read"; return false; }
+    }
+    if (!wo171rules::is_name_stub(stubBytes) || reinterpret_cast<const char*>(wo171rules::stub_target(stubBytes, base + e30)) != nm30) { *why = "the table entry of 0x30 is not a stub returning its name"; return false; }
+    // the four reserved types: all four must still be the game's shared default stub (no name of their own), and answer the same
+    const char* unusedName = type_name(wo171rules::kPicTypes[0]);
+    uint32_t eUnused = 0;
+    for (int i = 0; i < wo171rules::kColours; ++i) {
+        uint32_t e = 0;
+        KCDMP_FAULT_READ(site, "respawn_actions::type_table_read");
+        if (!fault::guarded(site, [&] { e = table[wo171rules::kPicTypes[i] + 1]; })) { *why = "the table could not be read"; return false; }
+        if (i == 0) eUnused = e;
+        if (e != eUnused || type_name(wo171rules::kPicTypes[i]) != unusedName) { *why = "a reserved type is not the game's unused default"; return false; }
+    }
+    // memory for the stubs and strings within reach of the image: the table entries are 32-bit offsets from the module base
+    uint32_t sizeOfImage = 0;
+    {
+        KCDMP_FAULT_READ(site, "respawn_actions::pe_header");
+        if (!fault::guarded(site, [&] {
+            const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+            const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
+            sizeOfImage = nt->OptionalHeader.SizeOfImage;
+        }) || sizeOfImage == 0) { *why = "the module header could not be read"; return false; }
+    }
+    // the first free 64 KB above the image and below base + 4 GB (the address space is walked; a fixed guess often lands on something)
+    uint8_t* mem = nullptr;
+    for (uintptr_t at = (base + sizeOfImage + 0xFFFF) & ~static_cast<uintptr_t>(0xFFFF); !mem && at - base < 0xFFFF0000ull;) {
+        MEMORY_BASIC_INFORMATION mbi{};
+        if (!VirtualQuery(reinterpret_cast<void*>(at), &mbi, sizeof mbi)) break;
+        const uintptr_t regionEnd = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+        if (mbi.State == MEM_FREE) {
+            for (uintptr_t cand = (at + 0xFFFF) & ~static_cast<uintptr_t>(0xFFFF); cand + 0x10000 <= regionEnd && cand - base < 0xFFFF0000ull && !mem; cand += 0x10000) {
+                mem = static_cast<uint8_t*>(VirtualAlloc(reinterpret_cast<void*>(cand), 0x1000, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE));
+                if (mem && reinterpret_cast<uintptr_t>(mem) != cand) { VirtualFree(mem, 0, MEM_RELEASE); mem = nullptr; }
+                break;   // one try per free region; the walk goes on
+            }
+        }
+        if (regionEnd <= at) break;
+        at = regionEnd;
+    }
+    if (!mem) { *why = "no memory within reach of the module"; return false; }
+    for (int i = 0; i < wo171rules::kColours; ++i) {
+        g_slotStub[i] = mem + 0x40 * i;
+        g_slotBuf[i] = reinterpret_cast<char*>(mem + 0x200 + 0x40 * i);
+        std::memset(g_slotBuf[i], 0, wo171rules::kSlotBuf);
+        uint8_t st[wo171rules::kStubLen];
+        if (!wo171rules::build_stub(st, reinterpret_cast<uintptr_t>(g_slotStub[i]), reinterpret_cast<uintptr_t>(g_slotBuf[i]))) { VirtualFree(mem, 0, MEM_RELEASE); *why = "a stub could not be built"; return false; }
+        std::memcpy(g_slotStub[i], st, sizeof st);
+    }
+    FlushInstructionCache(GetCurrentProcess(), mem, 0x1000);
+    // point the four entries at them
+    bool ok = true;
+    for (int i = 0; i < wo171rules::kColours && ok; ++i) {
+        uint32_t* ent = &table[wo171rules::kPicTypes[i] + 1];
+        DWORD old = 0, ign = 0;
+        if (!VirtualProtect(ent, 4, PAGE_EXECUTE_READWRITE, &old)) { ok = false; break; }
+        KCDMP_FAULT_READ(site, "respawn_actions::type_table_write");
+        g_tableOrig[i] = *ent;
+        ok = fault::guarded(site, [&] { *ent = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(g_slotStub[i]) - base); });
+        VirtualProtect(ent, 4, old, &ign);
+        if (ok) g_tableEntry[i] = ent;
+    }
+    // ... and ask the function: each reserved type must now return exactly its own buffer
+    for (int i = 0; i < wo171rules::kColours && ok; ++i) ok = type_name(wo171rules::kPicTypes[i]) == g_slotBuf[i];
+    for (int i = 0; i < wo171rules::kColours && ok; ++i) { slot_set(i, "kct_x0"); const char* r = type_name(wo171rules::kPicTypes[i]); ok = r && std::strcmp(r, "kct_x0") == 0; }
+    if (!ok) { pic_types_undo(); *why = "the function did not answer for the reserved types after the table was changed (undone)"; return false; }
+    for (int i = 0; i < wo171rules::kColours; ++i) slot_set(i, "kct_unused");
+    *why = "ok";
+    return true;
+}
+
+bool mark_add_typed(void* ent, SharedPtr* out, int type, unsigned picCode = 0, const char* label = nullptr);
 bool mark_add(void* ent, SharedPtr* out) { return mark_add_typed(ent, out, g_markType); }
-bool mark_add_typed(void* ent, SharedPtr* out, int type, unsigned picCode) {
+bool mark_add_typed(void* ent, SharedPtr* out, int type, unsigned picCode, const char* label) {
     if (!g_markArmed || g_markOff.load()) return false;
     const char* why = "";
     if (!mark_ready(&why)) {
@@ -563,28 +674,33 @@ bool mark_add_typed(void* ent, SharedPtr* out, int type, unsigned picCode) {
     }
     SharedPtr sp{};
     void* ret = nullptr;
-    // WO-171 M: the picture. Only for a pin of the general-poi type, only while the literal is armed; the bytes are back before
-    // anything else can run (this thread is the main thread and nothing yields between the swap and the restore).
-    char picName[8]{}, picSaved[wo171rules::kNameMax]{};
-    bool swapped = false;
-    if (picCode != 0 && g_picArmed && !g_picOff.load() && type == kMarkGeneralPoi && wo171rules::picture_name(picCode, picName, sizeof picName)) {
-        swapped = literal_write(g_poiLiteral, g_poiSlot, kPoiLiteral, picName, picSaved, false);
-        if (!swapped) c_picRefused.fetch_add(1, std::memory_order_relaxed);
-    }
+    // WO-171 M: a picture rides one of the four reserved types: the slot's string is the player's name while the mark is made (the mark
+    // keeps a copy: its hover title) and the picture's name from then on (the map reads it when it builds the marker's group).
+    char picName[10]{};
+    const int picSlot = wo171rules::slot_of_code(picCode);
+    const bool useSlot = picSlot >= 0 && g_picArmed && !g_picOff.load() && type == wo171rules::kPicTypes[picSlot] && wo171rules::picture_name(picCode, picName, sizeof picName);
+    if (useSlot && !slot_set(picSlot, (label && label[0]) ? label : "Player")) { c_picRefused.fetch_add(1, std::memory_order_relaxed); return false; }
     const bool created = vcall(map, kMapCreate, &ret, &sp, type, lo, kMarkSource);
-    if (swapped && !literal_write(g_poiLiteral, g_poiSlot, kPoiLiteral, picName, picSaved, true)) {
-        // never silent: the literal must be back. A failed restore leaves the game's own icon name changed -- off for good, loudly.
-        g_picOff = true; c_picFaults.fetch_add(1, std::memory_order_relaxed);
-        logf("WO171-MARK FAULT site=poi_literal restore -- the game's name literal could not be put back; marker pictures are OFF this session");
+    if (useSlot) {
+        if (!slot_set(picSlot, picName)) { g_picOff = true; c_picFaults.fetch_add(1, std::memory_order_relaxed); logf("WO171-MARK FAULT site=slot_buf -- marker pictures are OFF this session"); }
+        else if (created) c_picMade.fetch_add(1, std::memory_order_relaxed);
     }
-    if (swapped && created) c_picMade.fetch_add(1, std::memory_order_relaxed);
     if (!created || !sp.p || !sp.ctrl) {
         logf("MP-GRAVE marker: C_UIMap create refused");
         return false;
     }
     SharedPtr arg = sp;
     if (!sp_addref(arg)) { sp_release(sp); return false; }
-    if (!vcall_void(map, kMapAdd, &arg)) {
+    // WO-171: the compass marker is made while the map adds the mark (the slot's string is still the small picture's name: 64 px, drawn
+    // 1:1 in the compass strip); from here on the string is the large picture's name (128 px) -- what the map reads when it builds its
+    // marker groups. The pak has both under both names.
+    const bool addOk = vcall_void(map, kMapAdd, &arg);
+    if (useSlot && addOk) {
+        char big[10]{};
+        std::snprintf(big, sizeof big, "%sM", picName);
+        if (!slot_set(picSlot, big)) { g_picOff = true; c_picFaults.fetch_add(1, std::memory_order_relaxed); logf("WO171-MARK FAULT site=slot_buf -- marker pictures are OFF this session"); }
+    }
+    if (!addOk) {
         // WO-164 C1: never swallowed. The add may have put the mark in the map's vector before it faulted: the map's own remove
         // (slot 0x60: it never reads the linkable) takes it out again, then markers stay off for the session.
         g_markOff = true;
@@ -655,23 +771,15 @@ void resolve_marker() {
     logf("ACTIONS: marker %s (C_UIApse/C_UIMap RTTI %s, XGenAI AIObjectManager/ai_cast exports %s; map now %s)",
          g_markArmed ? "armed" : "NOT armed", (g_vftApse && g_vftMap) ? "ok" : "MISSING",
          (g_aiObjectManager && g_aiCastLinkable) ? "ok" : "MISSING", g_markArmed && ui_map() ? "found" : "not found yet");
-    // WO-171 M: the type-name function and the general-poi literal it returns (a read-only probe call, validated by content)
+    // WO-171 M: the type-name function and the four reserved types' stubs (see pic_types_install)
     if (const uint8_t* tn = anchor::function_by_string(gm, "In level is poi with invalid type")) {
         g_typeNameFn = const_cast<uint8_t*>(tn);
-        const char* lit = nullptr;
-        if (fcall(g_typeNameFn, &lit, 0x30) && lit) {
-            char buf[32]{};
-            KCDMP_FAULT_READ(site, "respawn_actions::poi_literal_probe");
-            const bool rd_ok = fault::guarded(site, [&] { std::memcpy(buf, lit, 24); });
-            if (rd_ok && std::strcmp(buf, kPoiLiteral) == 0) {
-                g_poiLiteral = const_cast<char*>(lit);
-                g_poiSlot = wo171rules::literal_slot(buf);
-                g_picArmed = g_poiSlot >= 7 && g_poiSlot <= wo171rules::kNameMax;
-            }
-        }
+        const char* why = "";
+        g_picArmed = pic_types_install(gm, tn, &why);
+        logf("WO171-MARK picture types %s (type-name function found; %s)", g_picArmed ? "armed: 0x3C..0x3F return the DLL's own strings" : "NOT armed -- pins keep the game's own icon", why);
+    } else {
+        logf("WO171-MARK picture types NOT armed -- the type-name function was not found; pins keep the game's own icon");
     }
-    logf("WO171-MARK picture literal %s (type-name function %s, literal %s, slot %zu bytes)", g_picArmed ? "armed" : "NOT armed -- pins keep the game's own icon",
-         g_typeNameFn ? "found" : "MISSING", g_poiLiteral ? "GeneralPoi" : "not found", g_poiSlot);
 }
 
 // ---------------------------------------------------------------------------
@@ -729,11 +837,13 @@ struct Pin {
     float     x = 0, y = 0, z = 0;
     unsigned  wantPic = 0;   // WO-171 M: the picture code the agent asked for (0 = the game's own icon)
     unsigned  pic = 0;       // ... and the one this pin's mark was made with
+    char      label[wo171rules::kSlotBuf]{};   // the partner's name: the mark's hover title
+    char      markLabel[wo171rules::kSlotBuf]{};   // ... the one this pin's mark was made with
 };
 std::vector<Pin> g_pins;
 constexpr const char* kPinPrefix = "kcdmp_partner_";
 constexpr float kPinDepthM = 30.0f;
-constexpr float kPinMoveM = 3.0f;
+constexpr float kPinMoveM = 2.0f;   // WO-171: the agent's own gate is 2 m (and once a second)
 std::atomic<uint32_t> c_pinSpawned{0}, c_pinMoved{0}, c_pinMarked{0}, c_pinRemoved{0};
 
 bool                g_graveArmed = false;
@@ -1305,9 +1415,10 @@ int pin_mark_type(unsigned* pic) {
         logf("%s", line);
     }
     uint8_t b = 0;
-    // WO-171 M: a picture rides the general-poi type (its literal is the one with room for our names); without it, the old rule
+    // WO-171 M: a picture rides its slot's reserved type -- when the map draws that type's category; without it, the old rule
     if (pic && *pic) {
-        if (g_picArmed && !g_picOff.load() && map && rd8(map, 0x648 + static_cast<size_t>(kMarkGeneralPoi), &b) && b) return kMarkGeneralPoi;
+        const int slot = wo171rules::slot_of_code(*pic);
+        if (slot >= 0 && g_picArmed && !g_picOff.load() && map && rd8(map, 0x648 + static_cast<size_t>(wo171rules::kPicTypes[slot]), &b) && b) return wo171rules::kPicTypes[slot];
         *pic = 0;
     }
     if (map && rd8(map, 0x648 + static_cast<size_t>(kMarkCompanion), &b) && b) return kMarkCompanion;
@@ -1337,10 +1448,11 @@ void marks_guard() {
             void* e = engine::entity_by_id(pn.eid);
             unsigned pic = pn.wantPic;
             const int type = pin_mark_type(&pic);
-            if (e && mark_add_typed(e, &pn.mark, type, pic)) {
+            if (e && mark_add_typed(e, &pn.mark, type, pic, pn.label)) {
                 pn.pic = pic;
+                std::memcpy(pn.markLabel, pn.label, sizeof pn.markLabel);
                 c_pinMarked.fetch_add(1, std::memory_order_relaxed);
-                logf("WO164-MAPMARK pin owner=%u added (type 0x%X, picture %u) at (%.1f, %.1f)", static_cast<unsigned>(pn.owner), static_cast<unsigned>(type), pic, pn.x, pn.y);
+                logf("WO164-MAPMARK pin owner=%u added (type 0x%X, picture %u, title \"%s\") at (%.1f, %.1f)", static_cast<unsigned>(pn.owner), static_cast<unsigned>(type), pic, pn.label, pn.x, pn.y);
             }
         }
         for (Mirror& m : g_mirrors) {
@@ -1399,7 +1511,7 @@ bool partner_pin(uint8_t owner, float x, float y, float z, unsigned pic) {
     if (!pn) { g_pins.push_back(Pin{}); pn = &g_pins.back(); pn->owner = owner; }
     // WO-171 M: another picture = a new mark (the map reads a mark's name when it is made): the old one comes off first
     pn->wantPic = pic;
-    if (pn->mark.ctrl && pn->pic != pic && !g_markOff.load()) {
+    if (pn->mark.ctrl && (pn->pic != pic || std::strcmp(pn->markLabel, pn->label) != 0) && !g_markOff.load()) {
         mark_remove(&pn->mark);
         logf("WO171-MARK pin owner=%u picture %u -> %u (the mark is made again)", static_cast<unsigned>(owner), pn->pic, pic);
     }
@@ -1428,12 +1540,27 @@ bool partner_pin(uint8_t owner, float x, float y, float z, unsigned pic) {
         void* e = engine::entity_by_id(pn->eid);
         unsigned usePic = pic;
         const int type = pin_mark_type(&usePic);
-        if (e && mark_add_typed(e, &pn->mark, type, usePic)) {
+        if (e && mark_add_typed(e, &pn->mark, type, usePic, pn->label)) {
             pn->pic = usePic;
+            std::memcpy(pn->markLabel, pn->label, sizeof pn->markLabel);
             c_pinMarked.fetch_add(1, std::memory_order_relaxed);
-            logf("WO164-MAPMARK pin owner=%u added (type 0x%X, picture %u) at (%.1f, %.1f)", static_cast<unsigned>(owner), static_cast<unsigned>(type), usePic, x, y);
+            logf("WO164-MAPMARK pin owner=%u added (type 0x%X, picture %u, title \"%s\") at (%.1f, %.1f)", static_cast<unsigned>(owner), static_cast<unsigned>(type), usePic, pn->label, x, y);
         }
     }
+    return true;
+}
+
+// WO-171 M: the partner's name, the hover title of its mark (the mark keeps a copy of what the slot's string says when it is made, so
+// a changed name makes the mark again at the next set).
+bool partner_label(uint8_t owner, const uint8_t* text, size_t n) {
+    char clean[wo171rules::kSlotBuf]{};
+    wo171rules::sanitize_label(text, n, clean);
+    Pin* pn = nullptr;
+    for (Pin& q : g_pins) if (q.owner == owner) { pn = &q; break; }
+    if (!pn) { g_pins.push_back(Pin{}); pn = &g_pins.back(); pn->owner = owner; }
+    if (std::strcmp(pn->label, clean) == 0) return true;
+    std::memcpy(pn->label, clean, sizeof pn->label);
+    logf("WO171-MARK pin owner=%u title \"%s\"", static_cast<unsigned>(owner), clean);
     return true;
 }
 

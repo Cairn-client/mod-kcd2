@@ -49,6 +49,7 @@ public sealed class CombatPipe : IAsyncDisposable
     private const byte SetSession        = 0x0C;   // WO-113
     private const byte SetRespawn        = 0x0D;   // WO-113
     private const byte MirrorGrave       = 0x0E;   // WO-113
+    private const byte PinLabel          = 0x2C;   // WO-171: a partner's name for its map pin
     private const byte ListGraves        = 0x0F;   // WO-113
     private const byte GraveListReply    = 0x88;   // WO-113
     private const byte NpcSamples        = 0x10;   // WO-118
@@ -409,6 +410,19 @@ public sealed class CombatPipe : IAsyncDisposable
         BinaryPrimitives.WriteSingleLittleEndian(payload.AsSpan(14), y);
         BinaryPrimitives.WriteSingleLittleEndian(payload.AsSpan(18), z);
         return SendAsync(MirrorGrave, payload, ct);
+    }
+
+    /// <summary>WO-171: the partner's name, the hover title of its map pin's mark (UTF-8, at most 31 bytes; the DLL cleans it again).</summary>
+    public Task<bool> PinLabelAsync(byte owner, string name, CancellationToken ct = default)
+    {
+        var bytes = System.Text.Encoding.UTF8.GetBytes(name);
+        int n = Math.Min(bytes.Length, 31);
+        while (n > 0 && n < bytes.Length && (bytes[n] & 0xC0) == 0x80) n--;   // never cut a character in half
+        var payload = new byte[2 + n];
+        payload[0] = owner;
+        payload[1] = (byte)n;
+        Buffer.BlockCopy(bytes, 0, payload, 2, n);
+        return SendAsync(PinLabel, payload, ct);
     }
 
     /// <summary>

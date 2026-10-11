@@ -1343,6 +1343,23 @@ void serve(HANDLE h) {
                 LeaveCriticalSection(&g_write_lock);
                 break;
             }
+            case kPinLabel: {   // WO-171: [owner:1][n:1][utf8 n<=31] -- a partner's name for its map pin's hover title
+                if (len < 2 || len != static_cast<uint32_t>(2 + body[1]) || body[1] > 31) {
+                    logf("PIPE: PinLabel wrong length %u", len);
+                    send_result(h, false, seq);
+                    break;
+                }
+                const uint8_t owner = body[0];
+                std::vector<uint8_t> text(body + 2, body + 2 + body[1]);
+                bool ok = false;
+                bool faultedFlag = false;
+                const bool ran = run_sync_bounded<bool>(
+                    [owner, text](bool& result) { result = actions::partner_label(owner, text.data(), text.size()); },
+                    "PinLabel", ok, &faultedFlag);
+                send_result(h, ran && ok, seq, (ran && ok) ? 0 : (faultedFlag ? kReasonTaskFaulted : 0));
+                break;
+            }
+
             case kWo163: {   // WO-163: shared combat (the skirmish relation read; the probes' and the build's switches)
                 std::vector<uint8_t> copy(body, body + len);
                 struct R { uint8_t reason = kcdmp::wo163::kRFailed; uint8_t op = 0; uint8_t buf[512]{}; size_t n = 0; };   // WO-166: wo166's status (~330 chars) was cut at 200

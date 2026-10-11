@@ -92,26 +92,45 @@ public static class Wo171Rules
 
     // ------------------------------------------------------------------ the pictures
 
-    /// <summary>The pipe's picture code: 0 = none (the game's own icon), else slot 1..4 and frame 0..7 -> 1..32.</summary>
-    public static int PictureCode(int slot, int frame) => slot is < 1 or > Colours ? 0 : (slot - 1) * Frames + (frame & 7) + 1;
+    /// <summary>A name can be loaded into the game's localization only once per game run, so a colour taken over by another name uses the
+    /// next revision of its pictures (the same art under another key): 4 revisions, then the last one's name stays.</summary>
+    public const int Revisions = 4;
+    private static readonly string[] RevSuffix = { "", "b", "c", "d" };
 
-    /// <summary>The picture's name in the pak and in the game: <c>kct_r3</c> (colour letter, frame digit).</summary>
-    public static string PictureName(int code) => code is < 1 or > Colours * Frames ? "-" : $"kct_{ColourLetters[(code - 1) / Frames]}{(code - 1) % Frames}";
+    /// <summary>The pipe's picture code: 0 = none (the game's own icon), else revision * 32 + slot 0..3 * 8 + frame + 1 (1..128).</summary>
+    public static int PictureCode(int slot, int frame, int rev = 0) =>
+        slot is < 1 or > Colours || rev is < 0 or >= Revisions ? 0 : rev * Colours * Frames + (slot - 1) * Frames + (frame & 7) + 1;
 
-    /// <summary>The 32 pictures the pak must hold, each as <c>kct_&lt;c&gt;&lt;n&gt;_icon.dds</c>.</summary>
-    public static IEnumerable<string> ManifestFiles()
+    /// <summary>The picture's name in the pak and in the game: <c>kct_r3</c>, <c>kct_r3b</c> (colour letter, frame digit, revision suffix).</summary>
+    public static string PictureName(int code)
     {
-        for (int c = 0; c < Colours; c++)
-            for (int n = 0; n < Frames; n++)
-                yield return $"kct_{ColourLetters[c]}{n}_icon.dds";
+        if (code is < 1 or > Colours * Frames * Revisions) return "-";
+        int i = (code - 1) % (Colours * Frames), rev = (code - 1) / (Colours * Frames);
+        return $"kct_{ColourLetters[i / Frames]}{i % Frames}{RevSuffix[rev]}";
     }
 
+    /// <summary>
+    /// The pictures the pak must hold, each as <c>kct_&lt;c&gt;&lt;n&gt;&lt;rev&gt;_icon.dds</c> (64 px: the compass draws it 1:1) and the same with an
+    /// M after the name (128 px: the map draws its icons scaled down): 128 + 128.
+    /// </summary>
+    public static IEnumerable<string> ManifestFiles()
+    {
+        foreach (string big in new[] { "", "M" })
+            for (int r = 0; r < Revisions; r++)
+                for (int c = 0; c < Colours; c++)
+                    for (int n = 0; n < Frames; n++)
+                        yield return $"kct_{ColourLetters[c]}{n}{RevSuffix[r]}{big}_icon.dds";
+    }
+
+    /// <summary>The map's (large) name of a picture: its name and an M.</summary>
+    public static string MapName(int code) => PictureName(code) + "M";
+
     /// <summary>The code a style asks for: rotating = the picture of the heading's octant, flat = the north-facing one, companion = none.</summary>
-    public static int CodeFor(Style style, int slot, int octant, int offset)
+    public static int CodeFor(Style style, int slot, int octant, int offset, int rev = 0)
     {
         if (style == Style.Companion || slot is < 1 or > Colours) return 0;
         int o = style == Style.Flat ? ((0 + offset) % 8 + 8) % 8 : octant;
-        return PictureCode(slot, FrameOfOctant(o));
+        return PictureCode(slot, FrameOfOctant(o), rev);
     }
 
     // ------------------------------------------------------------------ the slots
@@ -185,6 +204,52 @@ public static class Wo171Rules
 
     /// <summary>A picture change is due when the octant changed and the last change was at least 250 ms ago.</summary>
     public static bool TurnDue(int lastCode, int newCode, long lastChangeMs, long nowMs) => newCode != lastCode && nowMs - lastChangeMs >= TurnMinMs;
+
+    // ------------------------------------------------------------------ the hover name
+
+    /// <summary>
+    /// The map's tooltip for a marker is the localization key "@ui_maplegend_" + the marker group's name (the map's picture name, kct_p3M). The
+    /// agent writes one small file per (colour, revision) -- eight keys, the player's name as the text -- and the mod loads it
+    /// (System.LoadLocalizationXml). The engine refuses a key it already has (a modal error window), so a (colour, revision) is written and
+    /// loaded once per game run and a different name in the same colour takes the next revision. The file name carries the game run's start.
+    /// </summary>
+    public const string NamesFolder = "Mods/kdcmp/Localization";
+
+    public static string NamesFileName(string runStamp, int slot, int rev) =>
+        $"kct_n_{runStamp}_{ColourLetters[slot - 1]}{rev}.xml";
+
+    public static string NamesXml(int slot, int rev, string name)
+    {
+        string text = System.Security.SecurityElement.Escape(SanitizeLabel(name)) ?? "player";
+        var sb = new StringBuilder("<Table>\n");
+        for (int f = 0; f < Frames; f++)
+            sb.Append("<Row><Cell>ui_maplegend_").Append(MapName(PictureCode(slot, f, rev))).Append("</Cell><Cell>").Append(text).Append("</Cell><Cell>").Append(text).Append("</Cell></Row>\n");
+        return sb.Append("</Table>\n").ToString();
+    }
+
+    /// <summary>"Log Started at 2026-10-10  20:06:21" -> "20261010-200621": the game run a loaded key belongs to (null when not found).</summary>
+    public static string? RunStamp(IEnumerable<string> firstLines)
+    {
+        foreach (var l in firstLines)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(l, @"^Log Started at (\d{4})-(\d\d)-(\d\d)\s+(\d\d):(\d\d):(\d\d)");
+            if (m.Success) return $"{m.Groups[1].Value}{m.Groups[2].Value}{m.Groups[3].Value}-{m.Groups[4].Value}{m.Groups[5].Value}{m.Groups[6].Value}";
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Which revision a colour's name uses in this game run: the revision that already carries this name, else the next free one; the last
+    /// revision's name stays for any further name (<paramref name="isNew"/> false then: nothing more can be loaded, the old text shows).
+    /// <paramref name="taken"/> = the names the colour's revisions already carry, in revision order.
+    /// </summary>
+    public static int RevFor(IReadOnlyList<string> taken, string name, out bool isNew)
+    {
+        for (int r = 0; r < taken.Count; r++) if (taken[r] == name) { isNew = false; return r; }
+        if (taken.Count < Revisions) { isNew = true; return taken.Count; }
+        isNew = false;
+        return Revisions - 1;
+    }
 
     // ------------------------------------------------------------------ the name
 
