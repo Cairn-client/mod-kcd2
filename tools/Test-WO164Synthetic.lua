@@ -340,6 +340,8 @@ do
     rider.human.IsMounted = function() return mounted ~= nil end
     rider.human.ForceDismount = function() mounted = nil end
     rider.SetWorldPos = function() end
+    horse.GetPhysicalStats = function() return { mass = 500 } end    -- WO-170 F3: a mount needs both bodies physicalized
+    rider.GetPhysicalStats = function() return { mass = 80 } end
     local hp, rp = KCD2MP.npcPuppets["dw_horse_8"], KCD2MP.npcPuppets["dw_rider_3"]
     hp.tx, hp.ty, hp.tz = 10, 0, 0
     rp.tx, rp.ty, rp.tz = 10.3, 0.2, 1.2

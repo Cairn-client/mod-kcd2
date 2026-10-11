@@ -40,6 +40,8 @@
 //   gcombat <t0_s> <t1_s> [gz]                                  (WO-166 C1: the ghost's Position carries a state block with the
 //                                                                combat bit between t0 and t1 -- the joiner "in combat", which
 //                                                                holds its figure in combat on the host)
+//   jattack <t_s> <rowGuid>                                    (WO-170: joiner role -- this peer's figure swings: an Attack action stamped when it is
+//                                                                sent, as the joiner's game sends one)
 //   raw <t_s> <typeHex> <payloadHex> [stampOffset]              (WO-131: send this packet as-is at stream time t;
 //                                                                 the 4 bytes at stampOffset are re-stamped with this
 //                                                                 peer's clock -- a recorded host stream replayed,
@@ -242,6 +244,7 @@ static class P
         //         `qmode <t> on|off` -- the host's quest-sync mode (QuestHostMode, WO-137), as a real host announces it;
         //         `window <npc> <t0> <t1>` -- a mover declared earlier is streamed only between t0 and t1 (a spawn that appears, then leaves)
         var joinMsgs = new List<(double T, byte[] Pkt, string Note)>();
+        var jattacks = new List<(double T, Guid Row)>();   // WO-170
         uint joinTok = 0;
         var ncombats = new List<NCombat>();   // WO-132
         var dies = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);   // WO-131
@@ -389,6 +392,7 @@ static class P
                                   new LootMsg(byte.Parse(f[2], CultureInfo.InvariantCulture), ++joinTok, string.Join(' ', f.Skip(3))).BuildUp(Protocol.W164Up, Protocol.JoinTargetHost),
                                   $"W164->host kind={f[2]} {string.Join(' ', f.Skip(3))}"));
                     break;
+                case "jattack": jattacks.Add((double.Parse(f[1], CultureInfo.InvariantCulture), Guid.Parse(f[2]))); break;   // WO-170
                 case "qcp":
                     joinMsgs.Add((double.Parse(f[1], CultureInfo.InvariantCulture),
                                   new LootMsg(Protocol.QuestHostCheckpoint, ++joinTok, $"1 1 {f[2]}:-:{f[3]}").BuildUp(Protocol.QuestHostUp, 1),
@@ -460,6 +464,14 @@ static class P
                     await st.WriteAsync(s_actions.Build(ActionKind.NpcAttack, ActionPhase.Commit, ev.ToBytes()));
                     Console.WriteLine(FormattableString.Invariant($"SYNTH t={t:F1}s NpcAttack npc={rows[ri].Npc} row={rows[ri].Row}"));
                     rows.RemoveAt(ri);
+                }
+                for (int ai = jattacks.Count - 1; ai >= 0; ai--)   // WO-170: the joiner's swings, stamped now
+                {
+                    if (jattacks[ai].T > t) continue;
+                    var ae = new AttackEvent(unchecked((uint)(Stopwatch.GetTimestamp() * 1000 / Stopwatch.Frequency)), 1, WireZone.UpperRight, 0, 0, jattacks[ai].Row);
+                    await st.WriteAsync(s_actions.Build(ActionKind.Attack, ActionPhase.Commit, ae.ToBytes()));
+                    Console.WriteLine(FormattableString.Invariant($"SYNTH t={t:F1}s Attack row={jattacks[ai].Row}"));
+                    jattacks.RemoveAt(ai);
                 }
                 for (int ji = joinMsgs.Count - 1; ji >= 0; ji--)   // WO-164: activity rows, W164 messages, checkpoints, when due
                 {

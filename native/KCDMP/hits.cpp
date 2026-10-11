@@ -4,6 +4,7 @@
 // WO-121 Phases 5 and 6 -- see hits.h.
 #include "hits.h"
 #include "wo166.h"
+#include "wo170_rules.h"
 #include "fault_guard.h"
 
 #include <windows.h>
@@ -132,11 +133,13 @@ std::vector<PlayerHitMark> g_marks;
 // from the host).
 // WO-165: kWatchReplay -- a replayed blow (wo165.cpp) on the local player or a dummy NPC: measured, never put back, reported to
 // the replay's own callback (the engine applied it; this only says how much).
-enum WatchKind : uint8_t { kWatchPvp = 0, kWatchNpc = 1, kWatchDiscard = 2, kWatchReplay = 3 };
+// WO-170: kWatchFigure -- a blow of a partner's figure that no relayed swing of the partner's matches: measured and put back (health and
+// stamina; nothing is forwarded), the victim any soul (an NPC, the local player, another figure).
+enum WatchKind : uint8_t { kWatchPvp = 0, kWatchNpc = 1, kWatchDiscard = 2, kWatchReplay = 3, kWatchFigure = 4 };
 struct NewWatch { void* soul; uint32_t eid; float hp0, st0; uint8_t flags, material; uint8_t kind; uint32_t attackerEid; };
 std::vector<NewWatch> g_newWatches;
 struct Watch { void* soul; uint32_t eid; float hp0, st0, dh = 0, ds = 0; uint8_t flags, material; double t0; int frames = 0, landedAt = -1;
-               uint8_t kind = 0; uint32_t attackerEid = 0; };
+               uint8_t kind = 0; uint32_t attackerEid = 0; bool fatal = false; };
 std::vector<Watch> g_watches;   // main thread only
 constexpr double kWatchS = 0.6;
 std::atomic<uint64_t> g_playerWuid{0};
@@ -157,6 +160,13 @@ bool is_discard_attacker_impl(uint32_t eid) {
     return false;
 }
 std::atomic<bool> g_npcWatch{true};
+
+// WO-170 F1: the figure guard (any thread reads, the pipe's config op writes).
+std::atomic<bool> g_figureGuard{true};
+wo170rules::SwingLedger g_ledger;          // guarded by g_qMutex
+std::vector<uint32_t> g_cancelFigure;      // victims another hit landed on: their open put-back watch ends (guarded by g_qMutex)
+std::atomic<uint32_t> g_figureWatchesOpen{0};
+std::atomic<uint32_t> c_figSeen{0}, c_figRelayed{0}, c_figDropped{0}, c_figPutBack{0}, c_figFatal{0}, c_figCancelled{0}, c_figUnread{0}, c_figMissile{0};
 
 // WO-165: the replay window (main thread opens and closes it around its own call; the hook runs on the same thread inside it).
 struct ReplayWindow { uint32_t attacker = 0, victim = 0, seq = 0; void* victimSoul = nullptr; bool victimIsPlayer = false; DWORD tid = 0; };
@@ -206,6 +216,45 @@ void* hit_common(bool missile, HitFn orig, void* self, void* out, const uint8_t*
             g_newWatches.push_back({vs, veid, hp0, st0, 0, mat, static_cast<uint8_t>(kWatchReplay), g_replay.seq});
         }
         return res;
+    }
+    // WO-170 F1: a blow of a partner's figure. The figure only ever does what its partner does: a blow that no relayed swing of his
+    // matches is the figure's own (its brain, an animation's collision) and is measured and put back like the avatar's own hits above --
+    // never skipped (the engine's call wants a cause back). Melee only: the partner's arrows are not relayed swings (counted, passed).
+    if (g_figureGuard.load(std::memory_order_relaxed) && aeid && avatar_soul(aeid) && veid != aeid) {
+        c_figSeen.fetch_add(1, std::memory_order_relaxed);
+        if (missile) {
+            c_figMissile.fetch_add(1, std::memory_order_relaxed);
+        } else {
+            wo170rules::Verdict verdict;
+            { std::lock_guard<std::mutex> lock(g_qMutex); verdict = g_ledger.take(aeid, now_s()); }
+            if (verdict == wo170rules::Verdict::Relayed) {
+                const uint32_t n = c_figRelayed.fetch_add(1, std::memory_order_relaxed);
+                if (n < 20 || (n % 50) == 0) logf("WO170-FIGUREHIT relayed by=0x%X victim=0x%X -- matches a swing the partner sent: applied [n=%u]", aeid, veid, n + 1);
+            } else {
+                void* vs = avatar_soul(veid);
+                if (!vs && veid == g_playerEid.load(std::memory_order_relaxed)) vs = rttr::read_player_soul();
+                if (!vs) vs = soul_of_eid(veid);
+                float hp0 = 0, st0 = 0;
+                const bool r0 = vs && rttr::soul_state(vs, "health", &hp0) && rttr::soul_state(vs, "stamina", &st0);
+                const uint32_t n = c_figDropped.fetch_add(1, std::memory_order_relaxed);
+                if (!r0) {
+                    c_figUnread.fetch_add(1, std::memory_order_relaxed);
+                    logf("WO170-FIGUREHIT dropped by=0x%X victim=0x%X why=not-relayed put-back=UNAVAILABLE (the victim's soul or its health could not be read) [n=%u]", aeid, veid, n + 1);
+                    return orig(self, out, data);
+                }
+                void* res = orig(self, out, data);
+                {
+                    std::lock_guard<std::mutex> lock(g_qMutex);
+                    g_newWatches.push_back({vs, veid, hp0, st0, static_cast<uint8_t>(0), mat, static_cast<uint8_t>(kWatchFigure), aeid});
+                }
+                g_figureWatchesOpen.fetch_add(1, std::memory_order_relaxed);
+                return res;
+            }
+        }
+    } else if (veid && g_figureWatchesOpen.load(std::memory_order_relaxed) > 0) {
+        // Any other blow on a victim with an open put-back watch: that watch cannot tell the two apart, so it ends (said when it does)
+        std::lock_guard<std::mutex> lock(g_qMutex);
+        if (g_cancelFigure.size() < 64) g_cancelFigure.push_back(veid);
     }
     void* vsoul = avatar_soul(veid);
     if (vsoul) {
@@ -427,6 +476,7 @@ uint8_t on_config(const uint8_t* body, size_t len) {
 }
 
 void note_avatar(uint32_t eid, void* soul, bool on) {
+    if (!on) { std::lock_guard<std::mutex> lock(g_qMutex); g_ledger.forget(eid); }   // WO-170: a released body's swings are not licences
     if (on) {
         for (auto& a : g_avatars) if (a.eid.load() == eid) { a.soul = soul; return; }
         for (auto& a : g_avatars) if (a.eid.load() == 0) { a.soul = soul; a.eid = eid; return; }
@@ -452,6 +502,7 @@ AttribResult apply_attributed(const uint8_t* body, size_t len) {
     // 1. damage with the avatar as the attacker
     if (rttr::apply_damage_soul(victimSoulR, st, hp, buffs::as_c_soul(avatarSoul) ? buffs::as_c_soul(avatarSoul) : avatarSoul)) {
         r.steps |= 1;
+        if (!name.empty()) note_applied_damage(eid_by_name(name), st, hp);   // WO-170: never put back with a dropped figure blow
         // The plain path's echo guard: without it the LocalHit observer
         // reported this remote hit as ours and sent it back out (session 7).
         rttr::note_remote_damage(body, hp);
@@ -536,6 +587,7 @@ bool apply_pvp_hit(const uint8_t* body, size_t len) {
     bool viaOld = false;
     if (!ok) { ok = rttr::apply_damage_soul(player, st, hp, nullptr); viaOld = suppress; }   // no attacker: naming one starts fights
     c_pvpIn.fetch_add(1);
+    if (ok) note_applied_damage(g_playerEid.load(std::memory_order_relaxed), st, hp);   // WO-170: never put back with a dropped figure blow
     logf("WO121-HITS friendly-fire hit on the player: hp -%.2f st -%.2f unarmed=%d from ghost %u -> %s",
          hp, st, (flags & 1) ? 1 : 0, attacker, ok ? "applied" : "FAILED");
     logf("WO155-FF knockdown=%s%s", noKnock ? "off(mp_ff_knockdown)" : downNow ? "no(he is down)" : suppress ? "no(inside the 5 s window)" : "allowed",
@@ -633,6 +685,23 @@ int avatar_list(uint32_t* eids, void** souls, int max) {
 
 void set_npc_watch(bool on) { g_npcWatch = on; }
 
+void set_figure_guard(bool on) {
+    const bool was = g_figureGuard.exchange(on);
+    if (was != on) logf("WO170-CFG mp_figure_guard %s", on ? "on" : "off");
+}
+bool figure_guard() { return g_figureGuard.load(std::memory_order_relaxed); }
+
+void note_figure_swing(uint32_t figureEid) {
+    if (!figureEid || !g_figureGuard.load(std::memory_order_relaxed) || !avatar_soul(figureEid)) return;
+    std::lock_guard<std::mutex> lock(g_qMutex);
+    g_ledger.note_swing(figureEid, now_s());
+}
+
+void note_applied_damage(uint32_t victimEid, float stamina, float health) {
+    if (!victimEid || g_figureWatchesOpen.load(std::memory_order_relaxed) == 0) return;
+    for (auto& w : g_watches) if (w.kind == kWatchFigure && w.eid == victimEid) { w.hp0 -= health; w.st0 -= stamina; }
+}
+
 void replay_begin(uint32_t attackerEid, uint32_t victimEid, uint32_t seq, void* victimSoul, bool victimIsPlayer) {
     g_replay = ReplayWindow{attackerEid, victimEid, seq, victimSoul, victimIsPlayer, GetCurrentThreadId()};
     g_replayCap = ReplayCapture{};
@@ -668,15 +737,31 @@ void tick() {
     std::vector<PvpHit> pvp;
     std::vector<PlayerHitMark> marks;
     std::vector<NewWatch> nw;
+    std::vector<uint32_t> cancelFig;
     {
         std::lock_guard<std::mutex> lock(g_qMutex);
         pvp.swap(g_pvp);
         marks.swap(g_marks);
         nw.swap(g_newWatches);
+        cancelFig.swap(g_cancelFigure);
+    }
+    // WO-170: another blow landed on a victim whose dropped figure blow is still being put back: that watch ends, what it saw so far logged
+    for (uint32_t victim : cancelFig) {
+        for (auto it = g_watches.begin(); it != g_watches.end();) {
+            if (it->kind == kWatchFigure && it->eid == victim) {
+                c_figCancelled.fetch_add(1, std::memory_order_relaxed);
+                g_figureWatchesOpen.fetch_sub(1, std::memory_order_relaxed);
+                char vn[64]{}; copy_name(it->eid, vn, sizeof vn);
+                logf("WO170-FIGUREHIT watch ended npc=%s by=0x%X -- another blow landed on it inside the window, so none of its loss is put back from here (put back so far: hp -%.2f st -%.2f)",
+                     vn, it->attackerEid, it->dh, it->ds);
+                it = g_watches.erase(it);
+            } else ++it;
+        }
     }
     for (const auto& n : nw) {
         bool merged = false;   // a second hit inside the window: same baseline, longer window
         for (auto& w : g_watches) if (w.soul == n.soul && w.kind == n.kind) { w.t0 = now; w.flags |= n.flags; merged = true; break; }
+        if (merged && n.kind == kWatchFigure) g_figureWatchesOpen.fetch_sub(1, std::memory_order_relaxed);   // WO-170: the open watch carries it
         // WO-165: a second replay on the same victim inside the window shares the first one's measure (one soul, one baseline); its
         // own report says so (health -1) at once, so no caller waits for a number that cannot be separated.
         if (merged && n.kind == kWatchReplay) {
@@ -697,9 +782,19 @@ void tick() {
         // A discard watch is on the local player's soul (a load replaces it).
         const bool live = w.kind == kWatchDiscard ? rttr::read_player_soul() == w.soul
                         : w.kind == kWatchReplay ? (rttr::read_player_soul() == w.soul || soul_of_eid(w.eid) == w.soul)
+                        : w.kind == kWatchFigure ? (avatar_soul(w.eid) == w.soul || rttr::read_player_soul() == w.soul || soul_of_eid(w.eid) == w.soul)
                         : avatar_soul(w.eid) == w.soul;
         float hp = 0, st = 0;
-        if (live && w.kind == kWatchReplay && rttr::soul_state(w.soul, "health", &hp) && rttr::soul_state(w.soul, "stamina", &st)) {
+        if (live && w.kind == kWatchFigure && rttr::soul_state(w.soul, "health", &hp) && rttr::soul_state(w.soul, "stamina", &st)) {
+            // WO-170: the dropped blow's loss goes back at once, every frame of the window; a body it killed is left as the engine has it
+            if (wo170rules::should_put_back(hp, w.hp0)) {
+                w.dh += w.hp0 - hp; rttr::soul_set_state(w.soul, "health", w.hp0);
+                if (w.landedAt < 0) w.landedAt = w.frames;
+            } else if (hp <= 0.01f && w.hp0 > 0.01f) {
+                w.fatal = true; if (w.landedAt < 0) w.landedAt = w.frames;
+            }
+            if (st < w.st0 - 0.25f) { w.ds += w.st0 - st; rttr::soul_set_state(w.soul, "stamina", w.st0); if (w.landedAt < 0) w.landedAt = w.frames; }
+        } else if (live && w.kind == kWatchReplay && rttr::soul_state(w.soul, "health", &hp) && rttr::soul_state(w.soul, "stamina", &st)) {
             // measured from the lowest point, nothing put back: the engine's own application is the result
             if (w.hp0 - hp > w.dh + 0.01f) { w.dh = w.hp0 - hp; if (w.landedAt < 0) w.landedAt = w.frames; }
             if (w.st0 - st > w.ds + 0.25f) { w.ds = w.st0 - st; if (w.landedAt < 0) w.landedAt = w.frames; }
@@ -716,7 +811,19 @@ void tick() {
             }
             if (dropped) { c_restored.fetch_add(1); if (w.landedAt < 0) w.landedAt = w.frames; }
         }
-        if (live && now - w.t0 < kWatchS) { ++it; continue; }
+        if (live && now - w.t0 < (w.kind == kWatchFigure ? wo170rules::kPutBackS : kWatchS)) { ++it; continue; }
+        if (w.kind == kWatchFigure) {
+            char vn[64]{}, an[64]{};
+            copy_name(w.eid, vn, sizeof vn); copy_name(w.attackerEid, an, sizeof an);
+            g_figureWatchesOpen.fetch_sub(1, std::memory_order_relaxed);
+            if (w.fatal) c_figFatal.fetch_add(1, std::memory_order_relaxed);
+            if (w.dh > 0 || w.ds > 0) c_figPutBack.fetch_add(1, std::memory_order_relaxed);
+            logf("WO170-FIGUREHIT dropped npc=%s by=%s(0x%X) why=not-relayed -- the figure's own blow: hp -%.2f st -%.2f put back (landed at frame %d of %d)%s%s",
+                 vn[0] ? vn : "?", an[0] ? an : "?", w.attackerEid, w.dh, w.ds, w.landedAt, w.frames,
+                 w.fatal ? " -- it killed the body: not put back (a dead body is not raised)" : "", live ? "" : " -- victim gone");
+            it = g_watches.erase(it);
+            continue;
+        }
         if (w.kind == kWatchReplay) {
             // attackerEid carries the replay's sequence number here
             logf("WO165-REPLAY-DMG seq=%u victim=0x%X hp -%.2f st -%.2f (landed at frame %d of %d)%s", w.attackerEid, w.eid, w.dh, w.ds,
@@ -778,13 +885,16 @@ int status_text(char* out, int n) {
     return std::snprintf(out, n,
         "hit_slot=%s attribution=%s ff=%d attrib_cfg=%d melee=%u missile=%u avatar_hits=%u restored=%u ff_sent=%u player_marks=%u "
         "attributed=%u history=%u skirmish=%u pvp_in=%u hit_faults=%u npc_watch=%s npc_avatar_hits=%u npc_hits_sent=%u "
-        "discard_hits=%u discarded=%u discard_eids=%d skirmish_kept_host=%u skirmish_remove=%u skirmish_relation=%s relation_asked=%u",
+        "discard_hits=%u discarded=%u discard_eids=%d skirmish_kept_host=%u skirmish_remove=%u skirmish_relation=%s relation_asked=%u "
+        "figure_guard=%s fig_seen=%u fig_relayed=%u fig_dropped=%u fig_put_back=%u fig_fatal=%u fig_cancelled=%u fig_unread=%u fig_missile_passed=%u",
         g_hookArmed ? "armed" : "off", g_attribArmed ? "armed" : "off", g_ff.load() ? 1 : 0, g_attribution.load() ? 1 : 0,
         c_melee.load(), c_missile.load(), c_avatarHits.load(), c_restored.load(), c_ffQueued.load(), c_marks.load(),
         c_attrib.load(), c_attribHistory.load(), c_skirmish.load(), c_pvpIn.load(), c_faults.load(),
         (g_hookArmed && g_npcWatch.load()) ? "armed" : "off", c_npcAvatarHits.load(), c_npcHitsSent.load(),
         c_discardHits.load(), c_discarded.load(), discard_count(), c_skirmishKept.load(), c_skirmishRemove.load(),
-        skirmish_relation_armed() ? "armed" : "off", c_relationAsked.load());
+        skirmish_relation_armed() ? "armed" : "off", c_relationAsked.load(),
+        g_figureGuard.load() ? "on" : "off", c_figSeen.load(), c_figRelayed.load(), c_figDropped.load(), c_figPutBack.load(), c_figFatal.load(),
+        c_figCancelled.load(), c_figUnread.load(), c_figMissile.load());
 }
 
 } // namespace kcdmp::hits

@@ -103,6 +103,17 @@ using ReplayDmgFn = void (*)(uint32_t seq, uint32_t victimEid, float health, flo
 void set_replay_damage_callback(ReplayDmgFn fn);
 uint32_t replay_seen();
 
+// WO-170 F1 (docs/WO-170-findings.md): the figure guard. A partner's figure (an avatar) never lands a blow of its own on this machine: its
+// melee hit is applied only when it belongs to a swing the partner really sent -- the relayed swing the DLL queued on that figure
+// (note_figure_swing, combat_construct.cpp), once per swing, inside kSwingHitS; every other one is measured and put back
+// (WO170-FIGUREHIT dropped ... why=not-relayed). Any thread (the ledger has its own lock); the switch is the agent's (mp_figure_guard).
+void set_figure_guard(bool on);
+bool figure_guard();
+void note_figure_swing(uint32_t figureEid);
+// A TakeDamage of ours (an attributed hit of the partner's, a friendly-fire hit) just landed on this victim (main thread): an open
+// put-back watch of a dropped blow on the same victim moves its baseline by it, so it is never put back with the dropped blow's damage.
+void note_applied_damage(uint32_t victimEid, float stamina, float health);
+
 void tick();   // main thread: drain the hook's queue, resolve victims
 int status_text(char* out, int n);
 

@@ -124,9 +124,9 @@ public partial class GameBridge
     {
         try
         {
-            var r = await _combat.Wo166ConfigAsync(_w166CopyStrikes, _w166AutoMode, (byte)(_w166SnapFix ? 1 : 0));
-            if (r is { } c && (c.CopyStrikes != _w166CopyStrikes || c.AutoMode != _w166AutoMode || c.SnapFix != _w166SnapFix))
-                Console.WriteLine($"MP-WO166 the DLL holds copy_strikes={(c.CopyStrikes ? "on" : "off")} auto_mode={c.AutoMode} snap_fix={(c.SnapFix ? "on" : "off")} (asked {(_w166CopyStrikes ? "on" : "off")}/{_w166AutoMode}/{(_w166SnapFix ? "on" : "off")})");
+            var r = await _combat.Wo166ConfigAsync(_w166CopyStrikes, _w166AutoMode, (byte)(_w166SnapFix ? 1 : 0), (byte)(_w170FigureGuard ? 1 : 0));
+            if (r is { } c && (c.CopyStrikes != _w166CopyStrikes || c.AutoMode != _w166AutoMode || c.SnapFix != _w166SnapFix || (c.FigureGuard is { } fg && fg != _w170FigureGuard)))
+                Console.WriteLine($"MP-WO166 the DLL holds copy_strikes={(c.CopyStrikes ? "on" : "off")} auto_mode={c.AutoMode} snap_fix={(c.SnapFix ? "on" : "off")} figure_guard={(c.FigureGuard is null ? "?" : c.FigureGuard.Value ? "on" : "off")} (asked {(_w166CopyStrikes ? "on" : "off")}/{_w166AutoMode}/{(_w166SnapFix ? "on" : "off")}/{(_w170FigureGuard ? "on" : "off")})");
         }
         catch (Exception ex) { Console.WriteLine($"MP-WO166 config not pushed ({ex.GetType().Name})"); }
     }
@@ -139,10 +139,11 @@ public partial class GameBridge
             {
                 case "copy_strikes": _w166CopyStrikes = v == "on"; break;
                 case "snap_fix": _w166SnapFix = v == "on"; break;
+                case "figure_guard": _w170FigureGuard = v == "on"; break;   // WO-170 F1
                 case "auto_mode": if (byte.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture, out byte m) && m <= Wo166Rules.MaxAutoMode) _w166AutoMode = m; break;
             }
         }
-        Console.WriteLine($"MP-WO166 cfg copy_strikes={(_w166CopyStrikes ? "on" : "off")} snap_fix={(_w166SnapFix ? "on" : "off")} auto_mode={_w166AutoMode}");
+        Console.WriteLine($"MP-WO166 cfg copy_strikes={(_w166CopyStrikes ? "on" : "off")} snap_fix={(_w166SnapFix ? "on" : "off")} auto_mode={_w166AutoMode} figure_guard={(_w170FigureGuard ? "on" : "off")}");
         _ = Wo166PushConfigAsync();
     }
 

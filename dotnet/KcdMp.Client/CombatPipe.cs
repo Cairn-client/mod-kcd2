@@ -1143,12 +1143,15 @@ public sealed class CombatPipe : IAsyncDisposable
         return text.Length > 0 ? text : $"refused=reason-{r.Value.Reason}";
     }
 
-    /// <summary>WO-166, op 11: mp_copy_strikes, the figure's automation pattern (C1 lever; 255 = unchanged), mp_snap_fix (255 = unchanged).</summary>
-    public async Task<(bool CopyStrikes, byte AutoMode, bool SnapFix)?> Wo166ConfigAsync(bool copyStrikes, byte autoMode, byte snapFix, CancellationToken ct = default)
+    /// <summary>
+    /// WO-166, op 11: mp_copy_strikes, the figure's automation pattern (C1 lever; 255 = unchanged), mp_snap_fix (255 = unchanged); WO-170: the
+    /// fifth byte is mp_figure_guard (255 = unchanged) and the answer's fourth byte is what the DLL holds (a DLL without it answers three bytes: FigureGuard null).
+    /// </summary>
+    public async Task<(bool CopyStrikes, byte AutoMode, bool SnapFix, bool? FigureGuard)?> Wo166ConfigAsync(bool copyStrikes, byte autoMode, byte snapFix, byte figureGuard = 255, CancellationToken ct = default)
     {
-        var r = await Wo163Async(11, [(byte)(copyStrikes ? 1 : 0), autoMode, snapFix], ct);
+        var r = await Wo163Async(11, [(byte)(copyStrikes ? 1 : 0), autoMode, snapFix, figureGuard], ct);
         if (r is not { Ok: true, Payload.Length: >= 3 } x) return null;
-        return (x.Payload[0] != 0, x.Payload[1], x.Payload[2] != 0);
+        return (x.Payload[0] != 0, x.Payload[1], x.Payload[2] != 0, x.Payload.Length >= 4 ? x.Payload[3] != 0 : null);
     }
 
     /// <summary>WO-166, op 10: the native half's counters.</summary>

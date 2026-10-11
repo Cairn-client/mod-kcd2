@@ -111,6 +111,7 @@ public partial class GameBridge
     /// <summary>T2 (host): the collision bark; T3: behaviour-tree paths; T4: the faders. Never consumes a line others need.</summary>
     private void Wo167OnEngineLine(string line)
     {
+        Wo170OnEngineLine(line);   // WO-170: the engine's barks -- an NPC taking a partner's figure on is said (WO170-AGGRO)
         if (line.IndexOf("/(BT)", StringComparison.Ordinal) >= 0 && Wo167Rules.BtPath(line) is { } bt)
         {
             _w167Bt[bt.Npc] = (bt.Path, W167NowMs());
@@ -171,6 +172,7 @@ public partial class GameBridge
         {
             case "IsmEnqueue":
                 Interlocked.Increment(ref _w167IsmEnq);
+                Wo170PushScenes();   // WO-170 F4: the copies of a dialogue's scene are not paused again while it runs
                 break;
             case "IsmEnd":
             case "IsmInterrupt":
@@ -179,6 +181,7 @@ public partial class GameBridge
                 Volatile.Write(ref _w167ProgressMs, now);
                 if (Interlocked.Read(ref _w167IsmEnd) >= Interlocked.Read(ref _w167IsmEnq)) Volatile.Write(ref _w167DlgEndMs, 0);   // nothing runs: done
                 if (Volatile.Read(ref _w167FaderHeldMs) > 0) _ = Wo167FaderRestoreAsync("the scene ended");
+                Wo170PushScenes();
                 break;
             case "IsmCleanup":
             case "FaderDone":
@@ -201,6 +204,7 @@ public partial class GameBridge
         Interlocked.Exchange(ref _w167IsmEnq, 0);
         Interlocked.Exchange(ref _w167IsmEnd, 0);
         Volatile.Write(ref _w167DlgEndMs, 0);
+        Wo170PushScenes();
     }
 
     /// <summary>Once a second (the WO-151 loop).</summary>
