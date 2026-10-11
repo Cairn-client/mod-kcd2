@@ -133,6 +133,14 @@ Saves backed up before the first launch (828 files, 1,438,666,372 bytes, SHA-256
 game was minimised by a watcher at launch (the window was in front for under a second); no key, mouse or game action was injected. Harness:
 `tools/wo118/run170.py` (`f1`, `f1b`, `riders`), the synthetic peer's new `jattack` verb.
 
+## The installer (local, unsigned, release candidate)
+
+Fresh clone of `4c9ef42`, the maintainer's three start saves copied in, `tools\Build-Installer.ps1 -SoakWaiver "<the maintainer's 'Skip/waive the soak on this build', 2026-10-10; also the standing rule>"`:
+`release\KingdomComeTogether-Setup-0.48.6.exe`, **106,511,495 bytes**, sha256 `020eaf5852b69f2f43a75674f383a3dce58fe1487f27ae0fac09d84b318b4ec7`,
+header version **0.48.6** (checked), build gates green (the build's own unit, native and relay round-trip gates; `failed: 0`), published agent and relay
+logged no assembly-load failure. Not on GitHub (installers are local only). The Setup was not run from this shell (AppData is redirected here): the
+maintainer runs Setup and `Verify-Install`.
+
 ## Untested / open
 
 1. A figure blow landing on the host and being put back or licensed by a token (the field's failure did not reproduce in the harness).
