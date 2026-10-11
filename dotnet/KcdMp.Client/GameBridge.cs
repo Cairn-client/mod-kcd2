@@ -2149,11 +2149,11 @@ public partial class GameBridge(ClientConfig config)
                     float x, y, z, rotZ; bool riding; LocalBodyState? local = null;
                     if (nat is LocalState ns)
                     {
-                        x = ns.X; y = ns.Y; z = ns.Z; rotZ = ns.RotZ; riding = ns.IsRiding; local = ns.Body;
+                        x = ns.X; y = ns.Y; z = ns.Z; rotZ = ns.RotZ; riding = Wo172Riding(ns.IsRiding); local = ns.Body;   // WO-172 R1
                     }
                     else
                     {
-                        x = st.X; y = st.Y; z = st.Z; rotZ = st.RotZ; riding = st.IsRiding;
+                        x = st.X; y = st.Y; z = st.Z; rotZ = st.RotZ; riding = Wo172Riding(st.IsRiding);   // WO-172 R1
                     }
                     Wo127NoteLocal(x, y, z, riding);   // WO-127: the leash recorder's host/joiner anchor
 
