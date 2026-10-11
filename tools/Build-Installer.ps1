@@ -159,6 +159,11 @@ if (-not $SkipPublish) {
     & dotnet test (Join-Path $root "dotnet\KcdMp.Setup.Tests\KcdMp.Setup.Tests.csproj") -c Release --nologo -v q
     if ($LASTEXITCODE -ne 0) { throw "setup unit tests FAILED. Not shipping." }
 
+    # WO-171 L: the tester's log bundle (collapsed noise, zstd, parts that fit a Discord upload).
+    Write-Host "Log bundle tests (dotnet\KcdMp.LogPack.Tests) ..."
+    & dotnet test (Join-Path $root "dotnet\KcdMp.LogPack.Tests\KcdMp.LogPack.Tests.csproj") -c Release --nologo -v q
+    if ($LASTEXITCODE -ne 0) { throw "log bundle tests FAILED. Not shipping." }
+
     # WO-110 R10 (docs/WO-109-audit.md): EVERY synthetic suite gates the
     # release, not four of them. Before this, WO-108's own suite, WO-86,
     # WO-99, NpcSmooth, GhostInterp, WO-106's static check and WO-90 (which
