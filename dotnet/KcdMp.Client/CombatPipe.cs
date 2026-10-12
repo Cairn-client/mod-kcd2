@@ -49,6 +49,7 @@ public sealed class CombatPipe : IAsyncDisposable
     private const byte SetSession        = 0x0C;   // WO-113
     private const byte SetRespawn        = 0x0D;   // WO-113
     private const byte MirrorGrave       = 0x0E;   // WO-113
+    private const byte PinLabel          = 0x2C;   // WO-171: a partner's name for its map pin
     private const byte ListGraves        = 0x0F;   // WO-113
     private const byte GraveListReply    = 0x88;   // WO-113
     private const byte NpcSamples        = 0x10;   // WO-118
@@ -409,6 +410,19 @@ public sealed class CombatPipe : IAsyncDisposable
         BinaryPrimitives.WriteSingleLittleEndian(payload.AsSpan(14), y);
         BinaryPrimitives.WriteSingleLittleEndian(payload.AsSpan(18), z);
         return SendAsync(MirrorGrave, payload, ct);
+    }
+
+    /// <summary>WO-171: the partner's name, the hover title of its map pin's mark (UTF-8, at most 31 bytes; the DLL cleans it again).</summary>
+    public Task<bool> PinLabelAsync(byte owner, string name, CancellationToken ct = default)
+    {
+        var bytes = System.Text.Encoding.UTF8.GetBytes(name);
+        int n = Math.Min(bytes.Length, 31);
+        while (n > 0 && n < bytes.Length && (bytes[n] & 0xC0) == 0x80) n--;   // never cut a character in half
+        var payload = new byte[2 + n];
+        payload[0] = owner;
+        payload[1] = (byte)n;
+        Buffer.BlockCopy(bytes, 0, payload, 2, n);
+        return SendAsync(PinLabel, payload, ct);
     }
 
     /// <summary>
@@ -1173,6 +1187,97 @@ public sealed class CombatPipe : IAsyncDisposable
         if (r is not { Ok: true, Payload.Length: >= 9 } x) return null;
         return (x.Payload[0], System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(x.Payload.AsSpan(1)),
                 System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(x.Payload.AsSpan(5)));
+    }
+
+    /// <summary>WO-172 op 15 (C1): this copy is dead -- the DLL skips it for every activity, tool, retarget and strike. The DLL's text answer.</summary>
+    public async Task<string?> Wo172DeadAsync(string npc, CancellationToken ct = default)
+    {
+        var name = System.Text.Encoding.ASCII.GetBytes(npc);
+        if (name.Length is 0 or > 63) return null;
+        var a = new byte[1 + name.Length];
+        a[0] = (byte)name.Length;
+        name.CopyTo(a, 1);
+        var r = await Wo163Async(15, a, ct);
+        return r is { } x ? (x.Ok ? "" : "refused ") + System.Text.Encoding.ASCII.GetString(x.Payload) : null;
+    }
+
+    /// <summary>WO-172 op 16: the native half's counters.</summary>
+    public async Task<string?> Wo172StatusAsync(CancellationToken ct = default)
+    {
+        var r = await Wo163Async(16, [], ct);
+        return r is { Ok: true } x ? System.Text.Encoding.ASCII.GetString(x.Payload) : null;
+    }
+
+    /// <summary>WO-172 op 17: mp_dead_wins (255 = unchanged) -> on; null = no answer.</summary>
+    public async Task<bool?> Wo172ConfigAsync(byte deadWins, CancellationToken ct = default)
+    {
+        var r = await Wo163Async(17, [deadWins], ct);
+        return r is { Ok: true, Payload.Length: >= 1 } x ? x.Payload[0] != 0 : null;
+    }
+
+    /// <summary>
+    /// WO-173 op 18 (C1, host): the joiner's attributed hit on a local NPC as a real hit -- the engine's hit processor with the joiner's figure
+    /// striking (the swing row's four attack fields; rowKnown false = none known), else WO-121's raw path with the stamina capped. The body's
+    /// tail is the 0x19 attributed body. Null = no answer (an older DLL answers "bad request": Reason set, the caller falls back).
+    /// </summary>
+    public async Task<Wo173Hit?> Wo173RealHitAsync(sbyte type, sbyte zone, sbyte hand, float strength, bool rowKnown, Guid soul, float stamina, float health,
+                                                   byte flags, uint attackerEid, string victimName, CancellationToken ct = default)
+    {
+        byte[] name = Encoding.ASCII.GetBytes(victimName ?? "");
+        if (name.Length > 63 || !float.IsFinite(strength)) return null;
+        var a = new byte[3 + 4 + 1 + GuidLen + 4 + 4 + 1 + 4 + 1 + name.Length];
+        a[0] = unchecked((byte)type); a[1] = unchecked((byte)zone); a[2] = unchecked((byte)hand);
+        BinaryPrimitives.WriteSingleLittleEndian(a.AsSpan(3), strength);
+        a[7] = (byte)(rowKnown ? 1 : 0);
+        Wo173Body(a, soul, stamina, health, flags, attackerEid, name);
+        var r = await Wo163Async(18, a, ct);
+        if (r is null) return null;
+        return Wo173Hit.TryDecode(r.Value.Ok, r.Value.Reason, r.Value.Payload);
+    }
+
+    private static void Wo173Body(byte[] a, Guid soul, float stamina, float health, byte flags, uint attackerEid, byte[] name)
+    {
+        var p = a.AsSpan(8);
+        var g = new byte[GuidLen];
+        WriteSoulGuid(soul, g);
+        g.CopyTo(p);
+        BinaryPrimitives.WriteSingleLittleEndian(p[16..], stamina);
+        BinaryPrimitives.WriteSingleLittleEndian(p[20..], health);
+        p[24] = flags;
+        BinaryPrimitives.WriteUInt32LittleEndian(p[25..], attackerEid);
+        p[29] = (byte)name.Length;
+        name.CopyTo(p[30..]);
+    }
+
+    /// <summary>WO-173 op 19: the native half's counters.</summary>
+    public async Task<string?> Wo173StatusAsync(CancellationToken ct = default)
+    {
+        var r = await Wo163Async(19, [], ct);
+        return r is { Ok: true } x ? System.Text.Encoding.ASCII.GetString(x.Payload) : null;
+    }
+
+    /// <summary>WO-173 op 20: mp_real_hits, the avatar-hit threat on engine blows, the reaction tail (255 = unchanged); null = no answer.</summary>
+    public async Task<(bool RealHits, bool Threat, bool React)?> Wo173ConfigAsync(byte realHits, byte threat, byte react, CancellationToken ct = default)
+    {
+        var r = await Wo163Async(20, [realHits, threat, react], ct);
+        if (r is not { Ok: true, Payload.Length: >= 3 } x) return null;
+        return (x.Payload[0] != 0, x.Payload[1] != 0, x.Payload[2] != 0);
+    }
+
+    /// <summary>WO-173 op 21 (C2, host): the down state of these NPCs (0 up, 1 knocked out, 2 dead, 255 unknown), in order; null = no answer.</summary>
+    public async Task<byte[]?> Wo173DownPollAsync(IReadOnlyList<string> names, CancellationToken ct = default)
+    {
+        if (names.Count is 0 or > 32) return null;
+        var parts = new List<byte> { (byte)names.Count };
+        foreach (var n in names)
+        {
+            var nb = Encoding.ASCII.GetBytes(n);
+            if (nb.Length is 0 or > 63) return null;
+            parts.Add((byte)nb.Length); parts.AddRange(nb);
+        }
+        var r = await Wo163Async(21, parts.ToArray(), ct);
+        if (r is not { Ok: true } x || x.Payload.Length != 1 + names.Count || x.Payload[0] != names.Count) return null;
+        return x.Payload.AsSpan(1).ToArray();
     }
 
     /// <summary>WO-167 op 13: the native half's counters.</summary>

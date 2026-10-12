@@ -1,4 +1,4 @@
-0.48.6
+0.50.0
 
 # Where this mod comes from
 

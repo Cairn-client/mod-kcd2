@@ -21,6 +21,7 @@
 #include "local_state.h"
 #include "log.h"
 #include "rttr_abi.h"
+#include "wo173.h"
 
 namespace kcdmp::wo165 {
 namespace {
@@ -193,7 +194,12 @@ Result replay(const Request& rq) {
     pos[2] += 1.2f;   // the chest, not the feet: the record's hit position is only used for effects
     void* vSoul = victimIsPlayer ? rttr::read_player_soul() : hits::soul_of_eid(veid);
     motion::read_model(veid, &res.victimModel);
-    if ((rq.flags & kFlagReferBlocking) && victim_blocking(res.victimModel)) { res.reason = kVictimBlocking; c_refused.fetch_add(1); return res; }
+    motion::read_model(rq.attackerEid, &res.attackerModel);
+    if (refer_blocking((rq.flags & kFlagReferBlocking) != 0, (rq.flags & kFlagReferUnlessStriking) != 0, victim_blocking(res.victimModel),
+                       res.attackerModel.state, (res.attackerModel.valid & motion::kMvState) != 0, res.victimModel.blockZone,
+                       (res.victimModel.valid & motion::kMvBlockZone) != 0)) {
+        res.reason = kVictimBlocking; c_refused.fetch_add(1); return res;
+    }
 
     // ---- the attacker's four fields (WO-163 P1) ----
     if (!motion::read_attack_fields(aModel, &res.before)) { res.reason = kFieldsUnnamed; c_refused.fetch_add(1); return res; }
@@ -224,11 +230,16 @@ Result replay(const Request& rq) {
     bool ret = false;
     hits::ReplayCapture cap{};
     if (ok) {
+        uint8_t prevIntended = 0;
+        const bool marked = (rq.flags & kFlagIntended) && wo173::mark_intended(aModel, true, &prevIntended);
         hits::replay_begin(rq.attackerEid, veid, res.seq, vSoul, victimIsPlayer);
         ok = call_process(g_fnProcess, rpg, result, hitIn, flags, &ret);
         hits::replay_end(&cap);
+        if (marked && !prevIntended) wo173::mark_intended(aModel, false, nullptr);
         res.called = true;
     }
+    // WO-173: the collision handler's reaction tail, in the same frame, with the result struct the processor filled
+    if (ok && ret && cap.seen && (rq.flags & kFlagReact)) res.react = wo173::react(aCa, vCa, result, &res.reactKind);
     if (!(rq.flags & (kFlagKeepFields | kFlagOwnFields))) motion::write_attack_fields(aModel, res.before);
     if (!ok) {
         switch_off(res.called ? "RPGProcessHit" : "the result constructor");
@@ -281,12 +292,12 @@ Result replay(const Request& rq) {
     const motion::ModelRead& vm = res.victimModel;
     logf("WO165-REPLAY seq=%u attacker=0x%X victim=0x%X%s engine=%s returned=%d core=%s flags=[blk %u zone %u dmg %u pb %u wpn %u] "
          "rec=[blk %u second %u pb %u broken %u zone_mismatch %u] fields at=%d az=%d ah=%d as=%.2f (were at=%d az=%d ah=%d as=%.2f) "
-         "victim state=0x%X gz=%d bz=%d pb=%u opp=0x%X%s tid=%lu",
+         "victim state=0x%X gz=%d bz=%d pb=%u opp=0x%X%s attacker_state=0x%X tid=%lu",
          res.seq, rq.attackerEid, veid, victimIsPlayer ? "(player)" : "", outcome_name(res.outcome), ret ? 1 : 0, cap.seen ? "ran" : "not-run",
          flags[0], flags[1], flags[2], flags[3], flags[0xC], res.recBlock, res.recSecond, res.recPerfect, res.recBroken, res.recZoneMismatch,
          res.written.type, res.written.zone, res.written.hand, res.written.strength, res.before.type, res.before.zone, res.before.hand,
          res.before.strength, static_cast<unsigned>(vm.state), vm.guardZone, vm.blockZone, vm.perfectBlock, vm.opponentEid,
-         vm.opponentIsPlayer ? "(me)" : "", GetCurrentThreadId());
+         vm.opponentIsPlayer ? "(me)" : "", static_cast<unsigned>(res.attackerModel.state), GetCurrentThreadId());
     return res;
 }
 
@@ -421,6 +432,7 @@ void lock_tick(const uint32_t* npcs, int n) {
         LockDecision d = on ? lock_rule(cs[i].v) : LockDecision{cs[i].v.paired ? LockAct::Remove : LockAct::None, "mp_host_lock-off"};
         switch (d.act) {
             case LockAct::Set: {
+                if (hits::scene_owned_eid(cs[i].eid, "wo165-lock")) break;   // WO-174: the host never joins a scripted brawl's skirmish through the mod's lock
                 const uint32_t peid = player_eid();
                 void* hs = peid ? hits::soul_of_eid(peid) : nullptr;
                 void* ns = hits::soul_of_eid(cs[i].eid);

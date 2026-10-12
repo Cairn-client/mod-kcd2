@@ -82,6 +82,14 @@
                     </label>
                 </div>
 
+                <div class="kcd-input-group">
+                    <label class="kcd-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        @* WO-175 S2: on by default; RESTORE SAVES in the bar below puts one back *@
+                        <input type="checkbox" @bind="Settings.BackupSavesBeforeSession" />
+                        Back up my saves before each session
+                    </label>
+                </div>
+
                 @* WO-127: advanced. Both players must pick the same one. *@
                 <div class="kcd-input-group">
                     <label class="kcd-label">Advanced: Steam app for Steam connections</label>

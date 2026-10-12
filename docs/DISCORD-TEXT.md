@@ -25,6 +25,39 @@ How to play together (0.48.2):
 Nobody clicks CONNECT any more, and you don't need anyone's save file. First time ever starting the game? Start it once from Steam and accept its two first-run pages, then use the launcher.
 ```
 
+## Version 0.49.0 — the joiner's blows, enemies that fall over (WO-173)
+
+```
+Kingdom Come: Together 0.49.0
+- Enemies no longer fall over from a single blow of the joiner. Until now the joiner's hits were added straight onto the enemy's stamina in the host's world, which could knock a fighting guard out at once while it kept fighting on the joiner's screen. One blow can now take at most about a third of an enemy's stamina; it only goes down the game's own way.
+- When an enemy in the host's world is knocked out or gets up, the joiner's screen now shows it at once (it used to wait a second or more).
+- New and switched OFF for now: mp_real_hits. With it on (the host types mp_real_hits on in the console), the joiner's blows become real hits in the host's game: the enemy blocks, parries, flinches and staggers by the game's own rules, and both screens show the same fight. It was tested on one machine against a stand-in partner, not yet by two people, so it is off until you have tried it. Please try it and tell us (mark_odd at anything odd).
+Both players and the relay need 0.49.0.
+```
+
+## Version 0.48.9 — your partner on the map, smaller bug reports (WO-171)
+
+```
+Kingdom Come: Together 0.48.9
+- Your partner is now a little knight on the map, drawn by our artist, in their own colour: the host is red, then purple, blue and green in the order players joined. The knight turns to face the way your partner faces, and hovering over it shows their name. On the compass it is small, like the other icons.
+- Bug reports are much smaller. Collect Logs in the launcher now makes a file of a few MB that fits in a Discord message (a very long session comes as a few numbered parts). Open it with 7-Zip: the .tzst first, then the .tar inside. Only the current game run is included unless you tick "include earlier launches".
+If the knight looks turned the wrong way, type mp_marker_dir_flip on, or mp_marker_dir_offset 1 (up to 7) and tell us which looked right. mp_partner_marker_style companion brings back the old plain pin. Not played by two people yet. Both players and the relay need 0.48.9.
+```
+
+## Version 0.48.8 — dead enemies, riding, travelling, trading, pickpocketing (WO-172)
+
+```
+Kingdom Come: Together 0.48.8 — a patch from your 2026-10-10 sessions.
+- Dead enemies stay dead for the joiner. When the host's enemy dies, the joiner's copy of it no longer gets up or keeps fighting.
+- Enemies pick their target better. An enemy turns to the player who is hitting it, at most once every 4 seconds.
+- Riding stays right. A rider whose game "forgot" he was on a horse is no longer shown running in the air, a partner who falls off his horse on your screen is put back on, and a horse never sinks into the ground.
+- No black screen after a quest that forces a travel, and the HUD comes back by itself (mp_unstuck brings it back too).
+- Trading: the trader stays for the joiner's whole trade, a cancelled haggle included.
+- The joiner can pickpocket now. Each item is asked of the host's world, so nothing is doubled; if the host took it first, it is taken back.
+- Invisible weapons on the host: not found yet. Typing mark_odd now also saves a screenshot, so please mark it the moment it happens.
+None of this has been played by two people yet. Every new part has a console switch (mp_dead_wins, mp_ride_repair, mp_trade_hold, mp_joiner_pickpocket, mp_mark_shot). Both players and the relay need 0.48.8.
+```
+
 ## Version 0.48.6 — the partner's figure, riders, the dialogue scene (WO-170)
 
 ```
@@ -145,4 +178,36 @@ Kingdom Come: Together 0.45.0 — the public beta.
 • Fast travel and the mod's voice chat are off unless you turn them on.
 Known: cutscenes aren't shared yet (next big update), the tutorial is the roughest part, no lip sync (the Modding Tools build lacks the data).
 Both players and the relay need 0.45.0. Quick start and tester page in the official repository: docs/QUICKSTART.md, docs/TEST-0.45.0.md
+```
+
+## Version 0.49.1 — weapons that will not draw, the brawl protection (WO-174)
+
+```
+Kingdom Come: Together 0.49.1 (a release candidate for the host and one partner).
+- If your sword will not come out (the weapon icon is empty, no fight is going on): load the save, open the console and type mp_repair_combat, or Insert, Help, "Fix my weapons / stuck fight". It tells you plainly what it did. Then save into a new slot. The lock can come back when a save loads, so the mod puts your weapon back by itself after every load until you restart the game; after a restart type the command again. Guide: docs/HOW-TO-REPAIR-WEAPONS.md
+- Your partner's figure is no longer left inside a fight when he leaves, when you punch him by accident, or before a save, and it is kept out of scripted brawls (the neighbours' brawl, duels, fist fights): the brawl runs as it does alone. Switch: mp_combat_autoclean.
+- mp_real_hits is now ON by default: your partner's blows are real hits in the host's game (the enemy blocks, parries, reacts). mp_real_hits off turns it off. Not tested with two real players yet.
+```
+
+## Version 0.49.2 — your saves are safe (WO-175)
+
+```
+Kingdom Come: Together 0.49.2 (a release candidate for the host and one partner).
+- Co-op now plays in its own copy of your world. When you host one of your worlds, the mod copies it into a free save slot and you play and save there; your own single-player saves are never written. Next time the menu shows it as "Together: <your world>". The same for the joiner's world. If all five save slots are full, hosting tells you and loads nothing. Switch: mp_coop_playline.
+- Before every session the launcher backs up your whole saves folder (the last 10 are kept). RESTORE SAVES in the launcher brings one back; your current saves are backed up first.
+- The weapons bug is found and fixed. It was a quest fist fight (the Tachov and Zelejov meadow fight) that ended without a winner, so the game's own "fists only" rule stayed on forever. The mod's 5-minute save had landed in the first second of that fight. Now the mod never saves during a conversation, a scene or a fight, and the game's own saves wait a moment while the mod is changing your inventory.
+- Saves that already have the lock are repaired: when you load one, the mod writes a repaired copy next to it (your original stays as it was) and loads that copy. Your weapons come back. mp_repair_combat does the same check.
+- Every save and every load is checked from now on (mp_save_health).
+```
+
+## Version 0.50.0 — quest fights stay the story's, blocks shown, saves verified (WO-176)
+
+```
+Kingdom Come: Together 0.50.0 (a release candidate for the host and one partner).
+- Quest fights stay the story's. When a quest arranges a fight (like the Tachov and Zelejov meadow fight), the partner is kept out of it: none of their blows count in it, the mod never pulls them in, and they are told once: "This fight belongs to the story — your partner fights it." The fight ends the way the story says and everyone's weapons draw afterwards. Switch: mp_arranged_guard.
+- A save that still carries the old weapon lock is now repaired the moment you load it: the mod writes a fixed copy next to it (your original stays as it was), loads the copy and tells you once. Checked in the game this time, with the weapon key.
+- When an enemy in the host's world blocks or parries the joiner's blow, the joiner's screen now shows the enemy's own block. Switch: mp_copy_blocks.
+- mp_real_hits is OFF again by default. We could not test it against a bandit that fights back the joiner, so the joiner's blows use the old damage with the one-blow cap (never a knock-out from one blow). The host can type mp_real_hits on to try it.
+- Not there yet: the joiner's own block against an enemy's blow still counts by the host's verdict (mp_victim_decides stays off). The game judges your block only against your locked-on opponent, and the joiner's copy of an enemy never is one yet.
+Both players and the relay need 0.50.0.
 ```

@@ -1105,8 +1105,150 @@ Two players. Nothing here has been played by two people yet. The host needs 0.48
      conversation — the people stay awake until their scene is over. * Joiner: `WO170-SCENE hold npc=…` then `WO170-SCENE repause …
      why=scene-ended`. If a black screen does come, it is ended after 20 s as in 0.48.5 (`WO167-SCENE`).
 
+## WO-172 — weapons, dead enemies, riding, travelling, the HUD, trading, pickpocketing (0.48.8)
+
+Two players, both on 0.48.8 (and the relay). Nothing here has been played by two people yet. **Type `mark_odd` (or press "Something's wrong
+here") at every miss** — it now also saves a screenshot in the game's screenshots folder; please send the screenshot with the logs.
+
+236. **Weapons on the host's screen** (host). Before anything else, look at a guard or any armed villager and at your own sword (draw it).
+     Then: ride with your partner, travel together once, and talk to someone with a conversation scene; after each, look again. **Every
+     weapon stays visible.** The moment they are gone: `mark_odd` at once, then save, load that save and say whether they came back.
+237. **If weapons vanished (host):** type `mp_oneshots off` and `mp_hand_items off`, load your save, play on and say whether it happens
+     again. If it does, try one session with the photo-mode mod taken out of the game's `Mods` folder.
+238. **Kill an enemy the joiner is fighting** (host kills it, or the joiner's blows finish it). **It falls on both screens at the same
+     moment and stays down** on the joiner's screen: it does not stand up, does not keep swinging, and the joiner's character stops
+     fighting it. * Joiner: `WO172-DEAD npc=… via=owner-death`, `dispatch=dropped-dead` for any swing of it that still arrives.
+239. **Two enemies on two players** (each of you fights one of a pair of bandits). They split between you and **do not twitch between
+     you**: an enemy turns to the player who is hitting it, at most once every 4 s.
+240. **Ride together for 15 minutes** (both on horses; get off and on again a few times; one of you saves on the way, or tries to). Both
+     of you **stay on your horses on both screens**, and **no horse is ever under the ground**. * Either: `WO172-RIDE remount|dismount`
+     (a repair) or `flag repaired`; `WO172-RIDE horse ground-snapped` if a horse fell through.
+241. **A quest that forces a travel** (the host plays it, the joiner is with him). **No black screen** for the joiner afterwards, and the
+     HUD is there. * Joiner: `WO172-FT fader restored name=quest-travel-refused` if the black was lifted. If the screen is still black:
+     `mp_unstuck`, then `mark_odd`.
+242. **The joiner haggles, cancels, haggles again** (with a trader). **The trader stays** for the whole trade on the host's screen, and the
+     haggle option is still there the second time. After the joiner closes the trade screen, the trader goes back to work. (The game's
+     own "you're wasting my time" after a cancelled haggle is normal.) * Joiner: `WO172-TRADE hold`, then `WO172-TRADE release …
+     why=screen-closed`.
+243. **The joiner pickpockets someone** (host: watch the person). The joiner **gets the item once**; on the host the person no longer has
+     it. If the host stole it first, the joiner's item is taken back with "Someone already took that." If the joiner is caught, it is
+     **the joiner's crime**, not the host's. * Joiner: `WO172-PICK start npc=…`, `WO134-BODY take … result … ok|gone`.
+
+## WO-171 — the partner's own knight on the map, smaller bug-report bundles (0.48.9)
+
+Two players, both on 0.48.9 (and the relay). The map marker was checked live on one machine against a synthetic partner (both roles; its
+colour, turning, name, compass and map sizes by eye); never between two real players. **Type `mark_odd` at every miss.**
+
+244. **Open the map** (both). **The host is a red knight on the joiner's map, the joiner a purple one on the host's.** Your own figure stays
+     the game's own. The game's own markers (the golden pins, the quest shields, the others) look as before.
+245. **Walk in a circle** (one of you, the other watches the map). The partner's knight **turns with them**, in eight steps, and **its back
+     shows when they face north**. If it is off by a step: `mp_marker_dir_offset 1` (try 1..7). If it turns the wrong way:
+     `mp_marker_dir_flip on`. Tell us the values that looked right. * Either: `WO171-MARK slot=… dir=… turned`.
+246. **Hover the partner's knight.** The scroll says **their name** (the same name the name badge shows).
+247. **Look at the compass** (the strip at the top). The partner's knight is **small there, like the other compass icons**, and large on the
+     map.
+248. **Ride a horse** (the one who is watched). The knight keeps up and turns with the horse.
+249. **A rejoin keeps the colour.** The joiner leaves and comes back (or crashes and comes back): the **same colour**, and the name still shows.
+     A different player taking the joiner's place gets the same colour with his own name.
+250. **Three or four players, if you can** (host + 2–3 joiners): red, purple, blue, green, in the order they joined; a fifth gets the game's
+     plain pin. (Slots are worked out on each machine in the order it first sees a player: with three or more, two machines may disagree on who
+     is blue and who is green. Tell us.)
+251. **The switches:** `mp_partner_marker off` (no marker at all), `mp_partner_marker_style flat` (one picture, facing north),
+     `mp_partner_marker_style companion` (the game's plain pin, no name), the mod menu's "Partner on the map" and "Marker style (knight)".
+252. **Report a bug → Collect logs** after a session (both). **The file fits in Discord** (a normal session is 2–9 MB; a very long one comes as
+     numbered parts, `…-part1of3.tzst`, each under 19 MB — send all of them). It opens with 7-Zip: open the `.tzst`, then the `.tar` inside
+     (or `tar --zstd -xf <file>`); `MANIFEST.txt` is the first file of part 1. Tick "include earlier launches" only if the problem was in an
+     earlier run of the game. If the lines look thin around a `mark_odd`, tell us: everything within five minutes of a mark is kept in full.
+
+Switches (console): `mp_partner_marker`, `mp_partner_marker_style rotating|flat|companion`, `mp_marker_dir_offset 0..7`,
+`mp_marker_dir_flip on|off`, `mp_w171_status`.
+
+## WO-173 — the joiner's blows as real hits in the host's world (0.49.0)
+
+Two players, both on 0.49.0 (and the relay). Checked live on one machine against a synthetic joiner (host role) and a synthetic host
+(joiner role); never between two real players. **The new path is switched OFF in 0.49.0** (one of its checks could not be run without two
+people). Run items 253-258 twice: first as shipped (`mp_real_hits off`, the old damage with the knock-out fix), then with the host typing
+**`mp_real_hits on`** in the console. **Type `mark_odd` at every miss.**
+
+253. **The joiner fights a guard (or a bandit) while the host watches from a few metres.** On the **host's** screen the enemy **flinches,
+     staggers, blocks and parries** like it does when the host fights it, and **never falls over from one blow** at full strength.
+254. **The same moment on the joiner's screen:** the enemy flinches when the host's does, blocks when the host's does. Tell us any blow that
+     looked different on the two screens (`mark_odd` on both).
+255. **Knock an enemy down** (keep hitting until it drops, unconscious, not dead). It **falls on both screens** within half a second of each
+     other and **gets up on both** when it wakes. **No T-pose** (arms straight out) afterwards.
+256. **The enemy fights the joiner back with real swings**, not standing in a ready stance. Count roughly: does it attack the joiner as often
+     as it attacks the host?
+257. **Two players on one enemy, both hitting.** Every blow counts once (the enemy does not die suspiciously fast) and nobody's blows vanish.
+258. **The host knocks down an enemy the joiner is not fighting** (both nearby). It falls and gets up on the joiner's screen too.
+259. **The switch:** the host types `mp_real_hits off` mid-fight: the joiner's blows go back to the old way at once; `mp_real_hits on` brings
+     the new way back. `mp_w173_status` prints the counters (WO173-STATUS here; MP-WO173-STATS in agent.log).
+260. **Report a bug → Collect logs** afterwards (both machines).
+
+Switches (console, host): `mp_real_hits on|off` (default off in 0.49.0), `mp_w173_status`.
+
+## WO-174 — the host's stuck weapons, the repair, the clean-up (0.49.1)
+
+Evidence: `docs/WO-174-findings.md`. Plain-words repair guide: `docs/HOW-TO-REPAIR-WEAPONS.md`. Everything below was run on one machine against
+a synthetic partner; none of it with two real players. **Type `mark_odd` at every miss.**
+
+261. **Punch your partner (friendly fire), then he leaves the game; save; load that save.** Your weapons draw. (`agent.log`: *peer … friendly-fire
+     knockdown … its avatar left its skirmish*, then *… partner left …*; the game log: `WO174-CLEAN reason=leave`.)
+262. **Play the petty-feud side quest's neighbours' brawl** (Tachov pub, `koneczabomysichvalek`) **with your partner nearby, hitting the
+     brawlers.** He is **not pulled in** (no figure in the brawl; the game log shows `WO174-BRAWL … figure_kept_out=yes`); **the brawl ends by
+     itself**, **the quest advances** as alone, and **your weapons draw afterwards**.
+263. **A village brawl you join, then you leave the area and save.** Weapons draw after loading that save.
+264. **`mp_repair_combat` on a good save** says *Nothing was wrong* and changes nothing (your sword comes out and goes away once: that is its test).
+265. **If your weapons ever stick** (or after sleeping, stealing from someone, looting): `mp_repair_combat` — they come back — then save into a
+     **new slot**, load it: they still draw (the re-apply `WO174-REPAIR step=autofix-after-load` is in the game log). **Tell us what you did
+     before they stuck.** After a game restart type the command again.
+266. **The mod menu:** Insert → Help → *Fix my weapons / stuck fight* does the same as the console command.
+267. **The switches:** `mp_combat_autoclean on|off`, `mp_weapon_autofix on|off`, `mp_real_hits on|off` (on by default since 0.49.1; the WO-173
+     items 253-260 apply again with it on). **Report a bug → Collect logs** afterwards (both machines).
+
+## WO-175 — save safety: your own save untouched, backups, weapons after sleep / pickpocket / looting / fights (0.49.2)
+
+Evidence: `docs/WO-175-findings.md`. The 0.49 weapon lock was a quest fistfight (the Tachov–Zelejov meadow fight) that ended without a
+verdict and left the game's "unarmed only" rule on; the mod's save had landed in the first second of that fight. **Type `mark_odd` at every miss.**
+
+268. **Host one of your worlds** (Start Game → your world), play a little, save, quit. The menu next time shows **"Together: <your world>"**;
+     your **original playline's files are unchanged** (same sizes and times; `agent.log`: `WO175-COOP copy from=playline<a>/… to=playline<b>/…`).
+     The joiner's world (Bring my character) also lands in a co-op playline, never in the joiner's own.
+269. **No free save slot** (all five playlines hold your own worlds): hosting your world refuses with a plain message and loads nothing.
+270. **Before every session the launcher backs up your saves** (status line *Your saves are backed up (N files)*; launcher log `WO175-BACKUP
+     … verified=yes`). **RESTORE SAVES** (bottom bar) lists the backups; pick one, confirm, it restores (refused while the game runs); your
+     current saves are backed up first (`WO175-RESTORE … verified=yes`).
+271. **Sleep a night together, pickpocket someone, loot a chest together, save, reload** — your weapons draw with your own weapon key (1)
+     and the HUD shows the weapon.
+272. **A quest dialogue that leads into a fight** (or any dialogue/scene/fight) when the mod's 5-minute save is due: the save waits
+     (`WO175-SAVE deferred reason=dialogue|scene|combat|arranged-fight`) and happens afterwards, never mid-scene.
+273. **While your partner takes from a body or chest you share**, try to save from the menu: saving waits a moment (*"Saving waits a moment:
+     the co-op mod is finishing a change"*), max 10 s.
+274. **Load an old save with the weapon lock** (if you still have one from 0.49.x): the mod says it made a repaired copy and loads it; your
+     weapons draw; the original file is still there unchanged (`WO175-HEALTH when=load result=repaired`).
+275. **The switches:** `mp_coop_playline`, `mp_save_guard`, `mp_save_health` (all on). **Report a bug → Collect logs** afterwards (both machines).
+
+## WO-176 — a quest's own fights stay the story's, fighting an armed enemy together, your own block (0.50.0)
+
+Evidence: `docs/WO-176-findings.md`. **Type `mark_odd` at every miss.**
+
+276. **The joiner fights an armed bandit with the host** (a camp or roadside bandit with a sword or axe). The bandit blocks and parries the
+     joiner's blows about as often as the host's, and both screens show the same thing: a blow it blocks or parries shows its block on the
+     joiner's screen too (the host's `agent.log`: `MP-W173 hit … verdict=blocked|pb`; the joiner's: `WO173-OUTCOME … verdict=blocked`, and
+     when the host sent no reaction of its own `WO176-COPYBLOCK … row="…"`).
+277. **The joiner blocks an enemy's blow themselves** (hold the block button as the enemy swings): it counts as blocked on their own screen —
+     stamina, not health (`WO165-REPLAY … engine=blocked`). With `mp_victim_decides` on, a well-timed block is a perfect block
+     (`engine=pb`) and the enemy recoils (`WO165-RECOIL … recoil="…"`). They are never knocked down by an NPC's blow.
+278. **A quest's arranged fight with the partner nearby** (e.g. the Tachov–Zelejov meadow fight, or any quest fistfight): the partner is
+     kept out of it — their blows do nothing to the fighters and they are told once *"This fight belongs to the story — your partner fights it."*;
+     the fight ends the way the story says; afterwards both players' weapons draw with their weapon key (1) and the HUD shows the weapon.
+     The host's `kcdmp-native.log`: `WO176-ARRANGED … quest=context`, `WO176-SHIELD figure=… on`; `kcd.log`: `WO176-PAUSE figure=… on`.
+279. **Play your real world** (Start Game → your world) and save: afterwards **your original save files are untouched**; the menu offers
+     **"Together: <your world>"** for the next session.
+280. **The switches:** `mp_arranged_guard`, `mp_copy_blocks` (both on), `mp_victim_decides`, `mp_real_hits` (see the findings for their
+     defaults in 0.50.0). **Report a bug → Collect logs** afterwards (both machines).
+
 ## Logs to send afterwards
 
-Both machines: Report a bug in the launcher. Since 0.42.2 it also collects the
-logs of the six launches before (the launcher keeps them), so a restart no
-longer loses the logs of a crash.
+Both machines: Report a bug in the launcher. Since 0.48.9 it collects the current launch by default as a small file (or a few numbered
+parts) that fits a Discord message; tick "include earlier launches" for the logs of the launches before (the launcher keeps the last six), so a
+restart does not lose the logs of a crash.
