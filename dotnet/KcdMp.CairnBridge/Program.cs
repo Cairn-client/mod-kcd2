@@ -51,10 +51,15 @@ public static class Program
         string lastSaves = "";
         async Task SendSaves(bool force)
         {
-            string json = SaveCatalog.ToJson(await Task.Run(saves.List));
-            if (!force && json == lastSaves) return;   // sent again only when something changed
-            lastSaves = json;
-            await Send(json);
+            // the saves list is an extra: whatever goes wrong while making it must never stop the menu, which rides on the same bridge
+            try
+            {
+                string json = SaveCatalog.ToJson(await Task.Run(saves.List));
+                if (!force && json == lastSaves) return;   // sent again only when something changed
+                lastSaves = json;
+                await Send(json);
+            }
+            catch (Exception ex) when (ex is not (OperationCanceledException or IOException or ObjectDisposedException)) { /* the list is skipped this time */ }
         }
 
         // the launcher's requests, in order, one console call at a time
@@ -76,7 +81,10 @@ public static class Program
                         if (t.ValueKind == JsonValueKind.String && t.GetString() == "save_delete")
                         {
                             string id = doc.RootElement.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.String ? idEl.GetString() ?? "" : "";
-                            var (ok, message) = id.Length is > 0 and <= 60 ? await Task.Run(() => saves.Delete(id, DateTime.UtcNow)) : (false, "That save is not there any more.");
+                            (bool ok, string message) result;
+                            try { result = id.Length is > 0 and <= 60 ? await Task.Run(() => saves.Delete(id, DateTime.UtcNow)) : (false, "That save is not there any more."); }
+                            catch (Exception ex) when (ex is not (OperationCanceledException or IOException or ObjectDisposedException)) { result = (false, "That save could not be deleted."); }
+                            var (ok, message) = result;
                             await Send(SaveCatalog.ToastJson(message, error: !ok));
                             await SendSaves(force: true);
                             continue;
