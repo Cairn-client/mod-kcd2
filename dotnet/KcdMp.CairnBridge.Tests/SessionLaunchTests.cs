@@ -22,7 +22,8 @@ public class SessionLaunchTests : IDisposable
     private readonly Channel<string> _in = Channel.CreateUnbounded<string>();
     private readonly ConcurrentQueue<JsonElement> _events = new();
     private readonly List<HttpListener> _listeners = new();
-    private const int HostPort = 47881, InfoPort = 47882, AgentPort = 47883;
+    private const int HostPort = 47881, InfoPort = 47882, AgentPort = 47883, ConsolePort = 47884;
+    private readonly ConcurrentQueue<string> _console = new();
 
     private string Packs => Path.Combine(_dir, "pack");
     private string Root => Path.Combine(_dir, "KCD2Mod");
@@ -57,6 +58,10 @@ public class SessionLaunchTests : IDisposable
             "@echo off\r\n" +
             "if \"%1\"==\"--keys-pak\" (echo KEYS-PAK {\"ok\":true,\"action\":\"built\",\"detail\":\"d\"} & exit /b 0)\r\n" +
             "if \"%1\"==\"--test-connection\" (echo TEST-CONNECTION {\"reachable\":true,\"kind\":\"None\",\"hostConnected\":true} & exit /b 0)\r\n" +
+            "if \"%1\"==\"--w159\" if \"%2\"==\"unstage\" (echo W159 {\"ok\":true,\"lines\":[]} & exit /b 0)\r\n" +
+            "if \"%1\"==\"--w159\" if \"%2\"==\"stage\" (echo W159 {\"ok\":true,\"pl\":1,\"name\":\"start1\",\"seedTag\":\"abc\"} & exit /b 0)\r\n" +
+            "if \"%1\"==\"--w159\" if \"%2\"==\"saves\" (echo W159 {\"ok\":true,\"usable\":[],\"staged\":{\"pl\":1,\"name\":\"start1\",\"path\":\"p1\",\"seedTag\":\"abc\"},\"free\":[]} & exit /b 0)\r\n" +
+            "if \"%1\"==\"--w159\" (echo W159 {\"ok\":true,\"seedTag\":\"abc\"} & exit /b 0)\r\n" +
             "ping -n 60 127.0.0.1 >nul\r\n");
         foreach (var n in new[] { "fakerelay.dll", "fakeagent.dll" }) File.WriteAllBytes(Path.Combine(bin, n), new byte[] { 1, 2, 3 });
         string sys = Path.Combine(Environment.SystemDirectory, "version.dll");
@@ -67,6 +72,13 @@ public class SessionLaunchTests : IDisposable
         File.WriteAllText(Path.Combine(Root, "steam_appid.txt"), "2429020");
         File.WriteAllText(Path.Combine(Root, "kcd.log"), "Log Started at 2020-01-01 00:00:00\n");   // the previous run's log, as a real install has: the gate finds the file by its place
         foreach (var f in Directory.GetFiles(AppContext.BaseDirectory, "KingdomCome.*")) File.Copy(f, Path.Combine(BinDir, Path.GetFileName(f)));
+
+        // the game's user folder with both first-run pages accepted, and the game's console on a port of ours
+        string user = Path.Combine(_dir, "user"); Directory.CreateDirectory(Path.Combine(user, "profiles", "p1"));
+        File.WriteAllText(Path.Combine(user, "profiles", "settings.xml"), "<root><Attr name=\"ActiveProfile\" value=\"p1\"/></root>");
+        File.WriteAllText(Path.Combine(user, "profiles", "p1", "attributes.xml"), "<root><Attr name=\"eula_confirmed_version\" value=\"2\"/><Attr name=\"telemetry_confirmed\" value=\"1\"/></root>");
+        Environment.SetEnvironmentVariable("CAIRN_KCD2_USER_FOLDER", user);
+        Environment.SetEnvironmentVariable("CAIRN_CONSOLE_URL", $"http://127.0.0.1:{ConsolePort}");
 
         _ = SessionProgram.RunAsync(new ChannelReader(_in), new LineWriter(_events), new SessionPack(Packs));
         Send(new { t = "config", gameExe = GameExe, hostPort = HostPort, infoPort = InfoPort, versionPort = AgentPort, steamAppId = 480, allowSteam = false, relayReuse = false,
@@ -125,6 +137,68 @@ public class SessionLaunchTests : IDisposable
             "/version-status" => "{\"myReleaseVersion\":\"0.2.0\",\"peers\":[]}",
             _ => "{}",
         });
+        ServeConsole();
+    }
+
+    /// <summary>The game's console: every command the session sends it is kept (decoded).</summary>
+    private void ServeConsole()
+    {
+        var l = new HttpListener(); l.Prefixes.Add($"http://127.0.0.1:{ConsolePort}/"); l.Start(); _listeners.Add(l);
+        _ = Task.Run(async () =>
+        {
+            while (l.IsListening)
+            {
+                HttpListenerContext c;
+                try { c = await l.GetContextAsync(); } catch { break; }
+                var q = System.Web.HttpUtility.ParseQueryString(c.Request.Url!.Query);
+                if (q["command"] is { } cmd) _console.Enqueue(cmd);
+                var body = Encoding.UTF8.GetBytes("{}");
+                c.Response.ContentType = "application/json"; c.Response.OutputStream.Write(body); c.Response.Close();
+            }
+        });
+    }
+
+    private async Task WaitForConsole(Func<string, bool> match, int seconds = 30)
+    {
+        var until = DateTime.UtcNow.AddSeconds(seconds);
+        while (DateTime.UtcNow < until)
+        {
+            if (_console.ToArray().Any(match)) return;
+            await Task.Delay(50);
+        }
+        throw new TimeoutException("the game's console never got it; got: " + string.Join(" | ", _console.ToArray().Select(s => s.Length > 120 ? s[..120] : s)));
+    }
+
+    [Fact]
+    public async Task The_start_game_menu_is_drawn_a_chosen_load_is_issued_and_the_host_connects_by_itself()
+    {
+        ServeRelayAndAgent();
+        Send(new { t = "config", gameExe = GameExe, hostPort = HostPort, infoPort = InfoPort, versionPort = AgentPort, steamAppId = 480, allowSteam = false, relayReuse = false,
+                   connectGate = true, injectDelaySeconds = 20, menuTakeover = true, startSaves = Path.Combine(_dir, "nostartsaves") });
+        Send(new { t = "relay" });
+        await WaitFor(e => Is(e, "state") && e.GetProperty("host").GetProperty("relay").GetBoolean());
+        Send(new { t = "launch", ip = "127.0.0.1", port = HostPort, steam = "", ping = 5, skipModCheck = false });
+        var game = await WaitFor(e => Is(e, "game"));
+        int pid = game.GetProperty("pid").GetInt32();
+        var armed = await WaitFor(e => Stage(e, "waiting-connect") && e.GetProperty("status").GetString()!.StartsWith("Press Start Game"));
+        Assert.Contains("Press Start Game", armed.GetProperty("status").GetString());
+
+        // the game sits at its main menu: the session draws the Start Game page through the console
+        await WaitForConsole(c => c.Contains("KCD2MP_W159Model") && c.Contains("role=\"host\"") && c.Contains("newadv={pl=1,name=\"start1\"}"));
+        await WaitForConsole(c => c.Contains("KCD2MP_W159Tick"));
+
+        // the player picks a saved world in that menu: the mod writes an event line; the session stops the video and loads it
+        WriteNativeLog(pid);
+        File.WriteAllText(Path.Combine(Root, "append.txt"), "[KCD2-MP-EVT] v1 1 w159 load 2 world_a\n");
+        await WaitForConsole(c => c == "wh_ui_StopMovie");
+        await WaitForConsole(c => c.Contains("KCD2MP_Wo124LoadGame") && c.Contains("2,\"world_a\""));
+
+        // the world loads; once it has settled the host is connected without a click
+        File.WriteAllText(Path.Combine(Root, "world.flag"), "");
+        await WaitFor(e => Stage(e, "connected"), 60);
+
+        File.WriteAllText(Path.Combine(Root, "quit.flag"), "");
+        await WaitFor(e => Is(e, "game_exit"), 20);
     }
 
     private void WriteNativeLog(int pid) =>

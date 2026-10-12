@@ -19,7 +19,7 @@ public sealed record ServerSpec(string Ip, int Port, string? SteamCode, int Ping
 /// the host's relay, the game's start, the CONNECT gate, the plugin loaded into the game, the agent and what it reports. The launcher sends commands and draws the
 /// state this sends back; it knows nothing of a relay, an agent or a plugin.
 /// </summary>
-public sealed class SessionHost
+public sealed partial class SessionHost
 {
     private readonly SessionOut _out;
     private readonly SessionPack _pack;
@@ -54,6 +54,7 @@ public sealed class SessionHost
     {
         _out = output;
         _pack = pack ?? new SessionPack();
+        ModLua.Pack = _pack;
     }
 
     /// <summary>The settings the launcher sent; until it has sent them nothing is started (a default would be a guess: ports another program may hold).</summary>
@@ -487,6 +488,9 @@ public sealed class SessionHost
         string dll = _pack.NativeDll(_cfg), agentPath = _pack.AgentExe(_cfg);
         if (!await PreLaunchFilesOkAsync(skipModCheck, dll, agentPath, Path.ChangeExtension(agentPath, ".dll"))) return;
 
+        // the first-run pages (read only), the host's start save staged, the player's worlds listed
+        if (!await StartGameBeforeLaunchAsync(RelayUp)) return;
+
         bool hosting = RelayUp;
         try
         {
@@ -507,6 +511,7 @@ public sealed class SessionHost
             _out.Send(new { t = "game", pid = game.Id, startedAt = _gameStartLocal.ToString("o"), hosting });
             WatchGameExit(game);
             StartConnectGate(hosting, server);
+            StartGameDriver(game, hosting, _gameStartLocal);   // the game's own main menu is ours: Start Game / Join Game
 
             if (!await WaitForInjectableAsync(game, _cfg.InjectDelaySeconds))
             {
@@ -628,7 +633,7 @@ public sealed class SessionHost
         StopConnectGate();
         lock (_lock)
         {
-            _stage = LaunchStage.Idle; _status = ""; _dllPath = null; _server = null;
+            _stage = LaunchStage.Idle; _status = ""; _dllPath = null; _server = null; _takeover = false;   // the game's own menu again
             _gateOpen = true; _gateReason = "";
         }
         Publish();
