@@ -11,6 +11,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KcdMp.MasterServer", "KcdMp
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KcdMp.Relay.Tests", "KcdMp.Relay.Tests\KcdMp.Relay.Tests.csproj", "{6ED60820-F2D1-4BDB-A1CA-8B253CA826D4}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KcdMp.CairnBridge", "KcdMp.CairnBridge\KcdMp.CairnBridge.csproj", "{3146DF14-D8AF-4E08-9C43-5CD08287CEC4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KcdMp.CairnBridge.Tests", "KcdMp.CairnBridge.Tests\KcdMp.CairnBridge.Tests.csproj", "{4B920622-E73E-46E7-B4BC-7536E19DF6E9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -33,5 +37,13 @@ Global
 		{6ED60820-F2D1-4BDB-A1CA-8B253CA826D4}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{6ED60820-F2D1-4BDB-A1CA-8B253CA826D4}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{6ED60820-F2D1-4BDB-A1CA-8B253CA826D4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3146DF14-D8AF-4E08-9C43-5CD08287CEC4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3146DF14-D8AF-4E08-9C43-5CD08287CEC4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3146DF14-D8AF-4E08-9C43-5CD08287CEC4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3146DF14-D8AF-4E08-9C43-5CD08287CEC4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4B920622-E73E-46E7-B4BC-7536E19DF6E9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4B920622-E73E-46E7-B4BC-7536E19DF6E9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4B920622-E73E-46E7-B4BC-7536E19DF6E9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4B920622-E73E-46E7-B4BC-7536E19DF6E9}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
