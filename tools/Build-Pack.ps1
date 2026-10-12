@@ -126,7 +126,8 @@ $packJson = [ordered]@{
     }
     replacesFolders = @('cairn')   # the earlier Cairn mod's folder: the launcher removes it when it is provably ours (two mods would load twice)
 }
-if ($hasBridge) { $packJson.companion = "bin/$bridgeName" }
+# the same program also does the game's options (DLSS 5): launcher 0.3.14 shows them; an older launcher keeps its own DLSS 5 and ignores this
+if ($hasBridge) { $packJson.companion = "bin/$bridgeName"; $packJson.optionsProgram = "bin/$bridgeName" }
 [IO.File]::WriteAllText((Join-Path $stage 'pack.json'), (($packJson | ConvertTo-Json) + "`n"), (New-Object System.Text.UTF8Encoding($false)))
 
 $lines = New-Object System.Collections.Generic.List[string]

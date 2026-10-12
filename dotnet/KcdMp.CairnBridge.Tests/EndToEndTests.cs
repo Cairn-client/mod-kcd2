@@ -69,7 +69,7 @@ public class EndToEndTests : IDisposable
         Environment.SetEnvironmentVariable("CAIRN_GAME_START", DateTime.Now.AddSeconds(-2).ToString("o"));
         Environment.SetEnvironmentVariable("CAIRN_GAME_PID", null);
         Environment.SetEnvironmentVariable("CAIRN_CONSOLE_URL", _consoleUrl);
-        var bridge = Task.Run(Program.Main);
+        var bridge = Task.Run(() => Program.Main(Array.Empty<string>()));
 
         await server.WaitForConnectionAsync().WaitAsync(TimeSpan.FromSeconds(10));
         using var reader = new StreamReader(server, new UTF8Encoding(false), false, 4096, leaveOpen: true);
@@ -135,7 +135,7 @@ public class EndToEndTests : IDisposable
         Environment.SetEnvironmentVariable("CAIRN_DATA_ROOTS", data);
         try
         {
-            var bridge = Task.Run(Program.Main);
+            var bridge = Task.Run(() => Program.Main(Array.Empty<string>()));
             await server.WaitForConnectionAsync().WaitAsync(TimeSpan.FromSeconds(10));
             using var reader = new StreamReader(server, new UTF8Encoding(false), false, 4096, leaveOpen: true);
             async Task<JsonElement> Next() => JsonDocument.Parse((await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(8)))!).RootElement.Clone();
@@ -192,7 +192,7 @@ public class EndToEndTests : IDisposable
         Environment.SetEnvironmentVariable("CAIRN_GAME_START", DateTime.Now.ToString("o"));
         Environment.SetEnvironmentVariable("CAIRN_GAME_PID", gone.Id.ToString());
         Environment.SetEnvironmentVariable("CAIRN_CONSOLE_URL", _consoleUrl);
-        var bridge = Task.Run(Program.Main);
+        var bridge = Task.Run(() => Program.Main(Array.Empty<string>()));
         await server.WaitForConnectionAsync().WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(0, await bridge.WaitAsync(TimeSpan.FromSeconds(8)));
     }
@@ -201,7 +201,7 @@ public class EndToEndTests : IDisposable
     public async Task WithoutALauncherPipeTheBridgeDoesNothing()
     {
         Environment.SetEnvironmentVariable("CAIRN_BRIDGE_PIPE", null);
-        Assert.Equal(2, await Program.Main());
+        Assert.Equal(2, await Program.Main(Array.Empty<string>()));
     }
 }
 

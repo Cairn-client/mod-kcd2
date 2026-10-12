@@ -9,6 +9,9 @@
   "exe": "KingdomCome.exe",
   "description": "Explore Bohemia side by side. The host's world is shared with a friend: the same NPCs, weather, doors and fights.",
   "accent": "#E8C872",
+  "options": [
+    { "id": "dlss5", "title": "DLSS 5 (RTX cards)", "requires": "nvidia-rtx", "hint": "When you save, Cairn puts DLSS 5 into the game's folder through DLSS 5 Autopilot and OptiScaler (downloaded once, checked against its published checksum); clearing the tick takes it out again. Close the game first." }
+  ],
   "images": {
     "background": "kcd2.jpg",
     "logo": "kcd2-logo.png",
