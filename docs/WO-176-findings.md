@@ -332,3 +332,21 @@ releasing both buttons, and only while the game is in front. After the fix: 0 re
 - B2: a block counted by the joiner's own engine needs the copy as the player's Opponent (lock-on onto a copy) — not built.
 - B3: the rows' animation state was not read by name (no reader in the DLL); the evidence is the dispatch result and two screenshots.
 - The crash at 22:15:35 (a load during a running fight): cause not determined.
+
+## Gates and the installer
+
+Full record: `docs/WO-176-installer.md`. `release\KingdomComeTogether-Setup-0.50.0.exe`, **106,949,330 bytes**, sha256
+`9e4ee30fc730d3b6093a8b8f2f2f1766949c62920762596fa6e7225541b1c021`, header **0.50.0**, unsigned, soak waived (quoted); built from a
+fresh clone of `f00aef7`. Inside the build: agent 1,512 · native 9,364 · 61 Lua suites / 4,049 checks · relay 63 · setup 77 · logpack 14
+· save tools 14 + 7 · guards 7/7 · no-input gate **0 hits** in our files · installer cases 26/26, 41/41 · **the live save round trip
+PASS** (the game was up). All at least 0.49.2's counts.
+
+## Housekeeping
+
+- Saves: the whole folder backed up before the first launch (826 files, SHA-256 each); at the end **826/826 byte-identical** (0 missing,
+  0 changed, 0 added). This WO's 30 test saves in `playline4` (copies of `322`, `323`, `335`, the repaired copy, and the game's own
+  autosaves of the throwaway) were moved out to the session's scratch folder; `playline4` holds only the launcher's `quicksave022.whs`
+  again (unchanged). Nothing was saved into a real slot; no playline above 4 was used.
+- The installed `Mods\kdcmp` (four files) backed up and restored: hashes equal.
+- This session's 22 screenshots moved out of the game's screenshot folder; three small crops are kept in `docs/wo176-shots/`.
+- The maintainer's own launcher relay (7778 / 5273) and master server were left running and untouched.
