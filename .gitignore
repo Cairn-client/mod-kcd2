@@ -51,3 +51,6 @@ assets/start-save/*/*.whs
 
 # WO-161: the maintainer's tester bundles (zips of the players' logs) -- private, never committed
 /logs/
+
+# WO-174: the save tool's bytecode
+tools/savegame/__pycache__/

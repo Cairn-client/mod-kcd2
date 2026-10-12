@@ -179,3 +179,13 @@ Kingdom Come: Together 0.45.0 — the public beta.
 Known: cutscenes aren't shared yet (next big update), the tutorial is the roughest part, no lip sync (the Modding Tools build lacks the data).
 Both players and the relay need 0.45.0. Quick start and tester page in the official repository: docs/QUICKSTART.md, docs/TEST-0.45.0.md
 ```
+
+## Version 0.49.1 — weapons that will not draw, the brawl protection (WO-174)
+
+```
+Kingdom Come: Together 0.49.1 (a release candidate for the host and one partner).
+- If your sword will not come out (the weapon icon is empty, no fight is going on): load the save, open the console and type mp_repair_combat, or Insert, Help, "Fix my weapons / stuck fight". It tells you plainly what it did. Then save into a new slot. The lock can come back when a save loads, so the mod puts your weapon back by itself after every load until you restart the game; after a restart type the command again. Guide: docs/HOW-TO-REPAIR-WEAPONS.md
+- Your partner's figure is no longer left inside a fight when he leaves, when you punch him by accident, or before a save, and it is kept out of scripted brawls (the neighbours' brawl, duels, fist fights): the brawl runs as it does alone. Switch: mp_combat_autoclean.
+- mp_real_hits is now ON by default: your partner's blows are real hits in the host's game (the enemy blocks, parries, reacts). mp_real_hits off turns it off. Not tested with two real players yet.
+```
+

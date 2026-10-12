@@ -116,6 +116,7 @@ uint8_t handle(const uint8_t* body, size_t len, uint8_t* out, size_t cap, size_t
             void* hostSoul = peid ? hits::soul_of_eid(peid) : nullptr;
             void* npcSoul = eid ? hits::soul_of_eid(eid) : nullptr;
             if (!hostSoul || (on && !npcSoul)) return kRNoSoul;
+            if (on && hits::scene_owned_eid(eid, "wo163-pair")) { out[0] = 0; *outLen = 1; return kRFailed; }   // WO-174
             uint64_t rv = 0;
             const bool done = on ? hits::skirmish_add(hostSoul, npcSoul, ovr, &rv) : hits::skirmish_remove(hostSoul, &rv);
             logf("WO163-PAIR host %s npc=0x%X override=%u -> %s", on ? "joins the skirmish of" : "leaves its skirmish; was against", eid, ovr, done ? "done" : "FAILED");

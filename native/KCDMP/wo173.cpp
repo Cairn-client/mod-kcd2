@@ -87,7 +87,7 @@ bool vcall0(void* obj, uint8_t slot) {
 }
 
 // ---- state ----
-std::atomic<bool> g_on{false};         // mp_real_hits (the agent's switch; off in 0.49.0: findings C1)
+std::atomic<bool> g_on{true};          // mp_real_hits (the agent's switch; on since 0.49.1, WO-174 D; it was off in 0.49.0: findings C1)
 std::atomic<bool> g_threat{true};      // WO-136's avatar-hit threat on engine-processed blows (C3 decides)
 std::atomic<bool> g_reactOn{true};     // the reaction tail (a sub-switch: mp_real_hits_react)
 std::atomic<bool> g_faulted{false};    // the whole path switched off by a fault this session

@@ -84,6 +84,10 @@ void note_player_damage(float stamina, float health);
 bool skirmish_ready();
 bool skirmish_add(void* soul, void* reference, uint8_t overrideRelation, uint64_t* rv);
 bool skirmish_remove(void* soul, uint64_t* rv);
+// WO-174 (main thread): does this NPC belong to a scripted brawl or scene (by its name; wo174_rules.h)? true = the mod keeps a partner's figure out of
+// its fight: no skirmish add, no threat, no forced target, no lock. Logs WO174-BRAWL (once per actor per 10 s) and counts; site names the caller.
+bool scene_owned_eid(uint32_t eid, const char* site);
+uint32_t scene_kept_count();
 // WO-163 (A7; docs/WO-162 Q2.3, read-only, main thread, fault-guarded): the engine's own relation test on two souls -- true iff
 // they are hostile opponents inside ONE skirmish (the player-lock rule's own question: same skirmish, active members, a hostile pair or
 // a negative faction value). false/false = the call could not be made (not armed, no manager, a soul missing): *answered stays false.

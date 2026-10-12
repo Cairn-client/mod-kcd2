@@ -3734,6 +3734,7 @@ end
 -- Phase 3/4. The agent asks; the engine writes the save when it can.
 function KCD2MP_HostWorldSave(why, attempt)
     local w = KCD2MP.w122
+    if KCD2MP_W174Clean then pcall(KCD2MP_W174Clean, "save") end   -- WO-174: partner-figure fight records out before the save
     if not (Game and Game.SaveGameViaResting) then
         mp_log("MP-WORLDSAVE Game.SaveGameViaResting not registered on this build -- no world save")
         return false
@@ -6757,6 +6758,8 @@ function KCD2MP_W136Hold(on, ttlS, why)
     mp_log(string.format("WO136-HOLD off why=%s held_s=%.1f replayed=%d -- NPCs are the host's stream again",
         tostring(why or "?"), now - (w.holdSince or now), n))
     if KCD2MP_W147ReannouncePuppets then KCD2MP_W147ReannouncePuppets("load " .. tostring(why or "?")) end   -- WO-147
+    if tostring(why) == "gameplay+settle" and KCD2MP_W174Clean then pcall(KCD2MP_W174Clean, "load") end   -- WO-174: once after every load
+    if tostring(why) == "gameplay+settle" and KCD2MP_W174AfterLoad then pcall(KCD2MP_W174AfterLoad, "settle") end
     return true
 end
 
@@ -13555,6 +13558,8 @@ end
 function KCD2MP_RemoveGhost(id)
     local ghost = KCD2MP.ghosts[id]
     if not ghost then return end
+    -- WO-174: a figure that leaves takes its fight records with it (hostile pairs, a punch's fight) -- before its body goes
+    if KCD2MP_W174Clean then pcall(KCD2MP_W174Clean, "leave", ghost.entity) end
     -- Remove horse ghost first (if riding)
     KCD2MP_RemoveHorse(id)
     -- WO-27: was a single unchecked System.RemoveEntity. It returns without
@@ -16008,6 +16013,7 @@ function KCD2MP_ItemSyncTick()
                 end
             end
             mp_log("ITEM-SYNC restart sweep: reload detected, re-baselined")
+            if KCD2MP_W174AfterLoad then pcall(KCD2MP_W174AfterLoad, "reload") end   -- WO-174: Lua's own load detector (no agent needed)
         end
         -- else: a menu/pause gap -- the world is intact, prev counts are
         -- still valid, and a drop made INSIDE the inventory screen is about
@@ -21416,13 +21422,13 @@ function KCD2MP_W166SetAutoMode(arg)
     return true
 end
 
--- WO-173 (0.49.0): the joiner's blows become real hits in the host's world (docs/WO-173-findings.md).
+-- WO-173 (0.49.0): the joiner's blows become real hits in the host's world (docs/WO-173-findings.md). Default ON since 0.49.1 (WO-174 D: the maintainer's choice).
 --   mp_real_hits (host; the agent and the DLL act on it): the joiner's blow on a host NPC goes through the host game's own hit processor --
 --      the NPC's own rules decide hit / block / parry, it reacts as to the host's blows; off = the old raw damage, its stamina capped so
 --      one blow never knocks a fighter out.
 --   KCD2MP_W173Down(name, state) (joiner, from the agent): the host's NPC is up (0) / knocked out (1) / dead (2) -- its copy follows now.
 --   WO173-TOGGLE ...   WO173-DOWN npc=<n> state=<0|1|2> ...
-KCD2MP.w173 = KCD2MP.w173 or { realHits = false, fastWake = {}, stats = { down = 0, up = 0, dead = 0 } }
+KCD2MP.w173 = KCD2MP.w173 or { realHits = true, fastWake = {}, stats = { down = 0, up = 0, dead = 0 } }
 function KCD2MP_W173SetRealHits(arg)
     local v = KCD2MP_Wo122ParseBool(arg)
     if v == "bad" then mp_log("mp_real_hits: expected on|off"); return false end
@@ -21449,6 +21455,375 @@ function KCD2MP_W173Down(name, state)
     end
     mp_log(string.format("WO173-DOWN npc=%s state=%d copy=%s", tostring(name), state, p and "yes" or "no"))
 end
+
+-- ===== WO-174 (0.49.1): the host's weapons stuck -- the repair command and the clean-up (docs/WO-174-findings.md) =====
+--
+-- The field: after the 2026-10-10 sessions the host could not draw a melee weapon (HUD weapon icon blank). Read on a copy of his save,
+-- through the game's own Lua: no fight, no skirmish, no combat mode -- Human.DrawWeapon() ("draw the active weapon set") did nothing and
+-- Human.ToggleWeaponSet did nothing, while the sword lay in his inventory; Actor.EquipInventoryItem(sword) then DrawWeapon() drew it.
+-- The lock is an EMPTY WEAPON SET (nothing equipped in a weapon slot), saved in the file. So:
+--   mp_repair_combat (and the menu's Help > "Fix my weapons / stuck fight"): re-tests the draw after each step, in this order:
+--      1 figure-links  every personally-hostile pair between this Henry and a partner's figure (kcd2mp_*) is removed (AI.RemovePersonallyHostile)
+--      2 stop-fight    the game's own end of combat (XGenAIModule.TryEndCombat, and the agent's StopFight on this Henry when it runs)
+--      3 brawl         a fight that belongs to a scripted brawl or scene is NEVER touched: the command stops and says so
+--      4 equip         the best melee weapon in the inventory goes back into his weapon set (Actor.EquipInventoryItem), the game's own way
+--      and tells him plainly. On a save that was fine it changes nothing and says so.
+--   mp_combat_autoclean (default on): before every save (the mod's world save, and the agent's note of the game's own save), when a partner's
+--      figure leaves, and once after every load: the hostile pairs and any fight between this Henry and a figure are cleared, logged and counted.
+--   WO174-REPAIR step=<s> result=<r> draw_ok=yes|no       WO174-CLEAN reason=save|leave|load removed=<n>
+--   WO174-BRAWL ... (native: a scripted brawl's skirmish never takes a partner's figure)
+W174 = W174 or {}
+KCD2MP.w174 = KCD2MP.w174 or { autoclean = true, autofix = true, busy = false, lastClean = -1e9, fixedWith = nil, afterLoadAt = -1e9, stats = { save = 0, leave = 0, load = 0, removed = 0, repairs = 0, freed = 0, refixed = 0 } }
+
+-- ---- the rules (pure: no engine calls) ----
+-- A name that belongs to a scripted brawl or scene (the neighbours' brawl's actors are rvacka_neighbour_1/2; quest fist fights, duels,
+-- the tournament and arena fights are the others). The native half (wo174_rules.h) holds the same words.
+W174.SCENE_WORDS = { "rvacka", "fistfight", "brawl", "duel", "arena", "tournament" }
+function W174.sceneOwned(name)
+    local n = string.lower(tostring(name or ""))
+    for _, w in ipairs(W174.SCENE_WORDS) do if n:find(w, 1, true) then return true end end
+    return false
+end
+
+-- A partner's figure in this world: kcd2mp_<n>.
+function W174.isFigure(name) return tostring(name or ""):match("^kcd2mp_%d+$") ~= nil end
+
+-- Melee weapon classes by the words in the database name; the best tier first, then the healthiest. Never a torch, a quest alias, a bow or
+-- crossbow, a shield, ammunition, or a smith's material or kit.
+W174.MELEE = { { "sword", 3 }, { "saber", 3 }, { "falchion", 3 }, { "cleaver", 3 }, { "axe", 2 }, { "mace", 2 }, { "hammer", 2 },
+               { "flail", 2 }, { "dagger", 1 }, { "knife", 1 } }
+W174.NOT_A_WEAPON = { "torch", "alias_", "arrow", "bolt", "bow", "shield", "repair", "bsmt_", "whetstone", "sharpen" }
+function W174.weaponTier(name)
+    local n = string.lower(tostring(name or ""))
+    for _, w in ipairs(W174.NOT_A_WEAPON) do if n:find(w, 1, true) then return 0 end end
+    for _, m in ipairs(W174.MELEE) do if n:find(m[1], 1, true) then return m[2] end end
+    return 0
+end
+-- items: array of { id = <item id>, name = <database name>, health = <0..1> }. Returns the best item (or nil) and its tier.
+function W174.pickWeapon(items)
+    local best, bestScore, bestTier = nil, -1, 0
+    for _, it in ipairs(items or {}) do
+        local t = W174.weaponTier(it.name)
+        if t > 0 then
+            local score = t * 10 + math.max(0, math.min(1, tonumber(it.health) or 0))
+            if score > bestScore then best, bestScore, bestTier = it, score, t end
+        end
+    end
+    return best, bestTier
+end
+
+-- facts: drawOk (the baseline draw worked), links (hostile pairs with figures), combat (the game says he is in combat), scene (a scripted
+-- brawl's actor is near). Returns the ordered steps to run; { "nothing" } when the save was fine.
+function W174.plan(f)
+    if f.drawOk and (f.links or 0) == 0 and not f.combat then return { "nothing" } end
+    return { "figure-links", "stop-fight", "brawl", "equip" }
+end
+
+-- Step 3's decision: a fight that is still on after steps 1-2 and belongs to a scripted brawl is left alone.
+function W174.brawlDecision(f)
+    if f.combat and f.scene then return "belongs-to-a-scene" end
+    return "no-scripted-brawl"
+end
+
+-- ---- the engine reads ----   (in a do-block: the chunk's local-variable budget is nearly spent)
+do
+local function w174_figures()
+    local out, seen = {}, {}
+    for id, g in pairs(KCD2MP.ghosts or {}) do
+        local e = g and g.entity
+        if e and e.id then out[#out + 1] = e; seen[tostring(e.id)] = true end
+    end
+    for i = 0, 8 do
+        local e = nil
+        pcall(function() e = System.GetEntityByName("kcd2mp_" .. i) end)
+        if e and e.id and not seen[tostring(e.id)] then out[#out + 1] = e; seen[tostring(e.id)] = true end
+    end
+    return out
+end
+
+local function w174_truthy(v) return v ~= nil and v ~= false and v ~= 0 end
+
+-- Removes the personally-hostile pairs between this Henry and the figures (both directions). Returns how many pairs were removed.
+function W174.removeFigureLinks(onlyEntity)
+    local n = 0
+    local figs = onlyEntity and { onlyEntity } or w174_figures()
+    for _, f in ipairs(figs) do
+        for _, pair in ipairs({ { player.id, f.id }, { f.id, player.id } }) do
+            local hostile = false
+            pcall(function() hostile = w174_truthy(AI.IsPersonallyHostile(pair[1], pair[2])) end)
+            if hostile then
+                local ok = pcall(function() AI.RemovePersonallyHostile(pair[1], pair[2]) end)
+                if ok then n = n + 1 end
+            end
+        end
+    end
+    return n
+end
+
+-- Is this Henry locked in melee with a figure now? (Player.IsLockedToOpponent)
+function W174.fightsFigure(onlyEntity)
+    local figs = onlyEntity and { onlyEntity } or w174_figures()
+    for _, f in ipairs(figs) do
+        local locked = false
+        pcall(function() locked = w174_truthy(Player.IsLockedToOpponent(f.id)) end)
+        if locked then return true, f end
+    end
+    return false, nil
+end
+
+local function w174_inCombat()
+    local c = false
+    pcall(function()
+        local s = player and player.soul
+        c = s ~= nil and ((s.IsInCombatDanger ~= nil and s:IsInCombatDanger() == true) or (s.IsInCombatMode ~= nil and s:IsInCombatMode() == true))
+    end)
+    return c
+end
+
+-- An actor of a scripted brawl or scene within 40 m.
+local function w174_sceneNear()
+    local found = nil
+    pcall(function()
+        local p = player:GetWorldPos()
+        for _, e in ipairs(System.GetEntitiesInSphere(p, 40) or {}) do
+            local nm = nil
+            if e.actor ~= nil then   -- an actor (an NPC), never a smart object or a spot that only carries the word (a tournament crowd spot)
+                pcall(function() nm = e:GetName() end)
+            end
+            if nm and W174.sceneOwned(nm) then found = nm; break end
+        end
+    end)
+    return found
+end
+
+local function w174_items()
+    local out = {}
+    pcall(function()
+        local t = player.inventory:GetInventoryTable()
+        for i = 1, #t do
+            local it = ItemManager.GetItem(t[i])
+            if it and it.class then
+                local nm = ""
+                pcall(function() nm = ItemManager.GetItemName(it.class) end)
+                out[#out + 1] = { id = it.id, name = tostring(nm), health = it.health, class = tostring(it.class) }
+            end
+        end
+    end)
+    return out
+end
+
+-- The draw test: asks the game's own draw, reads it 2.2 s later, and holsters again what it drew. cb(ok, why).
+function W174.drawTest(cb)
+    local h = player and player.human
+    if not h then cb(false, "no-human"); return end
+    local dead, talking = false, false
+    pcall(function() dead = player.actor:IsDead() == true end)
+    pcall(function() talking = h:IsInDialog() == true end)
+    if dead then cb(false, "dead"); return end
+    if talking then cb(false, "in-dialogue"); return end
+    local drawn0 = false
+    pcall(function() drawn0 = h:IsWeaponDrawn() == true end)
+    if drawn0 then cb(true, "already-drawn"); return end
+    pcall(function() h:DrawWeapon() end)
+    Script.SetTimer(2200, function()
+        local drawn = false
+        pcall(function() drawn = h:IsWeaponDrawn() == true end)
+        if drawn then pcall(function() h:HolsterWeapon() end) end
+        cb(drawn, drawn and "drawn" or "refused")
+    end)
+end
+
+-- Step 2: the game's own end of combat. TryEndCombat is the script call; the agent's StopFight (the DLL) ends the skirmish Henry is in.
+function W174.endFights(why)
+    local ended = false
+    pcall(function() ended = w174_truthy(XGenAIModule.TryEndCombat(player.this and player.this.id or player.id)) end)
+    KCD2MP_EmitEvent("w154_endfights", "w174-" .. tostring(why or "repair"))
+    return ended
+end
+
+-- ---- the command ----
+function KCD2MP_W174Repair(arg)
+    local w = KCD2MP.w174
+    if w.busy then
+        mp_log("WO174-REPAIR already running")
+        return false
+    end
+    w.busy = true
+    w.stats.repairs = w.stats.repairs + 1
+    local function say(text)
+        mp_log("WO174-SAY " .. text)
+        pcall(KCD2MP_ShowNativeToast, text)
+    end
+    local function log(step, result, ok)
+        mp_log(string.format("WO174-REPAIR step=%s result=%s draw_ok=%s", step, tostring(result), ok == nil and "-" or (ok and "yes" or "no")))
+    end
+    local function done() w.busy = false end
+
+    local facts = { links = 0, combat = w174_inCombat() }
+    for _, f in ipairs(w174_figures()) do
+        for _, pair in ipairs({ { player.id, f.id }, { f.id, player.id } }) do
+            local hostile = false
+            pcall(function() hostile = w174_truthy(AI.IsPersonallyHostile(pair[1], pair[2])) end)
+            if hostile then facts.links = facts.links + 1 end
+        end
+    end
+    local sceneName = w174_sceneNear()
+    facts.scene = sceneName ~= nil
+
+    W174.drawTest(function(ok0, why0)
+        facts.drawOk = ok0
+        log("baseline", why0 .. " links=" .. facts.links .. " combat=" .. tostring(facts.combat) .. (sceneName and (" scene=" .. sceneName) or ""), ok0)
+        if why0 == "dead" or why0 == "in-dialogue" then
+            say("Not now: finish what you are doing (no dialogue, not dead), then try again.")
+            return done()
+        end
+        local plan = W174.plan(facts)
+        if plan[1] == "nothing" then
+            log("nothing-to-repair", "weapons draw, no stuck fight", true)
+            say("Nothing was wrong: your weapons draw and no fight is stuck. I changed nothing.")
+            return done()
+        end
+        local freed = ok0
+        local touched = false
+        local function finish(ok, how)
+            if ok then
+                w.stats.freed = w.stats.freed + 1
+                log("result", how, true)
+                say("Your weapons are free again -- save your game now (a new slot is safest).")
+            else
+                log("result", how, false)
+                say("I tried to free your weapons (" .. how .. ") and they are still stuck. Send your logs with Report a bug, and tell us what you did before.")
+            end
+            done()
+        end
+        local function step4()
+            local pick, tier = W174.pickWeapon(w174_items())
+            if not pick then
+                log("equip", "no-melee-weapon-in-the-inventory", false)
+                return finish(false, "no melee weapon in your inventory")
+            end
+            local ok = pcall(function() player.actor:EquipInventoryItem(pick.id) end)
+            log("equip", (ok and "equipped " or "refused ") .. pick.name .. " tier=" .. tier, nil)
+            if not ok then return finish(false, "the game refused to equip " .. pick.name) end
+            Script.SetTimer(1500, function()
+                W174.drawTest(function(ok4, why4)
+                    log("equip-retest", why4, ok4)
+                    if ok4 then w.fixedWith = { class = pick.class, name = pick.name } end   -- re-applied silently after every later load (mp_weapon_autofix)
+                    finish(ok4, ok4 and ("equipped " .. pick.name) or "equipped " .. pick.name .. " but it does not draw")
+                end)
+            end)
+        end
+        local function step3()
+            local d = W174.brawlDecision({ combat = w174_inCombat(), scene = w174_sceneNear() ~= nil })
+            log("brawl", d, nil)
+            if d == "belongs-to-a-scene" then
+                -- never touched: a raw state wipe would break the quest
+                say("This fight belongs to a quest scene (" .. tostring(w174_sceneNear()) .. "). Reload a save from before it, or send your logs. I did not touch it.")
+                return done()
+            end
+            step4()
+        end
+        local function step2()
+            local ended = W174.endFights("repair")
+            log("stop-fight", ended and "combat-ended" or "asked", nil)
+            Script.SetTimer(800, function()
+                if freed then   -- step 1 already freed him: the clean-up ran, no second draw needed
+                    return finish(true, touched and "partner links cleaned and the fight ended" or "the fight ended")
+                end
+                W174.drawTest(function(ok2, why2)
+                    log("stop-fight-retest", why2, ok2)
+                    if ok2 then
+                        return finish(true, touched and "partner links cleaned and the fight ended" or "the fight ended")
+                    end
+                    step3()
+                end)
+            end)
+        end
+        -- step 1 (a safe clean-up: always runs)
+        local n = W174.removeFigureLinks()
+        touched = n > 0
+        log("figure-links", "removed=" .. n, nil)
+        Script.SetTimer(600, function()
+            W174.drawTest(function(ok1, why1)
+                log("figure-links-retest", why1, ok1)
+                if ok1 then freed = true end
+                step2()   -- step 2 is a safe clean-up too: always runs
+            end)
+        end)
+    end)
+    return true
+end
+
+-- ---- prevention ----
+-- reason = save | leave | load. The mod's world save, the agent's note of the game's own save, a figure leaving, a finished load.
+function KCD2MP_W174Clean(reason, onlyEntity)
+    local w = KCD2MP.w174
+    if not w.autoclean then return 0 end
+    reason = tostring(reason or "?")
+    local now = os.clock()
+    if reason == "save" and now - w.lastClean < 2 then return 0 end   -- the mod's save and the game's note of it are one save
+    if reason == "save" then w.lastClean = now end
+    local fight = W174.fightsFigure(onlyEntity)   -- read before the pairs go: the fight is what the pairs hold
+    local n = W174.removeFigureLinks(onlyEntity)
+    if fight then KCD2MP_EmitEvent("w154_endfights", "w174-" .. reason) end
+    w.stats[reason] = (w.stats[reason] or 0) + 1
+    w.stats.removed = w.stats.removed + n
+    mp_log(string.format("WO174-CLEAN reason=%s removed=%d%s", reason, n, fight and " fight_ended=yes" or ""))
+    return n
+end
+
+-- A friendly-fire knockdown of a partner's figure ends the fight Henry's punch started: the figure leaves its skirmish (the agent -> the DLL),
+-- so a punch never outlives itself. Called by the WO-155 fall.
+function KCD2MP_W174FfEnd(ghostId)
+    if not KCD2MP.w174.autoclean then return end
+    KCD2MP_EmitEvent("w174_endfig", tostring(ghostId))
+    mp_log("WO174-CLEAN reason=friendly-fire ghost=" .. tostring(ghostId) .. " -- the figure leaves the skirmish the punch started")
+end
+
+-- After a load: what a repair equipped is equipped again (the game rebuilds the weapon set from the save, and the lock came back on the
+-- field copy -- docs/WO-174-findings.md). Silent: no draw, one log line. Only after a repair in THIS game session has found the lock.
+function KCD2MP_W174AfterLoad(why)
+    local w = KCD2MP.w174
+    local now = os.clock()
+    if now - w.afterLoadAt < 20 then return end   -- the Lua reload detector and the agent's settle are one load
+    w.afterLoadAt = now
+    if not (w.autofix and w.fixedWith) then return end
+    Script.SetTimer(4000, function()   -- the world settles first
+        local fw = w.fixedWith
+        if not fw then return end
+        local ok, err = pcall(function()
+            local best = nil   -- the same class again; the healthiest piece (the repair's scan, never FindItem: it hands back a bare handle)
+            for _, it in ipairs(w174_items()) do
+                if it.class == tostring(fw.class) and (best == nil or (tonumber(it.health) or 0) > (tonumber(best.health) or 0)) then best = it end
+            end
+            if not best then error("not in the inventory") end
+            player.actor:EquipInventoryItem(best.id)
+        end)
+        if ok then w.stats.refixed = w.stats.refixed + 1 end
+        mp_log(string.format("WO174-REPAIR step=autofix-after-load result=%s %s draw_ok=- why=%s",
+            ok and "equipped" or ("refused: " .. tostring(err)), tostring(fw.name), tostring(why or "?")))
+    end)
+end
+
+function KCD2MP_W174SetAutofix(arg)
+    local v = KCD2MP_Wo122ParseBool(arg)
+    if v == "bad" then mp_log("mp_weapon_autofix: expected on|off"); return false end
+    if v ~= nil then KCD2MP.w174.autofix = v end
+    mp_log(string.format("WO174-TOGGLE mp_weapon_autofix %s -- after a repair freed your weapons, every later load in this game equips that weapon again (done so far: %d)",
+        KCD2MP.w174.autofix and "on" or "off", KCD2MP.w174.stats.refixed))
+    return true
+end
+
+function KCD2MP_W174SetAutoclean(arg)
+    local v = KCD2MP_Wo122ParseBool(arg)
+    if v == "bad" then mp_log("mp_combat_autoclean: expected on|off"); return false end
+    if v ~= nil then KCD2MP.w174.autoclean = v end
+    local s = KCD2MP.w174.stats
+    mp_log(string.format("WO174-TOGGLE mp_combat_autoclean %s -- partner-figure fight records are cleared before saves, when a partner leaves and after loads (save=%d leave=%d load=%d removed=%d repairs=%d freed=%d)",
+        KCD2MP.w174.autoclean and "on" or "off", s.save, s.leave, s.load, s.removed, s.repairs, s.freed))
+    return true
+end
+end   -- WO-174's do-block
 
 function KCD2MP_W166SetTalkResumeFirst(arg)
     local v = KCD2MP_Wo122ParseBool(arg)
@@ -23366,6 +23741,7 @@ do
         W.fall[id] = { at = os.clock() }
         W.stats.fell = W.stats.fell + 1
         mp_log(string.format("WO155-FALL avatar=%s ok=true -- his friendly-fire knockdown: the engine's own fall and get-up play here", name))
+        Script.SetTimer(1200, function() if KCD2MP_W174FfEnd then pcall(KCD2MP_W174FfEnd, id) end end)   -- WO-174: the punch's fight ends with the knockdown
         Script.SetTimer(400, function() KCD2MP_W155FallTick(id) end)
     end
 
@@ -25044,6 +25420,8 @@ do
           help = "The key that opens this menu. A new key works from the next game start." },
         { id = "unstuck", group = "Help", label = "I'm stuck", kind = "action", cmd = "mp_unstuck", fn = "KCD2MP_W151Unstuck",
           help = "Frees you from a stuck state: a bed, a picker that did not close, a knockdown." },
+        { id = "repair_combat", group = "Help", label = "Fix my weapons / stuck fight", kind = "action", cmd = "mp_repair_combat", fn = "KCD2MP_W174Repair",
+          help = "Frees weapons that will not draw and a fight that never ends. Then save your game into a new slot." },
         { id = "report", group = "Help", label = "Something's wrong here", kind = "action", cmd = "mark_odd", fn = "KCD2MP_Mark", arg = "odd",
           help = "Marks this moment in the logs. Then send your logs with Report a bug (in the launcher) before you restart." },
         { id = "version", group = "Help", label = "Version", kind = "info",
@@ -26193,7 +26571,10 @@ local ok, err = pcall(function()
     System.AddCCommand("mp_host_lock", 'KCD2MP_W165SetHostLock(%line)', "WO-165: (host) you can lock onto an NPC that is beating your partner: near it (6 m) and facing it, you join its fight as its foe; it keeps fighting your partner until you hit it (default on): mp_host_lock on|off")
     System.AddCCommand("mp_victim_decides", 'KCD2MP_W165SetVictimDecides(%line)', "WO-165: (joiner) your own game judges an enemy's blow and applies it; while you hold block the host's game decides, as before (UNTESTED with two players; default off since 0.48.2): mp_victim_decides on|off")
     System.AddCCommand("mp_block_recoil", 'KCD2MP_W165SetBlockRecoil(%line)', "WO-165: (joiner) an enemy whose blow you blocked plays the game's own bounce-back (UNTESTED with two players; default on): mp_block_recoil on|off")
-    System.AddCCommand("mp_real_hits", 'KCD2MP_W173SetRealHits(%line)', "WO-173: (host) your partner's blows are real hits in your world: the enemy blocks, parries, staggers and fights back by its own rules, the same on both screens; off = the old raw damage, never a knock-out from one blow (UNTESTED with two players; default off in 0.49.0): mp_real_hits on|off")
+    System.AddCCommand("mp_real_hits", 'KCD2MP_W173SetRealHits(%line)', "WO-173: (host) your partner's blows are real hits in your world: the enemy blocks, parries, staggers and fights back by its own rules, the same on both screens; off = the old raw damage, never a knock-out from one blow (UNTESTED with two players; default ON since 0.49.1, the capped raw fallback stays per blow): mp_real_hits on|off")
+    System.AddCCommand("mp_repair_combat", 'KCD2MP_W174Repair(%line)', "WO-174: frees stuck weapons -- clears partner-figure fight links, ends a stuck fight, re-equips a melee weapon -- and says so; on a save that was fine it changes nothing: mp_repair_combat")
+    System.AddCCommand("mp_weapon_autofix", 'KCD2MP_W174SetAutofix(%line)', "WO-174: after mp_repair_combat freed your weapons, every later load in this game session equips that weapon again, because the lock returns on a reload (default on): mp_weapon_autofix on|off")
+    System.AddCCommand("mp_combat_autoclean", 'KCD2MP_W174SetAutoclean(%line)', "WO-174: before saves, when a partner leaves and after loads, the fight records between you and a partner's figure are cleared (default on): mp_combat_autoclean on|off")
     System.AddCCommand("mp_w173_status", 'KCD2MP_W173Status()', "WO-173: real-hit counters (WO173-STATUS here; MP-WO173-STATS in agent.log)")
     System.AddCCommand("mp_copy_strikes", 'KCD2MP_W166SetCopyStrikes(%line)', "WO-166: (joiner) an enemy swinging at you counts as a real strike on your screen: the game's own block and riposte prompts; the host still decides the damage (UNTESTED with two players; default on): mp_copy_strikes on|off")
     System.AddCCommand("mp_snap_fix", 'KCD2MP_W166SetSnapFix(%line)', "WO-166: (joiner) an enemy's swing holds its figure only as long as the swing, never for seconds (less snapping in fights; default on): mp_snap_fix on|off")

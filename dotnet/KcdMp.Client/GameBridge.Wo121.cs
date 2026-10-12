@@ -541,13 +541,17 @@ public partial class GameBridge
         _w121AttribIn++;
         string steps = $"damage={((r.Steps & 1) != 0 ? 1 : 0)} history={((r.Steps & 2) != 0 ? 1 : 0)} skirmish={((r.Steps & 4) != 0 ? 1 : 0)}";
         bool brain = false;
-        if (r.Ok && (r.Steps & 1) != 0)
+        // WO-174: a scripted brawl's actor keeps its own fight -- the blow's damage stands (the DLL applied it), but the avatar is not engaged
+        // against anyone and the actor gets no hit-reaction brain message about him (the DLL says WO174-BRAWL ... figure_kept_out=yes)
+        bool scene = Wo174Rules.SceneOwned(npcName);
+        if (scene) Interlocked.Increment(ref _w174SceneKept);
+        if (!scene && r.Ok && (r.Steps & 1) != 0)
         {
             bool fresh = !_w121Engaged.ContainsKey(source);
             _w121Engaged[source] = DateTime.UtcNow + Wo121EngagementHold;
             if (fresh) await Wo121EngageAsync(source, true);
         }
-        if (r.Ok && r.AttackerWuid != 0)
+        if (!scene && r.Ok && r.AttackerWuid != 0)
         {
             // The brain's hit-reaction message, in the engine's own format
             // (WHGame CGameRules::SendAISignal: "attacker(%lld),hitStrength(%d),

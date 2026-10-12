@@ -7,7 +7,7 @@
 <strong>Not affiliated with or endorsed by Warhorse Studios or PLAION.</strong></p>
 
 <p align="center">
-  <a href="docs/releases/RELEASE-NOTES-0.49.0.md"><img alt="main" src="https://img.shields.io/badge/main-0.49.0-b8860b?style=flat-square"></a>
+  <a href="docs/releases/RELEASE-NOTES-0.49.1.md"><img alt="main" src="https://img.shields.io/badge/main-0.49.1-b8860b?style=flat-square"></a>
   <a href="https://github.com/DeepFriedDepp/KingdomCome-Together/releases/latest"><img alt="latest release" src="https://img.shields.io/badge/latest%20release-v0.48.6-8a3324?style=flat-square"></a>
   <a href="LICENSE"><img alt="License: GPLv3" src="https://img.shields.io/badge/license-GPLv3-2c3e50?style=flat-square"></a>
   <a href="docs/LAUNCHING.md"><img alt="Platform" src="https://img.shields.io/badge/platform-Windows-555555?style=flat-square"></a>
@@ -28,7 +28,7 @@ against each other from inside the game itself.
 > Kingdom Come: Deliverance II, its assets and its content belong to Warhorse
 > Studios and PLAION; this is a free, non-commercial fan project.
 
-> **The current version is 0.49.0**, a release candidate for the maintainer and one tester (not on the releases
+> **The current version is 0.49.1**, a release candidate for the maintainer and one tester (not on the releases
 > page). `main` (this repo's source) is ahead of the last published installer; the feature list below describes
 > `main`. Installing from the
 > [releases page](https://github.com/DeepFriedDepp/KingdomCome-Together/releases)
@@ -38,6 +38,11 @@ against each other from inside the game itself.
 >
 > **What 0.48.5 is, in plain words**
 >
+> - **0.49.1 (after 0.49.0):** a Henry whose weapons will not draw although no fight is going on (the weapon icon is blank) has a repair:
+>   `mp_repair_combat` in the console, or Insert, Help, "Fix my weapons / stuck fight" (guide: `docs/HOW-TO-REPAIR-WEAPONS.md`); the lock returns when
+>   a save loads, so the mod puts the weapon back by itself after every load of that game session. A partner's figure is no longer left in a
+>   fight when he leaves, when you punch him by accident or before a save, and it is kept out of scripted brawls. `mp_real_hits` is now **on** by default.
+>   The cause of the lock itself was not found. Not played by two people yet.
 > - **0.49.0 (after 0.48.9's partner knight on the map):** one blow of the joiner never knocks an enemy out on the host any more (at most a
 >   third of its stamina; the field's "guards fall over at once"), and a knock-out or get-up in the host's world shows on the joiner's screen
 >   at once. New and **off**: `mp_real_hits` (host) makes the joiner's blows real hits in the host's game, so the enemy blocks, parries and
