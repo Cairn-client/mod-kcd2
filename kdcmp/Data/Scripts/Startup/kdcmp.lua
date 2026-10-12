@@ -21543,29 +21543,42 @@ end
 
 local function w174_truthy(v) return v ~= nil and v ~= false and v ~= 0 end
 
+-- The game's personally-hostile pair calls, guarded (a build or a test without the AI table: nothing happens, nothing throws).
+local function w174_hostile(a, b)
+    if not (AI and AI.IsPersonallyHostile) then return false end
+    local h = false
+    pcall(function() h = w174_truthy(AI.IsPersonallyHostile(a, b)) end)
+    return h
+end
+local function w174_unhostile(a, b)
+    if not (AI and AI.RemovePersonallyHostile) then return false end
+    return (pcall(function() AI.RemovePersonallyHostile(a, b) end))
+end
+
 -- Removes the personally-hostile pairs between this Henry and the figures (both directions). Returns how many pairs were removed.
 function W174.removeFigureLinks(onlyEntity)
     local n = 0
+    if not (player and player.id) then return 0 end   -- no player yet (a menu, a load in progress)
     local figs = onlyEntity and { onlyEntity } or w174_figures()
     for _, f in ipairs(figs) do
         for _, pair in ipairs({ { player.id, f.id }, { f.id, player.id } }) do
-            local hostile = false
-            pcall(function() hostile = w174_truthy(AI.IsPersonallyHostile(pair[1], pair[2])) end)
-            if hostile then
-                local ok = pcall(function() AI.RemovePersonallyHostile(pair[1], pair[2]) end)
-                if ok then n = n + 1 end
+            if w174_hostile(pair[1], pair[2]) then
+                if w174_unhostile(pair[1], pair[2]) then n = n + 1 end
             end
         end
     end
     return n
 end
 
--- Is this Henry locked in melee with a figure now? (Player.IsLockedToOpponent)
+-- Is this Henry locked in melee with a figure now? (player.player:IsLockedToOpponent)
 function W174.fightsFigure(onlyEntity)
     local figs = onlyEntity and { onlyEntity } or w174_figures()
     for _, f in ipairs(figs) do
         local locked = false
-        pcall(function() locked = w174_truthy(Player.IsLockedToOpponent(f.id)) end)
+        local pp = player and player.player   -- the player class's calls are methods of player.player (there is no global Player in the game's Lua)
+        if pp and pp.IsLockedToOpponent then
+            pcall(function() locked = w174_truthy(pp:IsLockedToOpponent(f.id)) end)
+        end
         if locked then return true, f end
     end
     return false, nil
@@ -21662,9 +21675,7 @@ function KCD2MP_W174Repair(arg)
     local facts = { links = 0, combat = w174_inCombat() }
     for _, f in ipairs(w174_figures()) do
         for _, pair in ipairs({ { player.id, f.id }, { f.id, player.id } }) do
-            local hostile = false
-            pcall(function() hostile = w174_truthy(AI.IsPersonallyHostile(pair[1], pair[2])) end)
-            if hostile then facts.links = facts.links + 1 end
+            if w174_hostile(pair[1], pair[2]) then facts.links = facts.links + 1 end
         end
     end
     local sceneName = w174_sceneNear()
