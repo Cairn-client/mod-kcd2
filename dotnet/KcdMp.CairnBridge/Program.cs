@@ -24,6 +24,7 @@ public static class Program
         // the pack's options program: the launcher runs "options check|apply ..." (OptionsCli.cs); no pipe, no game needed
         if (args.Length > 0 && args[0] == "options") return await OptionsCli.RunAsync(args, Console.Out);
         if (args.Length > 0 && args[0] == "saves") return SavesCli.Run(args, Console.Out);
+        if (args.Length > 0 && args[0] == "setup") return await SetupCli.RunAsync(args, Console.Out);
         string? pipeName = Environment.GetEnvironmentVariable("CAIRN_BRIDGE_PIPE");
         string gameDir = Environment.GetEnvironmentVariable("CAIRN_GAME_DIR") ?? "";
         if (string.IsNullOrWhiteSpace(pipeName) || gameDir.Length == 0) return 2;

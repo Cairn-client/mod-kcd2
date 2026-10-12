@@ -12,7 +12,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>CairnBridgeKcd2</AssemblyName>
     <NoWarn>$(NoWarn);CA1416</NoWarn>   <!-- Windows only, by design: the game and its registry are -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>   <!-- the setup code's P/Invoke (links) -->
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="KcdMp.CairnBridge.Tests" />
+  </ItemGroup>
 
 </Project>

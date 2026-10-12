@@ -46,6 +46,14 @@ if (Test-Path $bridge) {
         $answer = & $bridge options check dlss5 --game-dir $empty | Select-Object -First 1
         if (-not $answer -or ($answer | ConvertFrom-Json).available -isnot [bool]) { throw "the options program did not answer a check with the expected line: $answer" }
         Write-Host "options: answers a check ($answer)"
+
+        # the same program does the game's setup (pack.json "setup": true): a list of steps and the line that ends it
+        $lines = @(& $bridge setup check | Where-Object { $_ })
+        $parsed = @($lines | ForEach-Object { $_ | ConvertFrom-Json })
+        $steps = @($parsed | Where-Object { $_.step })
+        $end = @($parsed | Where-Object { $_.done })
+        if ($steps.Count -lt 5 -or $end.Count -ne 1) { throw "the setup program did not give a checklist: $($lines -join ' | ')" }
+        Write-Host "setup: $($steps.Count) steps, ready=$($end[0].ready)"
     } finally { Remove-Item $empty -Recurse -Force -ErrorAction SilentlyContinue }
 }
 Write-Host 'pack smoke test: OK'
