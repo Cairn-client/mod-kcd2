@@ -38,5 +38,14 @@ if (Test-Path $bridge) {
     if (-not $b.WaitForExit(15000)) { $b.Kill(); throw 'the bridge did not end by itself when given no launcher' }
     if ($b.ExitCode -ne 2) { throw "the bridge exited with code $($b.ExitCode); 2 (no launcher pipe given) was expected" }
     Write-Host 'bridge: starts and ends as designed'
+
+    # the same program is the pack's options program: it must answer the launcher's check (one JSON line with "available")
+    $empty = Join-Path ([IO.Path]::GetTempPath()) ('cairn-smoke-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    New-Item -ItemType Directory $empty | Out-Null
+    try {
+        $answer = & $bridge options check dlss5 --game-dir $empty | Select-Object -First 1
+        if (-not $answer -or ($answer | ConvertFrom-Json).available -isnot [bool]) { throw "the options program did not answer a check with the expected line: $answer" }
+        Write-Host "options: answers a check ($answer)"
+    } finally { Remove-Item $empty -Recurse -Force -ErrorAction SilentlyContinue }
 }
 Write-Host 'pack smoke test: OK'

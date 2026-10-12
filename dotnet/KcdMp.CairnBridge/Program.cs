@@ -19,8 +19,10 @@ public static class Program
     private const string DefaultPrefix = "[KCD2-MP-EVT] v1 ";
     private const string DefaultMenuFunction = "KCD2MP_MenuRequest";
 
-    public static async Task<int> Main()
+    public static async Task<int> Main(string[] args)
     {
+        // the pack's options program: the launcher runs "options check|apply ..." (OptionsCli.cs); no pipe, no game needed
+        if (args.Length > 0 && args[0] == "options") return await OptionsCli.RunAsync(args, Console.Out);
         string? pipeName = Environment.GetEnvironmentVariable("CAIRN_BRIDGE_PIPE");
         string gameDir = Environment.GetEnvironmentVariable("CAIRN_GAME_DIR") ?? "";
         if (string.IsNullOrWhiteSpace(pipeName) || gameDir.Length == 0) return 2;
@@ -47,6 +49,7 @@ public static class Program
         using var cts = new CancellationTokenSource();
         using var console = new GameConsole();
         var tail = new LogTail(gameDir, start);
+        var dlss = new Dlss5Menu(gameDir);   // DLSS 5's row in the menu and its submenu (it was the launcher's own)
         var saves = SaveCatalog.Default();
         string lastSaves = "";
         async Task SendSaves(bool force)
@@ -60,6 +63,13 @@ public static class Program
                 await Send(json);
             }
             catch (Exception ex) when (ex is not (OperationCanceledException or IOException or ObjectDisposedException)) { /* the list is skipped this time */ }
+        }
+
+        // asks the mod for its menu again (it answers with a menu_state line): after DLSS 5's submenu closes
+        async Task AskModMenu()
+        {
+            using var ask = JsonDocument.Parse("{\"t\":\"state\"}");
+            if (Translator.ToLua(function, ask.RootElement) is { } lua) await console.LuaAsync(lua, cts.Token);
         }
 
         // the launcher's requests, in order, one console call at a time
@@ -77,6 +87,22 @@ public static class Program
                         using var doc = JsonDocument.Parse(line);
                         if (doc.RootElement.ValueKind != JsonValueKind.Object) continue;
                         if (doc.RootElement.TryGetProperty("t", out var t) && t.GetString() == "bye") break;
+                        string kind = t.ValueKind == JsonValueKind.String ? t.GetString() ?? "" : "";
+                        if (kind == "back") { if (dlss.OnBack()) await AskModMenu(); continue; }
+                        if (kind == "do")
+                        {
+                            // DLSS 5's row and its submenu are the bridge's own; every other row is the mod's (a console call)
+                            string rowId = doc.RootElement.TryGetProperty("id", out var ri) && ri.ValueKind == JsonValueKind.String ? ri.GetString() ?? "" : "";
+                            string verb = doc.RootElement.TryGetProperty("verb", out var vb) && vb.ValueKind == JsonValueKind.String ? vb.GetString() ?? "" : "";
+                            int dir = doc.RootElement.TryGetProperty("dir", out var dr) && dr.ValueKind == JsonValueKind.Number && dr.TryGetInt32(out var dv) && dv < 0 ? -1 : 1;
+                            var done = dlss.OnDo(rowId, verb, dir);
+                            if (done.Handled)
+                            {
+                                if (done.Send is { } submenu) await Send(submenu);
+                                if (done.AskMod) await AskModMenu();
+                                continue;
+                            }
+                        }
                         if (t.ValueKind == JsonValueKind.String && t.GetString() == "saves_ask") { await SendSaves(force: true); continue; }
                         if (t.ValueKind == JsonValueKind.String && t.GetString() == "save_delete")
                         {
@@ -107,7 +133,7 @@ public static class Program
                 var lines = new List<string>();
                 tail.Poll(lines.Add);
                 foreach (var l in lines)
-                    if (Translator.ToBridge(l, prefix) is { } msg) await Send(msg);
+                    if (Translator.ToBridge(l, prefix) is { } msg) await Send(msg.StartsWith("{\"t\":\"menu\"", StringComparison.Ordinal) ? dlss.OnModMenu(msg) : msg);
                 await Task.Delay(100, cts.Token);
             }
         }

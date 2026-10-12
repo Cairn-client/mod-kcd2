@@ -11,6 +11,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>CairnBridgeKcd2</AssemblyName>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>   <!-- Windows only, by design: the game and its registry are -->
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
