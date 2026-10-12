@@ -48,6 +48,11 @@ foreach ($grp in (Items $m.features)) {
         if ($f.status -and @('ready', 'inTest', 'planned') -notcontains $f.status) { Fail "feature status '$($f.status)'" }
     }
 }
+foreach ($list in 'hostSteps', 'joinSteps') {
+    $lines = Items $m.$list
+    if ($lines.Count -gt 8) { Fail "$list has more than 8 lines" }
+    foreach ($l in $lines) { if ($l -isnot [string] -or $l.Length -gt 200) { Fail "a line of $list is not a text of at most 200 characters" } }
+}
 $channel = (Get-Content (Join-Path $Root 'RELEASE_CHANNEL') -Raw).Trim()
 if (@('stable', 'beta') -notcontains $channel) { Fail "RELEASE_CHANNEL is '$channel' (stable or beta)" }
 
