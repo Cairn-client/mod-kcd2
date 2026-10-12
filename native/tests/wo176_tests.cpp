@@ -48,6 +48,10 @@ int wo176_tests(int* passed) {
            "a context read is reused for 0.5 s only");
     WCHECK(wo176rules::should_log(0.0, 5.0) && !wo176rules::should_log(5.0, 9.0) && wo176rules::should_log(5.0, 15.0), "WO176-ARRANGED once per actor per 10 s");
     WCHECK(wo176rules::kTickS <= 0.5 && wo176rules::kScanRadiusM >= 30.0f, "the 'already in it' check runs twice a second over 30 m or more");
+    WCHECK(wo176rules::tick_interval(0.0, 100.0) == wo176rules::kIdleTickS && wo176rules::tick_interval(90.0, 100.0) == wo176rules::kTickS &&
+           wo176rules::tick_interval(60.0, 100.0) == wo176rules::kIdleTickS && wo176rules::tick_interval(110.0, 100.0) == wo176rules::kIdleTickS,
+           "the world walk: every 4 s with no story actor seen, 2 Hz for 30 s after one is (a clock that went back -> idle)");
+    WCHECK(wo176rules::kIdleTickS >= 2.0 && wo176rules::kIdleTickS <= 5.0, "idle cadence: a few seconds (the Lua's 1 Hz brain pause and every keep-out site still act at once)");
     // ---- A1: the aftermath (the live run: quest fighters finished off after the controller went Done) and the figure's shield
     WCHECK(wo176rules::arranged_now(0, 0, false, 100.0, 130.0) == Why::Aftermath, "contexts lifted 30 s ago -> still the story's");
     WCHECK(wo176rules::arranged_now(0, 0, false, 100.0, 100.0 + wo176rules::kAftermathS) == Why::None, "after the aftermath -> an ordinary NPC again");

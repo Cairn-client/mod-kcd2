@@ -20,7 +20,15 @@ inline constexpr int kArrangedContextCount = 2;
 
 inline constexpr double kCacheS = 0.5;       // one actor's context read is reused this long (a blow asks at several sites in one frame)
 inline constexpr double kLogEveryS = 10.0;   // WO176-ARRANGED once per actor per this many seconds
-inline constexpr double kTickS = 0.5;        // the "already in it" check runs twice a second
+inline constexpr double kTickS = 0.5;        // the "already in it" check runs twice a second while a story fight is about
+// The check walks every entity of the level to find the actors near a figure (npcscan::for_each_in_radius): live, at 2 Hz it raised the
+// DLL's own cost in a 3-copy fight from ~700 to ~1,150 us a frame. With no story actor seen for kActiveHoldS it runs every kIdleTickS;
+// any keep-out site or the walk itself seeing one brings the 2 Hz cadence back at once.
+inline constexpr double kIdleTickS = 4.0;
+inline constexpr double kActiveHoldS = 30.0;
+inline double tick_interval(double storySeenAt, double now) {
+    return (storySeenAt > 0.0 && now - storySeenAt >= 0.0 && now - storySeenAt < kActiveHoldS) ? kTickS : kIdleTickS;
+}
 inline constexpr float kScanRadiusM = 40.0f; // actors this near a figure are read by the check
 inline constexpr int kMaxScan = 96;          // at most this many actors read per check
 // After a story fight's contexts lift (the controller Done), its actors stay the story's for this long: the quest heals them, runs its
