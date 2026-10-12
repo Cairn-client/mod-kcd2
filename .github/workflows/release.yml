@@ -32,9 +32,7 @@ jobs:
 
       - name: Build the pack
         shell: pwsh
-        run: |
-          # a beta pack carries the menu bridge (docs/CAIRN.md); the stable one does not, until the bridge has been proven in the game
-          if ((Get-Content RELEASE_CHANNEL -Raw).Trim() -eq 'beta') { ./tools/Build-Pack.ps1 -Bridge } else { ./tools/Build-Pack.ps1 }
+        run: ./tools/Build-Pack.ps1   # the pack carries the menu bridge (docs/CAIRN.md); the smoke test below starts it
 
       - name: The programs of the pack start
         shell: pwsh
