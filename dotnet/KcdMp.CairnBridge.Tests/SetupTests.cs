@@ -135,6 +135,37 @@ public class SetupTests : IDisposable
     }
 
     [Fact]
+    public async Task An_executable_that_is_not_the_modding_tools_build_is_said_so_in_the_packs_words()
+    {
+        MakePack();
+        var retail = Path.Combine(_dir, "retail", "Bin", "Win64", "KingdomCome.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(retail)!);
+        File.WriteAllText(retail, "");
+        var sw = new StringWriter();
+        await SetupCli.RunAsync(new[] { "setup", "check", "--game-exe", retail }, sw, new FakeHost(null, false), Pack);
+        var note = Lines(sw.ToString()).Single(l => l.TryGetProperty("gameExeNote", out _)).GetProperty("gameExeNote").GetString();
+        Assert.Contains("Modding Tools", note);
+    }
+
+    [Fact]
+    public async Task The_modding_tools_found_report_the_folder_the_options_belong_in()
+    {
+        MakePack();
+        var bin = Path.Combine(Mt, "Bin", "Win64ReleaseSteamLTO_DLL");
+        Directory.CreateDirectory(bin);
+        foreach (var f in new[] { "KingdomCome.exe", "Framework.dll", "CrySystem.dll", "WHGame.dll" }) File.WriteAllText(Path.Combine(bin, f), "");
+        Directory.CreateDirectory(Path.Combine(Mt, "Engine"));
+        var exe = Path.Combine(bin, "KingdomCome.exe");
+        var sw = new StringWriter();
+        await SetupCli.RunAsync(new[] { "setup", "check", "--game-exe", exe }, sw, new FakeHost(null, false), Pack);
+        var lines = Lines(sw.ToString());
+        Assert.DoesNotContain(lines, l => l.TryGetProperty("gameExeNote", out _));
+        var found = lines.Single(l => l.TryGetProperty("found", out _)).GetProperty("found");
+        Assert.Equal(exe, found.GetProperty("gameExe").GetString());
+        Assert.Equal(Mt, found.GetProperty("gameDir").GetString());
+    }
+
+    [Fact]
     public async Task With_Steam_installed_but_not_running_the_launcher_is_told_to_start_it_once()
     {
         MakePack();
