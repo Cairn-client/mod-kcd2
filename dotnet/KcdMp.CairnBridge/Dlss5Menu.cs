@@ -21,7 +21,9 @@ public sealed class Dlss5Menu
     private string? _ini;
     private bool _inSubmenu;
 
-    public Dlss5Menu(string gameDir) { _gameDir = gameDir; }
+    private readonly System.Diagnostics.Process? _game;   // its exe's folder is looked in first, as the launcher always did
+
+    public Dlss5Menu(string gameDir, System.Diagnostics.Process? game = null) { _gameDir = gameDir; _game = game; }
 
     public bool InSubmenu { get { lock (_gate) return _inSubmenu; } }
 
@@ -37,7 +39,7 @@ public sealed class Dlss5Menu
     {
         lock (_gate)
         {
-            if (DateTime.UtcNow - _scannedAt > TimeSpan.FromSeconds(60)) { _scanned = Dlss5.FindOptiScalerIni(_gameDir); _scannedAt = DateTime.UtcNow; }
+            if (DateTime.UtcNow - _scannedAt > TimeSpan.FromSeconds(60)) { _scanned = Dlss5.FindOptiScalerIni(_gameDir, _game); _scannedAt = DateTime.UtcNow; }
             return _scanned;
         }
     }
@@ -69,13 +71,13 @@ public sealed class Dlss5Menu
             {
                 if (id != Dlss5.MenuItemId) return (false, null, false);
                 if (verb != "enter" || !Active) return (true, null, false);
-                _ini = Dlss5.FindOptiScalerIni(_gameDir);
+                _ini = Dlss5.FindOptiScalerIni(_gameDir, _game);
                 if (!string.IsNullOrEmpty(_ini)) Dlss5.EnsureShortcutKeyDisabled(_ini);
                 _inSubmenu = true;
                 return (true, SubmenuJson(), false);
             }
             if (id == "dlss5_back") { if (verb == "enter") { _inSubmenu = false; return (true, null, true); } return (true, null, false); }
-            _ini ??= Dlss5.FindOptiScalerIni(_gameDir);
+            _ini ??= Dlss5.FindOptiScalerIni(_gameDir, _game);
             Dlss5.StepSetting(_ini, id, verb == "nudge" && dir < 0 ? -1 : 1);
             return (true, SubmenuJson(), false);
         }
@@ -97,7 +99,7 @@ public sealed class Dlss5Menu
 
     private string SubmenuJson()
     {
-        _ini ??= Dlss5.FindOptiScalerIni(_gameDir);
+        _ini ??= Dlss5.FindOptiScalerIni(_gameDir, _game);
         var state = Dlss5.BuildSubmenu(GameTitle, _ini);
         var items = new JsonArray();
         foreach (var i in state.Items) items.Add(ItemNode(i));

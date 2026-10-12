@@ -43,10 +43,11 @@ public class SaveCatalogTests : IDisposable
         var slots = Catalog.List();
         Assert.Equal(3, slots.Count);
         Assert.Equal(new[] { "world", "world", "character" }, slots.Select(s => s.Kind));
-        Assert.Equal("playline0: exit", slots[0].Name);
-        Assert.Equal("3 MB", slots[1].Detail);
-        Assert.Equal("Ann's character", slots[2].Name);
-        Assert.Contains("world1", slots[2].Detail);
+        Assert.Equal(new[] { "quick", "Exit save", "Ann's character" }, slots.Select(s => s.Name));   // the newest world first, the characters after
+        Assert.Equal("Playline 1, 3 MB", slots[0].Detail);
+        Assert.Equal("Playline 0, 2 KB", slots[1].Detail);
+
+        Assert.StartsWith("kept for when they join again", slots[2].Detail);
         Assert.Equal(new DateTime(2026, 10, 3, 9, 0, 0, DateTimeKind.Utc), slots[2].WhenUtc);
     }
 
@@ -118,8 +119,31 @@ public class SaveCatalogTests : IDisposable
         Assert.Equal("saves", doc.RootElement.GetProperty("t").GetString());
         var slot = doc.RootElement.GetProperty("slots")[0];
         Assert.Equal("world", slot.GetProperty("kind").GetString());
-        Assert.Equal("playline0: old", slot.GetProperty("name").GetString());
+        Assert.Equal("old", slot.GetProperty("name").GetString());
         Assert.StartsWith("2026-10-01T12:00:00", slot.GetProperty("when").GetString());
         Assert.Equal("""{"t":"toast","text":"Deleted x.","error":false}""", SaveCatalog.ToastJson("Deleted x.", false));
+    }
+
+    [Theory]
+    [InlineData("autosave023", "Autosave 23")]
+    [InlineData("quicksave022", "Quicksave 22")]
+    [InlineData("permanent028", "Permanent save 28")]
+    [InlineData("exit", "Exit save")]
+    [InlineData("Autosave7", "Autosave 7")]
+    [InlineData("my own save", "my own save")]       // a name that is not one of the game's own stays as it is
+    [InlineData("autosave1x", "autosave1x")]
+    public void TheGamesOwnSaveNamesAreSaidInPlainWords(string file, string shown) => Assert.Equal(shown, SaveCatalog.FriendlyName(file));
+
+    [Fact]
+    public void ThePlaylineIsNamedAndTheNewestSaveIsFirst()
+    {
+        World("playline0", "autosave001.whs", new DateTime(2026, 10, 1, 10, 0, 0, DateTimeKind.Utc));
+        World("playline0", "autosave002.whs", new DateTime(2026, 10, 1, 11, 0, 0, DateTimeKind.Utc));
+        World("playline1", "quicksave003.whs", new DateTime(2026, 10, 2, 9, 0, 0, DateTimeKind.Utc));
+        var slots = Catalog.List();
+        Assert.Equal(new[] { "Quicksave 3", "Autosave 2", "Autosave 1" }, slots.Select(s => s.Name));
+        Assert.StartsWith("Playline 1,", slots[0].Detail);
+        Assert.Equal("Playline 10", SaveCatalog.FriendlyLine("playline10"));
+        Assert.Equal("elsewhere", SaveCatalog.FriendlyLine("elsewhere"));
     }
 }

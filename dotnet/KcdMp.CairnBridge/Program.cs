@@ -49,7 +49,7 @@ public static class Program
         using var cts = new CancellationTokenSource();
         using var console = new GameConsole();
         var tail = new LogTail(gameDir, start);
-        var dlss = new Dlss5Menu(gameDir);   // DLSS 5's row in the menu and its submenu (it was the launcher's own)
+        var dlss = new Dlss5Menu(gameDir, game);   // DLSS 5's row in the menu and its submenu (it was the launcher's own)
         var saves = SaveCatalog.Default();
         string lastSaves = "";
         async Task SendSaves(bool force)

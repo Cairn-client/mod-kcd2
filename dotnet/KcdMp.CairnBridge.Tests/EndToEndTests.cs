@@ -147,8 +147,8 @@ public class EndToEndTests : IDisposable
             Assert.Equal("saves", list.GetProperty("t").GetString());
             var slots = list.GetProperty("slots").EnumerateArray().ToList();
             Assert.Equal(3, slots.Count);
-            string oldId = slots.First(s => s.GetProperty("name").GetString() == "playline0: old").GetProperty("id").GetString()!;
-            string freshId = slots.First(s => s.GetProperty("name").GetString() == "playline0: now").GetProperty("id").GetString()!;
+            string oldId = slots.First(s => s.GetProperty("name").GetString() == "old").GetProperty("id").GetString()!;
+            string freshId = slots.First(s => s.GetProperty("name").GetString() == "now").GetProperty("id").GetString()!;
 
             // a save in use is refused with a plain message; the old one goes; the list comes back without it
             await Say("{\"t\":\"save_delete\",\"id\":\"" + freshId + "\"}");
@@ -194,6 +194,61 @@ public class EndToEndTests : IDisposable
         Environment.SetEnvironmentVariable("CAIRN_CONSOLE_URL", _consoleUrl);
         var bridge = Task.Run(() => Program.Main(Array.Empty<string>()));
         await server.WaitForConnectionAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(0, await bridge.WaitAsync(TimeSpan.FromSeconds(8)));
+    }
+
+    [Fact]
+    public async Task TheDlssRowOpensItsSubmenuInTheMenuItselfAndBackReturnsToTheModsMenu()
+    {
+        string ini = Path.Combine(_dir, "OptiScaler.ini");
+        File.WriteAllText(ini, "[Menu]\r\nShortcutKey=45\r\n[DlssNr]\r\nEnabled=false\r\n");
+        string pipeName = "cairn-e2e-" + Guid.NewGuid().ToString("N")[..12];
+        using var server = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 65536, 65536);
+        string log = Path.Combine(_dir, "kcd.log");
+        File.WriteAllText(log, $"Log Started at {DateTime.Now:yyyy-MM-dd HH:mm:ss} (local)\n");
+        Environment.SetEnvironmentVariable("CAIRN_BRIDGE_PIPE", pipeName);
+        Environment.SetEnvironmentVariable("CAIRN_GAME_DIR", _dir);
+        Environment.SetEnvironmentVariable("CAIRN_GAME_START", DateTime.Now.ToString("o"));
+        Environment.SetEnvironmentVariable("CAIRN_GAME_PID", null);
+        Environment.SetEnvironmentVariable("CAIRN_CONSOLE_URL", _consoleUrl);
+        var bridge = Task.Run(() => Program.Main(Array.Empty<string>()));
+        await server.WaitForConnectionAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        using var reader = new StreamReader(server, new UTF8Encoding(false), false, 4096, leaveOpen: true);
+        async Task<JsonElement> Next() => JsonDocument.Parse((await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(8)))!).RootElement.Clone();
+        async Task Say(string line) { var b = Encoding.UTF8.GetBytes(line + "\n"); await server.WriteAsync(b); await server.FlushAsync(); }
+        await Next();   // hello
+
+        // the mod's menu arrives with DLSS 5's row at its end
+        File.AppendAllText(log, P + "1 menu_state Kingdom Come~Mod menu~~Host|friendly_fire~Rules~onoff~1~0~~Friendly fire~help~f3\n");
+        var menu = await Next();
+        var ids = menu.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("id").GetString()).ToList();
+        Assert.Equal(new[] { "friendly_fire", "dlss5_overlay" }, ids);
+
+        // Enter on the row: the submenu comes back in the same menu, marked as a submenu (Back goes to the bridge)
+        await Say("""{"t":"do","id":"dlss5_overlay","verb":"enter"}""");
+        var sub = await Next();
+        Assert.True(sub.GetProperty("back").GetBoolean());
+        Assert.Contains(sub.GetProperty("items").EnumerateArray(), i => i.GetProperty("id").GetString() == "dlss5_nr_enabled");
+
+        // a value changes in OptiScaler's own file, to the right and back to the left
+        await Say("""{"t":"do","id":"dlss5_nr_enabled","verb":"nudge"}""");
+        await Next();
+        Assert.Contains("Enabled=true", File.ReadAllText(ini));
+        await Say("""{"t":"do","id":"dlss5_nr_enabled","verb":"nudge","dir":-1}""");
+        await Next();
+        Assert.Contains("Enabled=false", File.ReadAllText(ini));
+
+        // none of that reached the game's console; Back asks the mod for its own menu again
+        lock (_calls) Assert.Empty(_calls);
+        await Say("""{"t":"back"}""");
+        await Until(() => { lock (_calls) return _calls.Count == 1; });
+        lock (_calls) Assert.Equal("#if KCD2MP_MenuRequest then KCD2MP_MenuRequest(\"state\") end", _calls[0]);
+        File.AppendAllText(log, P + "2 menu_state Kingdom Come~Mod menu~~Host|friendly_fire~Rules~onoff~1~0~~Friendly fire~help~f3\n");
+        var again = await Next();
+        Assert.False(again.TryGetProperty("back", out var b) && b.GetBoolean());
+        Assert.Equal("dlss5_overlay", again.GetProperty("items").EnumerateArray().Last().GetProperty("id").GetString());
+
+        await Say("""{"t":"bye","reason":"done"}""");
         Assert.Equal(0, await bridge.WaitAsync(TimeSpan.FromSeconds(8)));
     }
 
