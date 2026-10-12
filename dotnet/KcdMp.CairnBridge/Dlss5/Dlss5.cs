@@ -54,11 +54,11 @@ namespace KcdMp.CairnBridge.Dlss5Support
         /// <summary>One line for the settings window.</summary>
         public static string Describe(GpuClass c) => c switch
         {
-            GpuClass.Rtx50 => "RTX 50 series: full speed.",
-            GpuClass.Rtx40 => "RTX 40 series: moderate cost.",
-            GpuClass.Rtx30 => "RTX 30 series: heavy, about half your frame rate at full model resolution (lower it in the overlay).",
-            GpuClass.Rtx20 => "RTX 20 series: heavy, about half your frame rate at full model resolution (lower it in the overlay).",
-            _ => "Needs an NVIDIA RTX card, 20 series or newer.",
+            GpuClass.Rtx50 => "RTX 50 series.",
+            GpuClass.Rtx40 => "RTX 40 series.",
+            GpuClass.Rtx30 => "RTX 30 series: heavy on frame rate.",
+            GpuClass.Rtx20 => "RTX 20 series: heavy on frame rate.",
+            _ => "Needs an NVIDIA RTX card.",
         };
 
         /// <summary>The tool's command line for a game's folder. Nothing is a shell string: each argument is its own.</summary>

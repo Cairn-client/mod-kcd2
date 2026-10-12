@@ -77,7 +77,7 @@ public static class OptionsCli
 
     private static string CardText(GpuClass cls, string name) => cls == GpuClass.None
         ? Dlss5.Describe(GpuClass.None) + (name.Length > 0 ? $" This PC has: {name}." : "")
-        : $"{name}. {Dlss5.Describe(cls)}";
+        : Dlss5.Describe(cls);   // just the series: "RTX 50 series."
 
     private static void Say(TextWriter output, object message) { output.WriteLine(JsonSerializer.Serialize(message)); output.Flush(); }
 }
