@@ -4778,6 +4778,7 @@ public partial class GameBridge(ClientConfig config)
                     _ghostNames[ghostId] = gname;
                     Wo144OnPeerConnected(ghostId, gname);   // WO-144: the relay's connection set, the only source of partners
                     await SetGhostNameAsync(ghostId.ToString(), gname);
+                    _ = CairnHenryBackupPushAsync(ghostId, force: false, "peer-connected");   // CAIRN: the host pushes the character it keeps for this name
                 }
                 else if (type == Protocol.ReleaseVersion && payloadLen >= 2)
                 {

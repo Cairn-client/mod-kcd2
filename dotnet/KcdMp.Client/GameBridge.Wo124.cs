@@ -208,6 +208,7 @@ public partial class GameBridge
                 if (!_modeTold.TryGetValue(g, out bool was) || was != _sharedWorld)
                     Console.WriteLine($"MP-JOIN host: session mode {(_sharedWorld ? "shared-world" : "separate")} -> ghost {g}");
                 _modeTold[g] = _sharedWorld;
+                if (_sharedWorld) _ = CairnHenryBackupPushAsync(g, force: false, "tick");   // CAIRN: the host's kept character for this player
             }
             catch (Exception ex) { Console.WriteLine($"MP-JOIN host: session mode not sent to ghost {g}: {ex.Message}"); }
         }
