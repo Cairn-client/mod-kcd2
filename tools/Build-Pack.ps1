@@ -18,15 +18,17 @@
 
     The version is the VERSION file (strict X.Y.Z); the upstream version this tree is based on is UPSTREAM.md's first line.
 
-.PARAMETER Bridge
-    Also build the menu bridge (CairnBridgeKcd2.exe, dotnet\KcdMp.CairnBridge) into the pack and name it as the pack's companion. The launcher then draws the
-    mod menu from the bridge (docs/BRIDGE.md in the launcher repository) and falls back to the log and console if it does not connect. Off by default.
+.PARAMETER NoBridge
+    Leave the menu bridge out. By default the pack carries it (CairnBridgeKcd2.exe, dotnet\KcdMp.CairnBridge) and names it as the pack's companion: the launcher
+    then draws the mod menu from the bridge (docs/BRIDGE.md in the launcher repository), and falls back to the log and console if it does not connect.
+    A pack without it needs launcher 0.3.7 or newer; one with it, 0.3.10.
 
 .PARAMETER SkipBuild
     Pack what release\pack-stage already holds (iterating on this script only).
 #>
 [CmdletBinding()]
-param([switch] $SkipBuild, [switch] $Bridge)
+param([switch] $SkipBuild, [switch] $NoBridge)
+$Bridge = -not $NoBridge
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
@@ -89,7 +91,7 @@ foreach ($n in @("bin\$agentName", "bin\$relayName", "bin\$nativeName", 'mod\mod
     if (-not (Test-Path (Join-Path $stage $n))) { throw "the pack is missing $n" }
 }
 
-# the menu bridge, when this pack carries one (-Bridge, or a stage built with it): the launcher then talks to the mod's menu through it and needs a launcher that speaks the bridge
+# the menu bridge, when this pack carries one (a stage built without -NoBridge): the launcher then talks to the mod's menu through it and needs a launcher that speaks the bridge
 $bridgeName = 'CairnBridgeKcd2.exe'
 $hasBridge = Test-Path (Join-Path $stage "bin\$bridgeName")
 $launcherMin = if ($hasBridge) { '0.3.10' } else { '0.3.7' }
