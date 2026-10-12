@@ -91,6 +91,7 @@ $packJson = [ordered]@{
     brandPak    = 'bin/kdcmp_brand.pak'
     agentConfig = 'kcdmp-client.json'
     launcherMin = '0.1.0'
+    replacesFolders = @('cairn')   # the earlier Cairn mod's folder: the launcher removes it when it is provably ours (two mods would load twice)
 }
 [IO.File]::WriteAllText((Join-Path $stage 'pack.json'), (($packJson | ConvertTo-Json) + "`n"), (New-Object System.Text.UTF8Encoding($false)))
 
