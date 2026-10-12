@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\KcdMp.CairnBridge\KcdMp.CairnBridge.csproj" />
+    <ProjectReference Include="..\KcdMp.CairnBridge.FakeGame\KcdMp.CairnBridge.FakeGame.csproj" />
   </ItemGroup>
 
 </Project>
