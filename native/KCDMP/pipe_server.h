@@ -96,7 +96,7 @@
 //                        when the toggle is typed on the Lua side. The DLL's
 //                        own native console command sets the same flag.
 //     0x0E MirrorGrave  [op:1][owner:1][graveId:8 LE][x:4f][y:4f][z:4f]  (22)
-//          op 1 add, 0 remove, 2 clear the owner's; WO-164: 3 the owner's map pin set / moved to x y z (WO-171: graveId's low byte = the picture code, 0 = none, 1..32 = colour*8+frame+1), 4 the pin removed
+//          op 1 add, 0 remove, 2 clear the owner's; WO-164: 3 the owner's map pin set / moved to x y z, 4 the pin removed
 //                        WO-113: op 1 = add a peer's gravestone + marker
 //                        (never lootable, never saved), op 0 = remove it,
 //                        op 2 = remove every mirror of `owner` (0xFF = all).
@@ -331,8 +331,6 @@ constexpr uint8_t kWo147Reply         = 0xAA;
 constexpr uint8_t kWo151              = 0x2A;
 constexpr uint8_t kWo151Reply         = 0xAB;
 // WO-163: shared combat (native wo163.h): 0x2B [op][...] -> 0xAC [ok][seq][op][reason][payload].
-// WO-171: a partner's name for its map pin: 0x2C [owner:1][len:1][utf8 len<=31] -> 0x81 (the hover title of the pin's mark)
-constexpr uint8_t kPinLabel           = 0x2C;
 constexpr uint8_t kWo163              = 0x2B;
 constexpr uint8_t kWo163Reply         = 0xAC;
 constexpr uint8_t kSaveListReply      = 0x8D;   // [ok][seq][listed][idx:2][count:2][current][contPl][contIdx:2][nameLen][contName]

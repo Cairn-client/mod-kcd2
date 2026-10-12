@@ -10,9 +10,6 @@
 #include "wo165.h"
 #include "wo166.h"
 #include "wo167.h"
-#include "wo172.h"
-#include "wo173.h"
-#include "wo176.h"
 
 #include <atomic>
 #include <cstdio>
@@ -117,7 +114,6 @@ uint8_t handle(const uint8_t* body, size_t len, uint8_t* out, size_t cap, size_t
             void* hostSoul = peid ? hits::soul_of_eid(peid) : nullptr;
             void* npcSoul = eid ? hits::soul_of_eid(eid) : nullptr;
             if (!hostSoul || (on && !npcSoul)) return kRNoSoul;
-            if (on && hits::scene_owned_eid(eid, "wo163-pair")) { out[0] = 0; *outLen = 1; return kRFailed; }   // WO-174
             uint64_t rv = 0;
             const bool done = on ? hits::skirmish_add(hostSoul, npcSoul, ovr, &rv) : hits::skirmish_remove(hostSoul, &rv);
             logf("WO163-PAIR host %s npc=0x%X override=%u -> %s", on ? "joins the skirmish of" : "leaves its skirmish; was against", eid, ovr, done ? "done" : "FAILED");
@@ -194,18 +190,6 @@ uint8_t handle(const uint8_t* body, size_t len, uint8_t* out, size_t cap, size_t
         case kcdmp::wo167::kOpStatus:
         case kcdmp::wo167::kOpConfig:
             return kcdmp::wo167::handle(body[0], body, len, out, cap, outLen);
-        case kcdmp::wo172::kOpDead:   // WO-172 C1
-        case kcdmp::wo172::kOpStatus:
-        case kcdmp::wo172::kOpConfig:
-            return kcdmp::wo172::handle(body[0], body, len, out, cap, outLen);
-        case kcdmp::wo173::kOpRealHit:   // WO-173 C1 / C2
-        case kcdmp::wo173::kOpStatus:
-        case kcdmp::wo173::kOpConfig:
-        case kcdmp::wo173::kOpDownPoll:
-            return kcdmp::wo173::handle(body[0], body, len, out, cap, outLen);
-        case kcdmp::wo176::kOpStatus:   // WO-176 A1
-        case kcdmp::wo176::kOpConfig:
-            return kcdmp::wo176::handle(body[0], body, len, out, cap, outLen);
         default:
             return kRBadRequest;
     }

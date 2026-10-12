@@ -127,7 +127,6 @@ public partial class GameBridge
     private async Task OnNpcAvatarHitAsync(uint victimEid, float stamina, float health, uint attackerEid, byte flags, string attacker)
     {
         if (!_isDamageAuthority) return;
-        Wo173NoteFigureFight(attacker);   // WO-173 C2: an NPC fighting a figure -- its down / up goes to the joiners
         byte? gid = GhostOfEid(victimEid);
         if (gid is not byte g)
         {

@@ -632,7 +632,6 @@ public partial class GameBridge(ClientConfig config)
     private string? _localQuest;                       // lowercase quest from our marker (null = side content / unknown)
     private readonly ConcurrentDictionary<byte, string> _peerApproach = new();   // ghostId -> last approach path
     private readonly ConcurrentDictionary<byte, (float X, float Y, float Z, DateTime AtUtc)> _ghostLastPos = new();
-    private readonly ConcurrentDictionary<byte, float> _ghostLastYaw = new();   // WO-171 M: the partner's streamed yaw (radians), for the map marker's facing
     private readonly ConcurrentDictionary<byte, (string Beat, DateTime AtUtc)> _peerCatchup = new();
     private (string Beat, DateTime AtUtc)? _localCatchup;
 
@@ -1852,7 +1851,6 @@ public partial class GameBridge(ClientConfig config)
             tailForPause.PauseStateChanged += OnLocalPauseDetected;
             tailForPause.SkipTimeStateChanged += OnLocalSkipTime;
             tailForPause.StoryBeatDetected += OnLocalStoryBeat;
-            tailForPause.SaveInitiated += Wo174OnSaveInitiated;      // WO-174
             tailForPause.LevelDetected += OnLocalLevel;              // WO-94
             tailForPause.CutsceneStateChanged += OnLocalCutscene;    // WO-94
             tailForPause.PlayerTeleported += OnLocalTeleport;        // WO-94
@@ -1872,7 +1870,6 @@ public partial class GameBridge(ClientConfig config)
             tailForPause.LoadStarted += Wo124OnLoadStarted;          // WO-124
             tailForPause.GameQuit += Wo124OnGameQuit;                // WO-124: quitting from the host's world
             tailForPause.SaveLoadAccepted += Wo124OnSaveLoadAccepted;   // WO-124
-            tailForPause.SaveLoadAccepted += Wo175OnSaveLoadAccepted;   // WO-175: the loaded file, for the health check
             tailForPause.LoadFailedToMenu += Wo124OnLoadFailedToMenu;   // WO-124
             tailForPause.MainMenuShown += Wo124OnMainMenuShown;         // WO-124
 
@@ -2152,11 +2149,11 @@ public partial class GameBridge(ClientConfig config)
                     float x, y, z, rotZ; bool riding; LocalBodyState? local = null;
                     if (nat is LocalState ns)
                     {
-                        x = ns.X; y = ns.Y; z = ns.Z; rotZ = ns.RotZ; riding = Wo172Riding(ns.IsRiding); local = ns.Body;   // WO-172 R1
+                        x = ns.X; y = ns.Y; z = ns.Z; rotZ = ns.RotZ; riding = ns.IsRiding; local = ns.Body;
                     }
                     else
                     {
-                        x = st.X; y = st.Y; z = st.Z; rotZ = st.RotZ; riding = Wo172Riding(st.IsRiding);   // WO-172 R1
+                        x = st.X; y = st.Y; z = st.Z; rotZ = st.RotZ; riding = st.IsRiding;
                     }
                     Wo127NoteLocal(x, y, z, riding);   // WO-127: the leash recorder's host/joiner anchor
 
@@ -2262,7 +2259,6 @@ public partial class GameBridge(ClientConfig config)
                 tailForPause2.PauseStateChanged -= OnLocalPauseDetected;
                 tailForPause2.SkipTimeStateChanged -= OnLocalSkipTime;
                 tailForPause2.StoryBeatDetected -= OnLocalStoryBeat;   // WO-90
-                tailForPause2.SaveInitiated -= Wo174OnSaveInitiated;    // WO-174
                 tailForPause2.LevelDetected -= OnLocalLevel;            // WO-94
                 tailForPause2.CutsceneStateChanged -= OnLocalCutscene;  // WO-94
                 tailForPause2.PlayerTeleported -= OnLocalTeleport;      // WO-94
@@ -4446,7 +4442,6 @@ public partial class GameBridge(ClientConfig config)
         try { await ExecLuaAsync($"if KCD2MP_SetHitSensor then KCD2MP_SetHitSensor({(isAuthority ? "true" : "false")}) end"); }
         catch (Exception ex) { Console.WriteLine($"[role] could not tell the mod: {ex.Message}"); }
         await Wo133TickAsync();   // WO-133: the role decides the shared-world quest gate; tell the mod now, not on the next tick
-        await Wo176PushConfigAsync();   // WO-176: the figure check runs in the host's world only
     }
 
     private async Task SendAppearanceAsync(Stream stream, Guid[] itemClasses, CancellationToken ct)
@@ -4709,7 +4704,6 @@ public partial class GameBridge(ClientConfig config)
                         }
                     }
                     _ghostLastPos[ghostId] = (x, y, z, DateTime.UtcNow);
-                    _ghostLastYaw[ghostId] = rotZ;
                     _voice?.UpdateGhostPos(ghostId, x, y, z);
                     // The backlog fix: behind, a sample a newer one supersedes (no state block of its own) is not pushed.
                     if (!Wo147GhostSkip(ghostId, frame.Arrival, gs.State2 is not null))
@@ -4831,9 +4825,6 @@ public partial class GameBridge(ClientConfig config)
                     // alone is not enough -- a reconnecting peer reuses the
                     // ghost id, and a queued swing would then wait for the NEW
                     // body's id and play on it.
-                    // WO-174: the host takes the figure out of every skirmish BEFORE its body goes (the engine's own RemoveSoul: no
-                    // vanished party stays in a fight, a scripted brawl's included); the entity id is still known here
-                    if (_isDamageAuthority) { try { await Wo174LeaveBeforeRemoveAsync(ghostId); } catch (Exception ex) { Console.WriteLine($"MP-W174 leave-fight failed: {ex.Message}"); } }
                     _ghostEntityIds.TryRemove(ghostId.ToString(), out _);
                     BumpGhostGeneration(ghostId.ToString(), "peer disconnected");
                     if (_peerApproach.TryRemove(ghostId, out _))
@@ -4949,9 +4940,7 @@ public partial class GameBridge(ClientConfig config)
                                 $"MP-DMG dir=in ghost={ndSource} npc={ndName} hp={ndHealth:F1} st={ndStamina:F1} fatal={(ndFatal ? 1 : 0)} result={(localGuid is null ? "nosoul" : !ndHasDelta ? "nodelta" : ndApplied ? "applied" : "failed")} authority={(_isDamageAuthority ? 1 : 0)}"));
                             if (ndApplied)
                                 _ = TriggerReactiveAggroAsync(ndSource, ct);
-                            if (ndFatal && _isDamageAuthority && Wo176IsArranged(ndName))
-                                Wo176NoteFatalKept(ndName, ndSource);   // WO-176 A1: a quest's arranged fight decides its own deaths
-                            else if (ndFatal)
+                            if (ndFatal)
                                 await ApplyRemoteNpcDeathAsync(ndName, localGuid, ndSource, "0x31 FATAL", ct);
                         }
                     }
@@ -5964,9 +5953,6 @@ public partial class GameBridge(ClientConfig config)
             case "cairn_logs_collect": // CAIRN: the host's menu: collect everyone's logs
                 _ = CairnLogsCollectAsync();
                 return;
-            case "w175_coop":        // WO-175 S1: mp_coop_playline on|off|status (mod-settings.json)
-                Wo175CoopOnEvent(arg);
-                return;
             case "mp_mark":          // WO-140: the checklist's markers (mark_<word>)
                 Console.WriteLine($"MP-MARK {(arg ?? "").Trim()} -- the tester's marker (typed on this machine)");
                 // WO-164 M: "Something's wrong here" (mark_odd) -- a state snapshot here and on the partner's machine, joined by mark=
@@ -5979,9 +5965,6 @@ public partial class GameBridge(ClientConfig config)
             case "w164_pin":         // WO-164 C2: mp_partner_marker
             case "w164_escort":      // WO-164 ESC: a quest NPC follows this joiner
                 Wo164OnEvent(name, arg);
-                return;
-            case "w171_cfg":         // WO-171 M: the partner marker's style / direction offset / flip
-                Wo171OnCfg(arg);
                 return;
             case "w141":             // WO-141: mp_activities on|off / kinds <n> / status
                 Wo141OnModLine(arg);
@@ -6013,21 +5996,11 @@ public partial class GameBridge(ClientConfig config)
             case "w154_status":
                 Wo154OnEvent(name, arg);
                 return;
-            case "w174_endfig":      // WO-174: a friendly-fire knockdown -> the figure leaves the punch's skirmish
-                Wo174OnEvent(arg);
-                return;
-            case "w175_check":       // WO-175 S4: check the loaded (or just written) save for a stuck quest fight
-            case "w175_cfg":         // WO-175: mp_save_health / mp_save_guard
-                Wo175OnEvent(name, arg);
-                return;
             case "w154_voice":       // WO-154 6.7: the mod menu's voice switch (on|off), connected or not
                 Wo154OnVoiceEvent(arg);
                 return;
             case "w165_cfg":         // WO-165: mp_host_lock, mp_victim_decides, mp_block_recoil
                 Wo165OnEvent(name, arg);
-                return;
-            case "w176_cfg":         // WO-176: mp_arranged_guard (A1), mp_copy_blocks (B3a)
-                Wo176OnEvent(name, arg);
                 return;
             case "w166_talkstate":   // WO-166 T3: a talk that never started -- the copy's facts
             case "w166_talk":        // WO-166 T4: a talk refused, the host's NPC busy
@@ -6041,16 +6014,6 @@ public partial class GameBridge(ClientConfig config)
             case "w167_ftpick":      // WO-167 FT2: a pick on this player's travel map
             case "w167_fault":       // WO-167: the mod's half of a feature faulted (the standing rule)
                 Wo167OnEvent(name, arg);
-                return;
-            case "w172_dead":        // WO-172 C1: the mod applied the host's death to this copy
-            case "w172_alive":       // WO-172 C1: it reads alive again (a reload)
-            case "w172_mount":       // WO-172 R1: this player's own IsMounted
-            case "w173_cfg":         // WO-173: mp_real_hits
-            case "w173_status":
-                Wo173OnEvent(name, arg);
-                return;
-            case "w172_cfg":         // WO-172: mp_dead_wins / mp_ride_repair
-                Wo172OnEvent(name, arg);
                 return;
             case "w163_hostile":     // WO-163 A7: the host's 5 s judge asks the engine whether the victim is in a skirmish fight with the host
             case "w163_probe":       // WO-163 Stage B: mp_w163_probe (the maintainer present; reads and the P6 / P8 levers)

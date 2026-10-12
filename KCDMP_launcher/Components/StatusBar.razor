@@ -28,10 +28,6 @@
         <span class="status-btn" @onclick="OnCheckSetup">
             CHECK SETUP
         </span>
-        <span class="sep">|</span>
-        <span class="status-btn" @onclick="OnRestoreSaves">
-            RESTORE SAVES
-        </span>
     </div>
 
     <div class="status-center">
@@ -66,5 +62,4 @@
     [Parameter] public EventCallback OnReportBug { get; set; }
     [Parameter] public EventCallback OnAbout { get; set; }   // WO-148
     [Parameter] public EventCallback OnCheckSetup { get; set; }   // WO-150
-    [Parameter] public EventCallback OnRestoreSaves { get; set; }   // WO-175 S2
 }

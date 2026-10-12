@@ -3394,7 +3394,6 @@ local function mp_npc_death_observe(name, dead, hp, src)
             -- transition here, and a peer's living NPC must not die to a
             -- stranger's savegame.
             mp_log(string.format("NPC-DEATH %s first seen already dead (by %s) -- not announced", name, src))
-            if src == "puppet" and KCD2MP_W172CopyDied then pcall(KCD2MP_W172CopyDied, name, "first-seen") end   -- WO-172 C1 (WO-171 F3)
         end
         return false
     end
@@ -3409,7 +3408,6 @@ local function mp_npc_death_observe(name, dead, hp, src)
         if remote then
             mp_log(string.format("NPC-DEATH %s died here (by %s, hp=%s) -- applied from a peer via %s, not announced",
                 name, src, tostring(hp), tostring(remote.via)))
-            if KCD2MP_W172CopyDied then pcall(KCD2MP_W172CopyDied, name, remote.via) end   -- WO-172 C1: the host's death wins
         elseif announced then
             mp_log(string.format("NPC-DEATH %s died here (by %s, hp=%s) -- already announced by %s",
                 name, src, tostring(hp), tostring(announced)))
@@ -3428,7 +3426,6 @@ local function mp_npc_death_observe(name, dead, hp, src)
         -- different entity answering to the name. Forget the death so the
         -- next one can be announced again.
         mp_log(string.format("NPC-DEATH %s reads ALIVE again (by %s) -- was dead; reload? clearing its death marks", name, src))
-        if KCD2MP_W172CopyAlive then pcall(KCD2MP_W172CopyAlive, name) end   -- WO-172 C1
         KCD2MP._npcDeathAnnounced[name] = nil
         KCD2MP._npcDeathRemote[name] = nil
         KCD2MP._npcDeathDiverged[name] = nil
@@ -3738,9 +3735,6 @@ end
 -- Phase 3/4. The agent asks; the engine writes the save when it can.
 function KCD2MP_HostWorldSave(why, attempt)
     local w = KCD2MP.w122
-    if KCD2MP_W175SaveAllowed and not KCD2MP_W175SaveAllowed("world-save:" .. tostring(why)) then return false end   -- WO-175 S3
-    if KCD2MP_W175BeforeSave then pcall(KCD2MP_W175BeforeSave, why) end
-    if KCD2MP_W174Clean then pcall(KCD2MP_W174Clean, "save") end   -- WO-174: partner-figure fight records out before the save
     if not (Game and Game.SaveGameViaResting) then
         mp_log("MP-WORLDSAVE Game.SaveGameViaResting not registered on this build -- no world save")
         return false
@@ -4386,7 +4380,6 @@ function KCD2MP_OnChainDeadRestart(key)
     end
     mp_log(string.format("MP-RELOAD-RESET chain=%s death_seen_cleared=%d dwells_forgotten=%d puppets_reset=%d n=%d",
         tostring(key), deaths, dwells, puppets, KCD2MP._reloadResetN))
-    if KCD2MP_W172OnLoad then pcall(KCD2MP_W172OnLoad, "reload-reset") end   -- WO-172 FT1/UI1
 end
 
 -- WO-110 Phase 6 (WO-109 s2.3): the four human:IsInDialog guards used to
@@ -5540,7 +5533,6 @@ function KCD2MP_Wo114Msg(text)
     w.msgs = w.msgs + 1
     mp_log("WO114-MSG " .. tostring(text))
     pcall(KCD2MP_ShowInteractionMsg, tostring(text))
-    if tostring(text) == "Your host fast-travelled." and KCD2MP_W172AfterHostTravel then pcall(KCD2MP_W172AfterHostTravel, "leash-placed") end   -- WO-172 FT1
 end
 
 -- The countdown row: n seconds left (0 clears). The host sends one a second;
@@ -5668,7 +5660,6 @@ end
 -- the game's own HUD toast now, and the plain line again once the map closes.
 function KCD2MP_Wo114FastTravelTried(how)
     local w = KCD2MP.w114
-    if KCD2MP_W172TravelRefused then pcall(KCD2MP_W172TravelRefused, how) end   -- WO-172 FT1: any refused travel here (a quest's own)
     if not w.ftBlocked then return false end
     -- WO-167 FT2: with the session's fast travel on, this player's pick is asked of the host (the shared travel starts, or "Your partner
     -- can't travel right now"): the engine's own refusal here says nothing. FT4: off -> the session's off message (WO-154), never "only the host"
@@ -6306,8 +6297,6 @@ function KCD2MP_W131LootAllowed(body, kind, orig, user, slot)
     -- WO-134: a body's loot is a request to the host (its list, then the loot screen);
     -- pickpocketing a living NPC stays blocked.
     if kind == "loot" and orig and KCD2MP_W134LootRequest and KCD2MP_W134LootRequest(body, orig, user, slot) then return false end
-    -- WO-172 P1: a pickpocket is the game's own minigame on this copy, every take asked of the host (WO-134's take and take-back)
-    if kind == "pickpocket" and orig and KCD2MP_W172PickRequest and KCD2MP_W172PickRequest(body, orig, user, slot) then return false end
     w.stats.lootBlocked = w.stats.lootBlocked + 1
     mp_log(string.format("WO131-LOOT blocked npc=%s kind=%s -- host-owned; only the host loots for now", tostring(name), kind))
     KCD2MP_ShowNativeToast(kind == "pickpocket" and "Only the host can pickpocket in co-op for now."
@@ -6332,7 +6321,7 @@ function KCD2MP_W131InstallLootBlock()
         local orig = BasicAIActions.OnPickpocketing
         w.pickOrig = orig
         w.pickWrap = function(self, user, slot)
-            if not KCD2MP_W131LootAllowed(self, "pickpocket", orig, user, slot) then return end
+            if not KCD2MP_W131LootAllowed(self, "pickpocket") then return end
             return orig(self, user, slot)
         end
         BasicAIActions.OnPickpocketing = w.pickWrap
@@ -6524,10 +6513,7 @@ do
             -- ragdolled, and StandUp does nothing then (observed, run J1). The
             -- engine's actor:Revive(false) puts it on its feet (observed); its
             -- health keeps following the host's (WO-131 FollowHp).
-            local fw = KCD2MP.w173 and KCD2MP.w173.fastWake and KCD2MP.w173.fastWake[name]
-            local wakeMs = (fw and (os.clock() - fw) < 5) and 300 or 1500   -- WO-173 C2: the host's NPC is up: its copy within 0.5 s
-            if fw then KCD2MP.w173.fastWake[name] = nil end
-            Script.SetTimer(wakeMs, function()
+            Script.SetTimer(1500, function()
                 local e2 = w135_body(name)
                 if not (e2 and e2.actor) or w135_dead(e2) or w135_down(e2) then return end
                 local rok = pcall(function() e2.actor:Revive(false) end)
@@ -6764,9 +6750,6 @@ function KCD2MP_W136Hold(on, ttlS, why)
     mp_log(string.format("WO136-HOLD off why=%s held_s=%.1f replayed=%d -- NPCs are the host's stream again",
         tostring(why or "?"), now - (w.holdSince or now), n))
     if KCD2MP_W147ReannouncePuppets then KCD2MP_W147ReannouncePuppets("load " .. tostring(why or "?")) end   -- WO-147
-    if tostring(why) == "gameplay+settle" and KCD2MP_W174Clean then pcall(KCD2MP_W174Clean, "load") end   -- WO-174: once after every load
-    if tostring(why) == "gameplay+settle" and KCD2MP_W174AfterLoad then pcall(KCD2MP_W174AfterLoad, "settle") end
-    if tostring(why) == "gameplay+settle" and KCD2MP_W175AfterLoad then pcall(KCD2MP_W175AfterLoad, "settle") end   -- WO-175
     return true
 end
 
@@ -6941,7 +6924,6 @@ function KCD2MP_W136Ridden(name)
         mp_log(string.format("WO136-RIDE return npc=%s after_s=%.1f -- the host's world has its horse again (bound where the rider left it)",
             name, os.clock() - (r.at or os.clock())))
         KCD2MP_EmitEvent("w136_ride", name .. " 0")
-        if KCD2MP_W172GroundSnap then pcall(KCD2MP_W172GroundSnap, name, nil, "ride-return") end   -- WO-172 R1
         return false
     end
     return true
@@ -7226,12 +7208,6 @@ function KCD2MP_W137Session(host, joiner, active)
         -- the agent (re)connected: it follows this toggle (it keeps no value of its own across restarts)
         KCD2MP_EmitEvent("w137_sync", w.sync and "on" or "off")
         if KCD2MP.w170 then KCD2MP_EmitEvent("w166_cfg", "figure_guard=" .. (KCD2MP.w170.figureGuard and "on" or "off")) end   -- WO-170 F1
-        if KCD2MP.w173 then KCD2MP_EmitEvent("w173_cfg", "real_hits=" .. (KCD2MP.w173.realHits and "on" or "off")) end   -- WO-173
-        if KCD2MP.w176 and KCD2MP_W176Emit then KCD2MP_W176Emit() end   -- WO-176
-        if KCD2MP.w172 then   -- WO-172: the switches the agent acts on
-            KCD2MP_EmitEvent("w172_cfg", "dead_wins=" .. (KCD2MP.w172.deadWins and "on" or "off"))
-            KCD2MP_EmitEvent("w172_cfg", "ride_repair=" .. (KCD2MP.w172.rideRepair and "on" or "off"))
-        end
         if KCD2MP.w167 then   -- WO-167: the switches the agent acts on
             KCD2MP_EmitEvent("w167_cfg", "scene_release=" .. (KCD2MP.w167.sceneRelease and "on" or "off"))
             KCD2MP_EmitEvent("w167_cfg", "talk_fallback=" .. (KCD2MP.w167.talkFallback and "on" or "off"))
@@ -7537,7 +7513,6 @@ function KCD2MP_W137TalkEnd(name, why, keep)   -- keep (WO-167 T1): the copy is 
     -- WO-144 3.2: a conversation that ended well may be the start of a minigame with this NPC (dice):
     -- the end waits endDeferS (KCD2MP_W137TalkTick finishes it, or it becomes the minigame's hold)
     if why == "dialog-ended" and t.started and not t.endAt and not t.minigame then
-        if KCD2MP_W172TradeKeep and KCD2MP_W172TradeKeep(name, t) then return end   -- WO-172 H1: a trader stays until the trade screen closes
         t.endAt, t.endWhy = os.clock() + w.endDeferS, why
         return
     end
@@ -7634,7 +7609,7 @@ function KCD2MP_W137TalkTick()
     pcall(function() inDialog = player ~= nil and player.human ~= nil and player.human:IsInDialog() == true end)
     local ending = {}
     for name, t in pairs(w.talking) do
-      if not (t.minigame or t.endAt or t.trade) then   -- WO-144 3.2: a deferred end / a minigame hold is decided above (WO-172 H1: a trade too)
+      if not (t.minigame or t.endAt) then   -- WO-144 3.2: a deferred end / a minigame hold is decided above
         local age = now - t.since
         if inDialog then
             t.notInDialogSince, t.sawDialog = nil, true
@@ -9284,7 +9259,6 @@ function KCD2MP_ApplyNpcState(name, x, y, z, rot, hp, flags, src, seq, senderMs)
     end
 
     if not p then
-        if KCD2MP_W172GroundSnap and tostring(e.class) == "Horse" then pcall(KCD2MP_W172GroundSnap, name, e, "stream-takes-it") end   -- WO-172 R1
         local cur = e:GetWorldPos()
         p = { cx = cur.x, cy = cur.y, cz = cur.z, cr = rot, animTag = "idle",
               ax = cur.x, ay = cur.y }   -- WO-108 s3.3: where the engine had this body before we wrote it (the relax anchor)
@@ -11290,7 +11264,6 @@ function KCD2MP_RemoveHorse(id)
         -- behaviour once position writes stop (WO-32's release principle).
         KCD2MP.horseGhosts[id] = nil
         mp_log("ReleaseWorldHorse id=" .. id .. " '" .. tostring(horseData.worldName) .. "'")
-        if KCD2MP_W172HorseReleased then pcall(KCD2MP_W172HorseReleased, horseData.worldName, horseData.entity) end   -- WO-172 R1
         if KCD2MP_W151AvatarLeavesHorse then pcall(KCD2MP_W151AvatarLeavesHorse, horseData.worldName) end   -- WO-151
         return
     end
@@ -12755,7 +12728,6 @@ function KCD2MP_InterpTick(arg, gen)
     end
     if not KCD2MP.interpRunning then return end
     if KCD2MP_DwellTickFromInterp then KCD2MP_DwellTickFromInterp() end   -- WO-110 Phase 6: dwell resumes even with mp_npc_sync off
-    if KCD2MP_W172Tick then pcall(KCD2MP_W172Tick) end   -- WO-172 R1/H1 (4 Hz inside)
     -- WO-78: chain identity, mirroring the puppet tick's WO-69 instrument.
     -- `gen` is nil for the external menu pump (never reschedules, cannot leak)
     -- and for any legacy bare reschedule. The 2026-09-11 field session had no
@@ -13566,8 +13538,6 @@ end
 function KCD2MP_RemoveGhost(id)
     local ghost = KCD2MP.ghosts[id]
     if not ghost then return end
-    -- WO-174: a figure that leaves takes its fight records with it (hostile pairs, a punch's fight) -- before its body goes
-    if KCD2MP_W174Clean then pcall(KCD2MP_W174Clean, "leave", ghost.entity) end
     -- Remove horse ghost first (if riding)
     KCD2MP_RemoveHorse(id)
     -- WO-27: was a single unchecked System.RemoveEntity. It returns without
@@ -16021,8 +15991,6 @@ function KCD2MP_ItemSyncTick()
                 end
             end
             mp_log("ITEM-SYNC restart sweep: reload detected, re-baselined")
-            if KCD2MP_W174AfterLoad then pcall(KCD2MP_W174AfterLoad, "reload") end   -- WO-174: Lua's own load detector (no agent needed)
-            if KCD2MP_W175AfterLoad then pcall(KCD2MP_W175AfterLoad, "reload") end   -- WO-175: the save-lock chain restarts, the agent checks the file
         end
         -- else: a menu/pause gap -- the world is intact, prev counts are
         -- still valid, and a drop made INSIDE the inventory screen is about
@@ -18015,15 +17983,8 @@ function KCD2MP_Mark(word)
     pcall(function() t = Calendar.GetWorldTime() end)
     mp_log(string.format("MP-MARK %s world_time=%.0f -- the tester's marker", word, t))
     KCD2MP_EmitEvent("mp_mark", word)
-    -- WO-172 W1: the mark keeps what the tester saw -- the game's own screenshot (its screenshots folder; works with the window
-    -- minimised). The field's "no weapons on the host" left no trace in any log: a picture at the mark is the evidence next time.
-    if not (KCD2MP.w172 and KCD2MP.w172.markShot == false) then
-        local ok = pcall(System.ExecuteCommand, "r_GetScreenShot 1")
-        mp_log("MP-MARK screenshot asked ok=" .. tostring(ok) .. " -- the game's own, in its screenshots folder (mp_mark_shot off to stop)")
-    end
     KCD2MP_ShowInteractionMsg("Marked: " .. word)
 end
-function KCD2MP_W172SetMarkShot(arg) return KCD2MP_W172Switch("mark_shot", "markShot", arg, "a mark (mark_odd) also takes the game's own screenshot (its screenshots folder)") end
 
 function KCD2MP_W140Status()
     local w = KCD2MP.w140
@@ -21431,728 +21392,6 @@ function KCD2MP_W166SetAutoMode(arg)
     return true
 end
 
--- WO-173 (0.49.0): the joiner's blows become real hits in the host's world (docs/WO-173-findings.md). Default ON in 0.49.1-0.49.2 (WO-174 D), OFF again since 0.50.0 (WO-176 B1: its check could not be staged).
---   mp_real_hits (host; the agent and the DLL act on it): the joiner's blow on a host NPC goes through the host game's own hit processor --
---      the NPC's own rules decide hit / block / parry, it reacts as to the host's blows; off = the old raw damage, its stamina capped so
---      one blow never knocks a fighter out.
---   KCD2MP_W173Down(name, state) (joiner, from the agent): the host's NPC is up (0) / knocked out (1) / dead (2) -- its copy follows now.
---   WO173-TOGGLE ...   WO173-DOWN npc=<n> state=<0|1|2> ...
-KCD2MP.w173 = KCD2MP.w173 or { realHits = false, fastWake = {}, stats = { down = 0, up = 0, dead = 0 } }   -- WO-176 B1: off again in 0.50.0
-function KCD2MP_W173SetRealHits(arg)
-    local v = KCD2MP_Wo122ParseBool(arg)
-    if v == "bad" then mp_log("mp_real_hits: expected on|off"); return false end
-    if v ~= nil then KCD2MP.w173.realHits = v end
-    KCD2MP_EmitEvent("w173_cfg", "real_hits=" .. (KCD2MP.w173.realHits and "on" or "off"))
-    mp_log("WO173-TOGGLE mp_real_hits " .. (KCD2MP.w173.realHits and "on" or "off")
-        .. " -- your partner's blows are real hits in your world (the enemy blocks, parries and reacts by its own rules); off: the old raw damage, never a knock-out from one blow")
-    return true
-end
-function KCD2MP_W173Status()
-    local w = KCD2MP.w173
-    mp_log(string.format("WO173-STATUS real_hits=%s down=%d up=%d dead=%d", w.realHits and "on" or "off", w.stats.down, w.stats.up, w.stats.dead))
-    KCD2MP_EmitEvent("w173_status", "")
-end
-function KCD2MP_W173Down(name, state)
-    local w = KCD2MP.w173
-    local p = KCD2MP.npcPuppets and KCD2MP.npcPuppets[name]
-    if state == 2 then w.stats.dead = w.stats.dead + 1 elseif state == 1 then w.stats.down = w.stats.down + 1 else w.stats.up = w.stats.up + 1 end
-    if p and state ~= 2 then
-        p.ko = state == 1
-        -- the WO-135 tick must not ask again for what the agent is doing now
-        if KCD2MP.w135 and KCD2MP.w135.ko then KCD2MP.w135.ko[name] = { want = state == 1, at = os.clock() } end
-        if state == 0 then w.fastWake[name] = os.clock() end
-    end
-    mp_log(string.format("WO173-DOWN npc=%s state=%d copy=%s", tostring(name), state, p and "yes" or "no"))
-end
-
--- ===== WO-176 (0.50.0): a quest's arranged fight is the story's; blocks shown on both screens (docs/WO-176-findings.md) =====
---   mp_arranged_guard (host; the DLL acts on it, default ON): a fight whose souls carry the quest's arranged-fight contexts
---      (combat_arrangedFight, combat_forceUnarmedWhileInUnarmedSkirmish) never takes a partner's figure -- no skirmish add, no threat, no
---      forced target, no lock-on pair, no blow routed into it -- and a figure already in it is taken out at once. WO-174's name list stays
---      as the second net. The joiner whose blow was kept out is told once (KCD2MP_W176Say).
---   mp_copy_blocks (joiner; the agent acts on it, default ON): a host NPC that blocked / parried your blow plays its own block row on your
---      screen when the host's game sent no reaction of its own.
---   WO176-TOGGLE ...   WO176-NOTICE <text>
-KCD2MP.w176 = KCD2MP.w176 or { arrangedGuard = true, copyBlocks = true }
-function KCD2MP_W176Emit()
-    KCD2MP_EmitEvent("w176_cfg", "arranged_guard=" .. (KCD2MP.w176.arrangedGuard and "on" or "off")
-        .. " copy_blocks=" .. (KCD2MP.w176.copyBlocks and "on" or "off"))
-end
-function KCD2MP_W176SetArrangedGuard(arg)
-    local v = KCD2MP_Wo122ParseBool(arg)
-    if v == "bad" then mp_log("mp_arranged_guard: expected on|off"); return false end
-    if v ~= nil then KCD2MP.w176.arrangedGuard = v end
-    KCD2MP_W176Emit()
-    mp_log("WO176-TOGGLE mp_arranged_guard " .. (KCD2MP.w176.arrangedGuard and "on" or "off")
-        .. " -- a quest's arranged fight is the story's: your partner's figure stays out of it (off: WO-174's name list only)")
-    return true
-end
-function KCD2MP_W176SetCopyBlocks(arg)
-    local v = KCD2MP_Wo122ParseBool(arg)
-    if v == "bad" then mp_log("mp_copy_blocks: expected on|off"); return false end
-    if v ~= nil then KCD2MP.w176.copyBlocks = v end
-    KCD2MP_W176Emit()
-    mp_log("WO176-TOGGLE mp_copy_blocks " .. (KCD2MP.w176.copyBlocks and "on" or "off")
-        .. " -- an enemy that blocks or parries your blow in the host's world shows its block on your screen")
-    return true
-end
--- The joiner's notice (from the agent, once per story fight), on the game's own HUD.
-function KCD2MP_W176Say(text)
-    mp_log("WO176-NOTICE " .. tostring(text))
-    KCD2MP_ShowNativeToast(tostring(text))
-end
-
--- A1 (live finding): a partner's figure is spawned from a local NPC's soul for its face; inside a village fight its own brain joins the
--- side of that soul's village (the meadow fight: the figure from tzel_man_10 joined Zelejov 176 times, the DLL took it out each time).
--- While a story actor (either arranged-fight context) is within 40 m of a figure, the figure's brain is paused with the game's own
--- wh_ai_PauseNPC (the mod's WO-102 lever; its body still moves and swings as its partner does); resumed 5 s after none is near.
---   WO176-PAUSE figure=<n> on story=<actor> | off
-KCD2MP.w176.paused = KCD2MP.w176.paused or {}     -- figure name -> os.clock() when paused
-KCD2MP.w176.nearAt = KCD2MP.w176.nearAt or {}     -- figure name -> os.clock() a story actor was last seen near it
-KCD2MP.w176.stats = KCD2MP.w176.stats or { pause = 0, resume = 0 }
-KCD2MP.w176.radius, KCD2MP.w176.offAfterS, KCD2MP.w176.tickMs, KCD2MP.w176.idleTickMs = 40, 5, 1000, 3000
-function KCD2MP_W176StoryNear(e)
-    local found = nil
-    pcall(function()
-        local p = e:GetWorldPos()
-        for _, o in ipairs(System.GetEntitiesInSphere(p, KCD2MP.w176.radius) or {}) do
-            local nm = o.GetName and o:GetName() or ""
-            if o.id ~= e.id and o.soul and o.soul.HasScriptContext and not tostring(nm):match("^kcd2mp_%d+$") then
-                if o.soul:HasScriptContext("combat_arrangedFight") or o.soul:HasScriptContext("combat_forceUnarmedWhileInUnarmedSkirmish") then
-                    found = nm; break
-                end
-            end
-        end
-    end)
-    return found
-end
-function KCD2MP_W176Pause(name, on, why)
-    local w = KCD2MP.w176
-    if on == (w.paused[name] ~= nil) then return end
-    local ok, err = pcall(System.ExecuteCommand, (on and "wh_ai_PauseNPC " or "wh_ai_ResumeNPC ") .. tostring(name))
-    if on then w.paused[name] = os.clock(); w.stats.pause = w.stats.pause + 1 else w.paused[name] = nil; w.stats.resume = w.stats.resume + 1 end
-    mp_log(string.format("WO176-PAUSE figure=%s %s %s exec=%s -- %s", tostring(name), on and "on" or "off", tostring(why),
-        ok and "ok" or ("err:" .. tostring(err)), on and "a quest's arranged fight is near: the figure's own brain stays out of it" or "no story fight near"))
-end
-function KCD2MP_W176Tick(gen)
-    local w = KCD2MP.w176
-    if gen and gen ~= w.gen then return end   -- an older chain (a load re-armed a new one)
-    w.tickAt = os.clock()
-    local now = os.clock()
-    local live = {}
-    for i = 0, 8 do
-        local nm = "kcd2mp_" .. i
-        local e = nil
-        pcall(function() e = System.GetEntityByName(nm) end)
-        if e and e.id then
-            live[nm] = true
-            local story = w.arrangedGuard and KCD2MP_W176StoryNear(e) or nil
-            if story then w.nearAt[nm] = now; w.storySeenAt = now end
-            if story then KCD2MP_W176Pause(nm, true, "story=" .. story)
-            elseif w.paused[nm] and (not w.arrangedGuard or now - (w.nearAt[nm] or 0) >= w.offAfterS) then KCD2MP_W176Pause(nm, false, "story=-") end
-        end
-    end
-    for nm, _ in pairs(w.paused) do if not live[nm] then w.paused[nm] = nil end end   -- a figure that left: its body is gone
-    -- the sphere query walks the level: every 3 s while no story actor has been seen for 30 s, every second after one was
-    local ms = (w.storySeenAt and now - w.storySeenAt < 30) and w.tickMs or w.idleTickMs
-    Script.SetTimer(ms, function() KCD2MP_W176Tick(gen) end)
-end
--- (Re)arm the chain: at start and after every load (a load kills timer chains, kcd2mp-lua-timer-liveness).
-function KCD2MP_W176Arm()
-    local w = KCD2MP.w176
-    w.gen = (w.gen or 0) + 1
-    w.paused = {}   -- a load re-creates the figures: nothing of ours is paused any more
-    KCD2MP_W176Tick(w.gen)
-end
-KCD2MP_W176Arm()
-
--- ===== WO-174 (0.49.1): the host's weapons stuck -- the repair command and the clean-up (docs/WO-174-findings.md) =====
---
--- The field: after the 2026-10-10 sessions the host could not draw a melee weapon (HUD weapon icon blank). Read on a copy of his save,
--- through the game's own Lua: no fight, no skirmish, no combat mode -- Human.DrawWeapon() ("draw the active weapon set") did nothing and
--- Human.ToggleWeaponSet did nothing, while the sword lay in his inventory; Actor.EquipInventoryItem(sword) then DrawWeapon() drew it.
--- The lock is an EMPTY WEAPON SET (nothing equipped in a weapon slot), saved in the file. So:
---   mp_repair_combat (and the menu's Help > "Fix my weapons / stuck fight"): re-tests the draw after each step, in this order:
---      1 figure-links  every personally-hostile pair between this Henry and a partner's figure (kcd2mp_*) is removed (AI.RemovePersonallyHostile)
---      2 stop-fight    the game's own end of combat (XGenAIModule.TryEndCombat, and the agent's StopFight on this Henry when it runs)
---      3 brawl         a fight that belongs to a scripted brawl or scene is NEVER touched: the command stops and says so
---      4 equip         the best melee weapon in the inventory goes back into his weapon set (Actor.EquipInventoryItem), the game's own way
---      and tells him plainly. On a save that was fine it changes nothing and says so.
---   mp_combat_autoclean (default on): before every save (the mod's world save, and the agent's note of the game's own save), when a partner's
---      figure leaves, and once after every load: the hostile pairs and any fight between this Henry and a figure are cleared, logged and counted.
---   WO174-REPAIR step=<s> result=<r> draw_ok=yes|no       WO174-CLEAN reason=save|leave|load removed=<n>
---   WO174-BRAWL ... (native: a scripted brawl's skirmish never takes a partner's figure)
-W174 = W174 or {}
-KCD2MP.w174 = KCD2MP.w174 or { autoclean = true, autofix = true, busy = false, lastClean = -1e9, fixedWith = nil, afterLoadAt = -1e9, stats = { save = 0, leave = 0, load = 0, removed = 0, repairs = 0, freed = 0, refixed = 0 } }
-
--- ---- the rules (pure: no engine calls) ----
--- A name that belongs to a scripted brawl or scene (the neighbours' brawl's actors are rvacka_neighbour_1/2; quest fist fights, duels,
--- the tournament and arena fights are the others). The native half (wo174_rules.h) holds the same words.
-W174.SCENE_WORDS = { "rvacka", "fistfight", "brawl", "duel", "arena", "tournament" }
-function W174.sceneOwned(name)
-    local n = string.lower(tostring(name or ""))
-    for _, w in ipairs(W174.SCENE_WORDS) do if n:find(w, 1, true) then return true end end
-    return false
-end
-
--- A partner's figure in this world: kcd2mp_<n>.
-function W174.isFigure(name) return tostring(name or ""):match("^kcd2mp_%d+$") ~= nil end
-
--- Melee weapon classes by the words in the database name; the best tier first, then the healthiest. Never a torch, a quest alias, a bow or
--- crossbow, a shield, ammunition, or a smith's material or kit.
-W174.MELEE = { { "sword", 3 }, { "saber", 3 }, { "falchion", 3 }, { "cleaver", 3 }, { "axe", 2 }, { "mace", 2 }, { "hammer", 2 },
-               { "flail", 2 }, { "dagger", 1 }, { "knife", 1 } }
-W174.NOT_A_WEAPON = { "torch", "alias_", "arrow", "bolt", "bow", "shield", "repair", "bsmt_", "whetstone", "sharpen" }
-function W174.weaponTier(name)
-    local n = string.lower(tostring(name or ""))
-    for _, w in ipairs(W174.NOT_A_WEAPON) do if n:find(w, 1, true) then return 0 end end
-    for _, m in ipairs(W174.MELEE) do if n:find(m[1], 1, true) then return m[2] end end
-    return 0
-end
--- items: array of { id = <item id>, name = <database name>, health = <0..1> }. Returns the best item (or nil) and its tier.
-function W174.pickWeapon(items)
-    local best, bestScore, bestTier = nil, -1, 0
-    for _, it in ipairs(items or {}) do
-        local t = W174.weaponTier(it.name)
-        if t > 0 then
-            local score = t * 10 + math.max(0, math.min(1, tonumber(it.health) or 0))
-            if score > bestScore then best, bestScore, bestTier = it, score, t end
-        end
-    end
-    return best, bestTier
-end
-
--- facts: drawOk (the baseline draw worked), links (hostile pairs with figures), combat (the game says he is in combat), scene (a scripted
--- brawl's actor is near). Returns the ordered steps to run; { "nothing" } when the save was fine.
-function W174.plan(f)
-    if f.drawOk and (f.links or 0) == 0 and not f.combat then return { "nothing" } end
-    return { "figure-links", "stop-fight", "brawl", "equip" }
-end
-
--- Step 3's decision: a fight that is still on after steps 1-2 and belongs to a scripted brawl is left alone.
-function W174.brawlDecision(f)
-    if f.combat and f.scene then return "belongs-to-a-scene" end
-    return "no-scripted-brawl"
-end
-
--- ---- the engine reads ----   (in a do-block: the chunk's local-variable budget is nearly spent)
-do
-local function w174_figures()
-    local out, seen = {}, {}
-    for id, g in pairs(KCD2MP.ghosts or {}) do
-        local e = g and g.entity
-        if e and e.id then out[#out + 1] = e; seen[tostring(e.id)] = true end
-    end
-    for i = 0, 8 do
-        local e = nil
-        pcall(function() e = System.GetEntityByName("kcd2mp_" .. i) end)
-        if e and e.id and not seen[tostring(e.id)] then out[#out + 1] = e; seen[tostring(e.id)] = true end
-    end
-    return out
-end
-
-local function w174_truthy(v) return v ~= nil and v ~= false and v ~= 0 end
-
--- The game's personally-hostile pair calls, guarded (a build or a test without the AI table: nothing happens, nothing throws).
-local function w174_hostile(a, b)
-    if not (AI and AI.IsPersonallyHostile) then return false end
-    local h = false
-    pcall(function() h = w174_truthy(AI.IsPersonallyHostile(a, b)) end)
-    return h
-end
-local function w174_unhostile(a, b)
-    if not (AI and AI.RemovePersonallyHostile) then return false end
-    return (pcall(function() AI.RemovePersonallyHostile(a, b) end))
-end
-
--- Removes the personally-hostile pairs between this Henry and the figures (both directions). Returns how many pairs were removed.
-function W174.removeFigureLinks(onlyEntity)
-    local n = 0
-    if not (player and player.id) then return 0 end   -- no player yet (a menu, a load in progress)
-    local figs = onlyEntity and { onlyEntity } or w174_figures()
-    for _, f in ipairs(figs) do
-        for _, pair in ipairs({ { player.id, f.id }, { f.id, player.id } }) do
-            if w174_hostile(pair[1], pair[2]) then
-                if w174_unhostile(pair[1], pair[2]) then n = n + 1 end
-            end
-        end
-    end
-    return n
-end
-
--- Is this Henry locked in melee with a figure now? (player.player:IsLockedToOpponent)
-function W174.fightsFigure(onlyEntity)
-    local figs = onlyEntity and { onlyEntity } or w174_figures()
-    for _, f in ipairs(figs) do
-        local locked = false
-        local pp = player and player.player   -- the player class's calls are methods of player.player (there is no global Player in the game's Lua)
-        if pp and pp.IsLockedToOpponent then
-            pcall(function() locked = w174_truthy(pp:IsLockedToOpponent(f.id)) end)
-        end
-        if locked then return true, f end
-    end
-    return false, nil
-end
-
-local function w174_inCombat()
-    local c = false
-    pcall(function()
-        local s = player and player.soul
-        c = s ~= nil and ((s.IsInCombatDanger ~= nil and s:IsInCombatDanger() == true) or (s.IsInCombatMode ~= nil and s:IsInCombatMode() == true))
-    end)
-    return c
-end
-
--- An actor of a scripted brawl or scene within 40 m.
-local function w174_sceneNear()
-    local found = nil
-    pcall(function()
-        local p = player:GetWorldPos()
-        for _, e in ipairs(System.GetEntitiesInSphere(p, 40) or {}) do
-            local nm = nil
-            if e.actor ~= nil then   -- an actor (an NPC), never a smart object or a spot that only carries the word (a tournament crowd spot)
-                pcall(function() nm = e:GetName() end)
-            end
-            if nm and W174.sceneOwned(nm) then found = nm; break end
-        end
-    end)
-    return found
-end
-
-local function w174_items()
-    local out = {}
-    pcall(function()
-        local t = player.inventory:GetInventoryTable()
-        for i = 1, #t do
-            local it = ItemManager.GetItem(t[i])
-            if it and it.class then
-                local nm = ""
-                pcall(function() nm = ItemManager.GetItemName(it.class) end)
-                out[#out + 1] = { id = it.id, name = tostring(nm), health = it.health, class = tostring(it.class) }
-            end
-        end
-    end)
-    return out
-end
-
--- The draw test: asks the game's own draw, reads it 2.2 s later, and holsters again what it drew. cb(ok, why).
-function W174.drawTest(cb)
-    local h = player and player.human
-    if not h then cb(false, "no-human"); return end
-    local dead, talking = false, false
-    pcall(function() dead = player.actor:IsDead() == true end)
-    pcall(function() talking = h:IsInDialog() == true end)
-    if dead then cb(false, "dead"); return end
-    if talking then cb(false, "in-dialogue"); return end
-    local drawn0 = false
-    pcall(function() drawn0 = h:IsWeaponDrawn() == true end)
-    if drawn0 then cb(true, "already-drawn"); return end
-    pcall(function() h:DrawWeapon() end)
-    Script.SetTimer(2200, function()
-        local drawn = false
-        pcall(function() drawn = h:IsWeaponDrawn() == true end)
-        if drawn then pcall(function() h:HolsterWeapon() end) end
-        cb(drawn, drawn and "drawn" or "refused")
-    end)
-end
-
--- Step 2: the game's own end of combat. TryEndCombat is the script call; the agent's StopFight (the DLL) ends the skirmish Henry is in.
-function W174.endFights(why)
-    local ended = false
-    pcall(function() ended = w174_truthy(XGenAIModule.TryEndCombat(player.this and player.this.id or player.id)) end)
-    KCD2MP_EmitEvent("w154_endfights", "w174-" .. tostring(why or "repair"))
-    return ended
-end
-
--- ---- the command ----
-function KCD2MP_W174Repair(arg)
-    local w = KCD2MP.w174
-    if w.busy then
-        mp_log("WO174-REPAIR already running")
-        return false
-    end
-    w.busy = true
-    w.stats.repairs = w.stats.repairs + 1
-    KCD2MP_EmitEvent("w175_check", "repair")   -- WO-175: the stuck quest fight (the 0.49 lock) lives in the save; the agent checks it
-    local function say(text)
-        mp_log("WO174-SAY " .. text)
-        pcall(KCD2MP_ShowNativeToast, text)
-    end
-    local function log(step, result, ok)
-        mp_log(string.format("WO174-REPAIR step=%s result=%s draw_ok=%s", step, tostring(result), ok == nil and "-" or (ok and "yes" or "no")))
-    end
-    local function done() w.busy = false end
-
-    local facts = { links = 0, combat = w174_inCombat() }
-    for _, f in ipairs(w174_figures()) do
-        for _, pair in ipairs({ { player.id, f.id }, { f.id, player.id } }) do
-            if w174_hostile(pair[1], pair[2]) then facts.links = facts.links + 1 end
-        end
-    end
-    local sceneName = w174_sceneNear()
-    facts.scene = sceneName ~= nil
-
-    W174.drawTest(function(ok0, why0)
-        facts.drawOk = ok0
-        log("baseline", why0 .. " links=" .. facts.links .. " combat=" .. tostring(facts.combat) .. (sceneName and (" scene=" .. sceneName) or ""), ok0)
-        if why0 == "dead" or why0 == "in-dialogue" then
-            say("Not now: finish what you are doing (no dialogue, not dead), then try again.")
-            return done()
-        end
-        local plan = W174.plan(facts)
-        if plan[1] == "nothing" then
-            log("nothing-to-repair", "weapons draw, no stuck fight", true)
-            say("Nothing was wrong: your weapons draw and no fight is stuck. I changed nothing.")
-            return done()
-        end
-        local freed = ok0
-        local touched = false
-        local function finish(ok, how)
-            if ok then
-                w.stats.freed = w.stats.freed + 1
-                log("result", how, true)
-                say("Your weapons are free again -- save your game now (a new slot is safest).")
-            else
-                log("result", how, false)
-                say("I tried to free your weapons (" .. how .. ") and they are still stuck. Send your logs with Report a bug, and tell us what you did before.")
-            end
-            done()
-        end
-        local function step4()
-            local pick, tier = W174.pickWeapon(w174_items())
-            if not pick then
-                log("equip", "no-melee-weapon-in-the-inventory", false)
-                return finish(false, "no melee weapon in your inventory")
-            end
-            local ok = pcall(function() player.actor:EquipInventoryItem(pick.id) end)
-            log("equip", (ok and "equipped " or "refused ") .. pick.name .. " tier=" .. tier, nil)
-            if not ok then return finish(false, "the game refused to equip " .. pick.name) end
-            Script.SetTimer(1500, function()
-                W174.drawTest(function(ok4, why4)
-                    log("equip-retest", why4, ok4)
-                    if ok4 then w.fixedWith = { class = pick.class, name = pick.name } end   -- re-applied silently after every later load (mp_weapon_autofix)
-                    finish(ok4, ok4 and ("equipped " .. pick.name) or "equipped " .. pick.name .. " but it does not draw")
-                end)
-            end)
-        end
-        local function step3()
-            local d = W174.brawlDecision({ combat = w174_inCombat(), scene = w174_sceneNear() ~= nil })
-            log("brawl", d, nil)
-            if d == "belongs-to-a-scene" then
-                -- never touched: a raw state wipe would break the quest
-                say("This fight belongs to a quest scene (" .. tostring(w174_sceneNear()) .. "). Reload a save from before it, or send your logs. I did not touch it.")
-                return done()
-            end
-            step4()
-        end
-        local function step2()
-            local ended = W174.endFights("repair")
-            log("stop-fight", ended and "combat-ended" or "asked", nil)
-            Script.SetTimer(800, function()
-                if freed then   -- step 1 already freed him: the clean-up ran, no second draw needed
-                    return finish(true, touched and "partner links cleaned and the fight ended" or "the fight ended")
-                end
-                W174.drawTest(function(ok2, why2)
-                    log("stop-fight-retest", why2, ok2)
-                    if ok2 then
-                        return finish(true, touched and "partner links cleaned and the fight ended" or "the fight ended")
-                    end
-                    step3()
-                end)
-            end)
-        end
-        -- step 1 (a safe clean-up: always runs)
-        local n = W174.removeFigureLinks()
-        touched = n > 0
-        log("figure-links", "removed=" .. n, nil)
-        Script.SetTimer(600, function()
-            W174.drawTest(function(ok1, why1)
-                log("figure-links-retest", why1, ok1)
-                if ok1 then freed = true end
-                step2()   -- step 2 is a safe clean-up too: always runs
-            end)
-        end)
-    end)
-    return true
-end
-
--- ---- prevention ----
--- reason = save | leave | load. The mod's world save, the agent's note of the game's own save, a figure leaving, a finished load.
-function KCD2MP_W174Clean(reason, onlyEntity)
-    local w = KCD2MP.w174
-    if not w.autoclean then return 0 end
-    reason = tostring(reason or "?")
-    local now = os.clock()
-    if reason == "save" and now - w.lastClean < 2 then return 0 end   -- the mod's save and the game's note of it are one save
-    if reason == "save" then w.lastClean = now end
-    local fight = W174.fightsFigure(onlyEntity)   -- read before the pairs go: the fight is what the pairs hold
-    local n = W174.removeFigureLinks(onlyEntity)
-    if fight then KCD2MP_EmitEvent("w154_endfights", "w174-" .. reason) end
-    w.stats[reason] = (w.stats[reason] or 0) + 1
-    w.stats.removed = w.stats.removed + n
-    mp_log(string.format("WO174-CLEAN reason=%s removed=%d%s", reason, n, fight and " fight_ended=yes" or ""))
-    return n
-end
-
--- A friendly-fire knockdown of a partner's figure ends the fight Henry's punch started: the figure leaves its skirmish (the agent -> the DLL),
--- so a punch never outlives itself. Called by the WO-155 fall.
-function KCD2MP_W174FfEnd(ghostId)
-    if not KCD2MP.w174.autoclean then return end
-    KCD2MP_EmitEvent("w174_endfig", tostring(ghostId))
-    mp_log("WO174-CLEAN reason=friendly-fire ghost=" .. tostring(ghostId) .. " -- the figure leaves the skirmish the punch started")
-end
-
--- After a load: what a repair equipped is equipped again (the game rebuilds the weapon set from the save, and the lock came back on the
--- field copy -- docs/WO-174-findings.md). Silent: no draw, one log line. Only after a repair in THIS game session has found the lock.
-function KCD2MP_W174AfterLoad(why)
-    local w = KCD2MP.w174
-    local now = os.clock()
-    if now - w.afterLoadAt < 20 then return end   -- the Lua reload detector and the agent's settle are one load
-    w.afterLoadAt = now
-    if not (w.autofix and w.fixedWith) then return end
-    Script.SetTimer(4000, function()   -- the world settles first
-        local fw = w.fixedWith
-        if not fw then return end
-        local ok, err = pcall(function()
-            local best = nil   -- the same class again; the healthiest piece (the repair's scan, never FindItem: it hands back a bare handle)
-            for _, it in ipairs(w174_items()) do
-                if it.class == tostring(fw.class) and (best == nil or (tonumber(it.health) or 0) > (tonumber(best.health) or 0)) then best = it end
-            end
-            if not best then error("not in the inventory") end
-            player.actor:EquipInventoryItem(best.id)
-        end)
-        if ok then w.stats.refixed = w.stats.refixed + 1 end
-        mp_log(string.format("WO174-REPAIR step=autofix-after-load result=%s %s draw_ok=- why=%s",
-            ok and "equipped" or ("refused: " .. tostring(err)), tostring(fw.name), tostring(why or "?")))
-    end)
-end
-
-function KCD2MP_W174SetAutofix(arg)
-    local v = KCD2MP_Wo122ParseBool(arg)
-    if v == "bad" then mp_log("mp_weapon_autofix: expected on|off"); return false end
-    if v ~= nil then KCD2MP.w174.autofix = v end
-    mp_log(string.format("WO174-TOGGLE mp_weapon_autofix %s -- after a repair freed your weapons, every later load in this game equips that weapon again (done so far: %d)",
-        KCD2MP.w174.autofix and "on" or "off", KCD2MP.w174.stats.refixed))
-    return true
-end
-
-function KCD2MP_W174SetAutoclean(arg)
-    local v = KCD2MP_Wo122ParseBool(arg)
-    if v == "bad" then mp_log("mp_combat_autoclean: expected on|off"); return false end
-    if v ~= nil then KCD2MP.w174.autoclean = v end
-    local s = KCD2MP.w174.stats
-    mp_log(string.format("WO174-TOGGLE mp_combat_autoclean %s -- partner-figure fight records are cleared before saves, when a partner leaves and after loads (save=%d leave=%d load=%d removed=%d repairs=%d freed=%d)",
-        KCD2MP.w174.autoclean and "on" or "off", s.save, s.leave, s.load, s.removed, s.repairs, s.freed))
-    return true
-end
-end   -- WO-174's do-block
-
-do   -- WO-175's do-block
-    -- ===== WO-175: save safety ==============================================================================================
-    -- The cause of the 0.49.x weapon lock (docs/WO-175-findings.md): a quest fistfight (konecZabomysichValek's field fight)
-    -- keeps the game's own "unarmed only" rule (EnableAllowedWeaponsInQAM) while its saved result says Started; that fight
-    -- ended without a verdict, the rule stayed, and every later save carried it. The mod's part: its scheduled world save was
-    -- queued during the quest's dialogue and the engine wrote it on the first frame of the scripted fight (mid-fight saves).
-    --
-    --   S3  no save while the mod is mid-change: the mod's own world save is not requested during a dialogue, a scene, a
-    --       fight, a quest's arranged fight or one of the mod's own transactions (the agent asks again 5 s later); the game's
-    --       autosave and manual saves wait under a script save lock while a mod transaction is in flight (max 10 s, then the
-    --       transaction is rolled back where the mod can, and the lock goes). WO175-SAVE deferred reason=...
-    --   S4  a health check before saves and after loads: the agent reads the save file (Wo175SaveHealth); this side asks for
-    --       it (w175_check), tells the player, and mp_repair_combat gains the quest-fight step.
-    -- Switches: mp_save_guard (S3), mp_save_health (S4); both default ON.
-    KCD2MP.w175 = KCD2MP.w175 or {
-        guard = true, health = true,
-        lockName = "kcdmp_w175_change", lockText = "Saving waits a moment: the co-op mod is finishing a change.",
-        lockHeld = false, lockSince = nil, lockReason = nil, maxLockS = 10.0, tickAt = -1e9, tickMs = 500,
-        deferN = 0, deferLoggedAt = -1e9, toldAt = -1e9, checkAsks = 0,
-        stats = { deferred = 0, locks = 0, maxWaits = 0, checks = 0, repaired = 0, failed = 0 },
-    }
-    W175 = W175 or {}
-
-    local function w175_soulFlag(fn)
-        local v = false
-        pcall(function() local s = player and player.soul; if s and s[fn] then v = s[fn](s) == true end end)
-        return v
-    end
-
-    local function w175_context(name)
-        local v = false
-        pcall(function() local s = player and player.soul; if s and s.HasScriptContext then v = s:HasScriptContext(name) == true end end)
-        return v
-    end
-
-    local function w175_anyKeys(t)
-        if type(t) ~= "table" then return false end
-        for _ in pairs(t) do return true end
-        return false
-    end
-
-    -- A mod transaction on the player's inventory, equipment or body still in flight: its name, or nil.
-    function W175.txnReason()
-        local w140 = KCD2MP.w140
-        if w140 and w140.held then return "sleep-hold" end
-        local w174 = KCD2MP.w174
-        if w174 and w174.busy then return "weapon-repair" end
-        local w134 = KCD2MP.w134
-        if w134 then
-            for _, s in pairs(w134.sessions or {}) do
-                if type(s) == "table" and (w175_anyKeys(s.pend) or w175_anyKeys(s.puts)) then return "loot-take" end
-            end
-            if w175_anyKeys(w134.itemReq) then return "item-take" end
-            if w175_anyKeys(w134.pendingOpen) then return "loot-open" end
-        end
-        return nil
-    end
-
-    -- (reason, isTxn): why the mod must not ask for a save now. A dialogue, a scene, a fight or a quest's arranged fight are
-    -- the game's own states (a save then can capture a scene half-applied: WO-175's mid-fight saves); a transaction is the mod's.
-    function W175.busyReason()
-        local t = W175.txnReason()
-        if t then return t, true end
-        local talking = false
-        local h = player and player.human
-        if h and h.IsInDialog then pcall(function() talking = h:IsInDialog() == true end) end
-        if talking then return "dialogue", false end
-        local w170 = KCD2MP.w170
-        if w170 and (tonumber(w170.sceneRunning) or 0) > 0 then return "scene", false end
-        if w175_soulFlag("IsInCombatDanger") or w175_soulFlag("IsInCombatMode") then return "combat", false end
-        if w175_context("combat_arrangedFight") or w175_context("combat_forceUnarmedWhileInUnarmedSkirmish") then return "arranged-fight", false end
-        return nil, false
-    end
-
-    -- The mod's own world save asks here first (KCD2MP_HostWorldSave). true = go ahead.
-    function KCD2MP_W175SaveAllowed(kind)
-        local w = KCD2MP.w175
-        if not w.guard then return true end
-        local r = W175.busyReason()
-        if not r then return true end
-        w.deferN = w.deferN + 1
-        w.stats.deferred = w.stats.deferred + 1
-        mp_log(string.format("WO175-SAVE deferred reason=%s kind=%s n=%d -- the mod's save waits; asked again in 5 s", r, tostring(kind or "mod-save"), w.deferN))
-        return false
-    end
-
-    -- The game's own saves (autosave, the menu's Save) wait under a script lock while a mod transaction is in flight.
-    local function w175_lock(on, reason)
-        local w = KCD2MP.w175
-        if not (Game and Game.AddSaveLock and Game.RemoveSaveLock) then return end
-        if on and not w.lockHeld then
-            local ok = pcall(Game.AddSaveLock, w.lockName, w.lockText)
-            w.lockHeld, w.lockSince, w.lockReason = ok, os.clock(), reason
-            w.stats.locks = w.stats.locks + 1
-            mp_log(string.format("WO175-SAVE deferred reason=%s kind=game-save lock=%s -- autosave and manual saves wait (max %.0f s)",
-                tostring(reason), ok and "on" or "refused", w.maxLockS))
-            if (os.clock() - w.toldAt) > 30 then w.toldAt = os.clock(); pcall(KCD2MP_ShowInteractionMsg, w.lockText) end
-        elseif not on and w.lockHeld then
-            pcall(Game.RemoveSaveLock, w.lockName)
-            mp_log(string.format("WO175-SAVE resumed reason=%s after_s=%.1f -- saving allowed again", tostring(w.lockReason), os.clock() - (w.lockSince or os.clock())))
-            w.lockHeld, w.lockSince, w.lockReason = false, nil, nil
-        end
-    end
-
-    -- Past the limit: the mod rolls its own change back where it can (a held bed goes back to the game's own use), then saving is free again.
-    local function w175_rollback(reason)
-        if reason == "sleep-hold" and KCD2MP_W140Drop then pcall(KCD2MP_W140Drop, "wo175-max-wait") end
-    end
-
-    function KCD2MP_W175Tick()
-        local w = KCD2MP.w175
-        local now = os.clock()
-        if now - w.tickAt < 0.2 then return end   -- one chain (a load restarts it)
-        w.tickAt = now
-        local r = w.guard and W175.txnReason() or nil
-        if r and not w.lockHeld then
-            w175_lock(true, r)
-        elseif r and w.lockHeld and (now - (w.lockSince or now)) > w.maxLockS then
-            w.stats.maxWaits = w.stats.maxWaits + 1
-            mp_log(string.format("WO175-SAVE max-wait reason=%s after_s=%.1f -- rolled back where the mod can; saving allowed", tostring(r), now - w.lockSince))
-            w175_rollback(r)
-            w175_lock(false)
-            w.lockSince = now + 1e6   -- not again for this transaction
-        elseif not r and w.lockHeld then
-            w175_lock(false)
-        end
-        Script.SetTimer(w.tickMs, KCD2MP_W175Tick)
-    end
-
-    -- After a load (the agent's settle and Lua's own reload detector): the chain restarts, the agent reads the loaded file.
-    function KCD2MP_W175AfterLoad(why)
-        local w = KCD2MP.w175
-        w.lockHeld = false   -- a load wipes every script lock
-        w.tickAt = -1e9
-        KCD2MP_W175Tick()
-        if KCD2MP_W176Arm then KCD2MP_W176Arm() end   -- WO-176 A1: the figures' brain pause near a story fight
-        if w.health then KCD2MP_EmitEvent("w175_check", "load") end
-    end
-
-    -- Before a save (the mod's own, and the game's InitiateSaveGame line through the agent): partner-figure records out
-    -- (WO-174), and the agent checks the file the engine writes.
-    function KCD2MP_W175BeforeSave(why)
-        local w = KCD2MP.w175
-        if not w.health then return end
-        w.stats.checks = w.stats.checks + 1
-        KCD2MP_EmitEvent("w175_check", "save")
-    end
-
-    -- The agent's verdict on a save file. result: ok|repaired|failed; what: the finding; file: the repaired copy (playlineN/x.whs).
-    function KCD2MP_W175Health(when, result, what, file, loading)
-        local w = KCD2MP.w175
-        mp_log(string.format("WO175-HEALTH when=%s result=%s what=%s%s", tostring(when), tostring(result), tostring(what),
-            (file and file ~= "") and (" file=" .. tostring(file)) or ""))
-        if result == "repaired" then
-            w.stats.repaired = w.stats.repaired + 1
-            local text = loading
-                and "A quest fight in this save never finished, so your weapons were locked. The mod made a repaired copy (your original is untouched) and loads it now."
-                or "A quest fight in your last save never finished (your weapons would stay locked). The mod made a repaired copy next to it; the next load uses it."
-            pcall(KCD2MP_ShowNativeToast, text)
-        elseif result == "failed" then
-            w.stats.failed = w.stats.failed + 1
-            pcall(KCD2MP_ShowNativeToast, "Your save has a problem the mod could not repair (" .. tostring(what) .. "). Your backups are in the launcher: Restore my saves.")
-        end
-    end
-
-    local function w175_toggle(field, label, help)
-        return function(arg)
-            local v = KCD2MP_Wo122ParseBool(arg)
-            if v == "bad" then mp_log(label .. ": expected on|off"); return false end
-            if v ~= nil then KCD2MP.w175[field] = v end
-            local s = KCD2MP.w175.stats
-            mp_log(string.format("WO175-TOGGLE %s %s -- %s (deferred=%d locks=%d max_waits=%d checks=%d repaired=%d failed=%d)",
-                label, KCD2MP.w175[field] and "on" or "off", help, s.deferred, s.locks, s.maxWaits, s.checks, s.repaired, s.failed))
-            KCD2MP_EmitEvent("w175_cfg", label .. "=" .. (KCD2MP.w175[field] and "on" or "off"))
-            if field == "guard" and not KCD2MP.w175.guard then w175_lock(false) end
-            return true
-        end
-    end
-    local w175_setGuard = w175_toggle("guard", "mp_save_guard", "no save while a dialogue, scene, fight or a mod change is in progress")
-    function KCD2MP_W175SetGuard(arg) return w175_setGuard(arg) end
-    local w175_setHealth = w175_toggle("health", "mp_save_health", "every save and load is checked; a save with a stuck quest fight gets a repaired copy")
-    function KCD2MP_W175SetHealth(arg) return w175_setHealth(arg) end
-
-    -- WO-175 S1: co-op plays in a copy of the world (a save slot of its own), never in the player's own saves.
-    -- Remembered in mod-settings.json (CoopPlayline) by the agent in a world, by the launcher at the main menu.
-    function KCD2MP_W175SetCoopPlayline(arg)
-        local v = KCD2MP_Wo122ParseBool(arg)
-        if v == "bad" then mp_log("mp_coop_playline: expected on|off, got '" .. tostring(arg) .. "'"); return false end
-        if v == nil then
-            mp_log("WO175-TOGGLE mp_coop_playline=" .. tostring(KCD2MP.w175CoopState or "?") .. " (asking the agent)")
-            KCD2MP_EmitEvent("w175_coop", "status")
-            return true
-        end
-        KCD2MP.w175CoopState = v and "on" or "off"
-        mp_log("WO175-TOGGLE mp_coop_playline=" .. KCD2MP.w175CoopState .. " -- " .. (v and "co-op plays in a copy of the world (a save slot of its own)" or "co-op plays in the original world (your own saves)"))
-        KCD2MP_EmitEvent("w175_coop", KCD2MP.w175CoopState)
-        return true
-    end
-    -- the agent's answer after a change or a status ask
-    function KCD2MP_W175CoopState(state)
-        KCD2MP.w175CoopState = tostring(state)
-        mp_log("WO175-TOGGLE mp_coop_playline=" .. KCD2MP.w175CoopState .. " (remembered)")
-        return true
-    end
-end   -- WO-175's do-block
-
 function KCD2MP_W166SetTalkResumeFirst(arg)
     local v = KCD2MP_Wo122ParseBool(arg)
     if v == "bad" then mp_log("mp_talk_resume_first: expected on|off"); return false end
@@ -22657,7 +21896,6 @@ function KCD2MP_W167SceneReleased(ended, why)
     end
     KCD2MP_ShowNativeToast("That scene couldn't play here \226\128\148 your partner's world runs it.")
     mp_log(string.format("WO167-SCENE released ended=%s fader=%s stood=%s why=%s -- the player was told", tostring(ended == true), fader, stood, tostring(why)))
-    if KCD2MP_W172HudRestore then pcall(KCD2MP_W172HudRestore, "scene-release") end   -- WO-172 UI1
     return true
 end
 
@@ -22666,8 +21904,6 @@ function KCD2MP_W167FaderRestore(why)
     local S = KCD2MP.w167.scene
     if not S.faderHeldAt then return false end
     S.faderHeldAt = nil
-    -- WO-172 FT1: a black lifted with no scene end seen stays lifted until the next load (the field: each 60 s restore put it back)
-    if KCD2MP_W172KeepFaderLifted and KCD2MP_W172KeepFaderLifted(why) then return false end
     -- the restore runs even after a scene-release fault (pcall: the black must not stay suspended); its own failure is said once
     local okR, errR = pcall(function() System.SetCVar("wh_ui_FaderSuspend", 0) end)
     if not okR then KCD2MP.w167.try("t4-restore", "scene-release", function() error(errR) end) end
@@ -23078,61 +22314,6 @@ function KCD2MP_W164SetPartnerPin(arg)
     if ok then KCD2MP_EmitEvent("w164_pin", KCD2MP.w164.partnerPin and "on" or "off") end
     return ok
 end
--- ---- WO-171 M: the partner's own colour and facing on the map ------------------------------------------------------------------
--- The pin of mp_partner_marker is a picture of the artist's knight in the partner's colour (player 1 = red, then purple, blue, green
--- in the order they joined), turned to the partner's facing in eight steps. The agent decides slot, colour and frame; this is the
--- three switches that tune it, said to the agent as one "w171_cfg" event.
-KCD2MP.w171 = KCD2MP.w171 or { style = "rotating", offset = 0, flip = false }
-local function w171_emit()
-    local w = KCD2MP.w171
-    KCD2MP_EmitEvent("w171_cfg", string.format("style=%s offset=%d flip=%s", w.style, w.offset, w.flip and "on" or "off"))
-end
--- the hover names: the map's tooltip for a marker is the key "@ui_maplegend_<picture name>"; the agent writes a file giving each of
--- a slot's pictures the player's name and asks this to load it (the engine reads loose files from the install folder).
-function KCD2MP_W171LoadNames(path)
-    local w = KCD2MP.w171
-    w.loadedNames = w.loadedNames or {}
-    path = tostring(path or "")
-    if not path:find("^Mods/kdcmp/Localization/kct_n_[%w_%-]+%.xml$") then mp_log("WO171-NAMES refused a path: " .. path); return false end
-    if w.loadedNames[path] then return true end   -- the engine refuses a key it already has with a modal error: each file once per game run
-    w.loadedNames[path] = true
-    local ok, err = pcall(System.LoadLocalizationXml, path)
-    mp_log("WO171-NAMES loaded " .. path .. " ok=" .. tostring(ok) .. (ok and "" or (" " .. tostring(err))))
-    return ok
-end
-function KCD2MP_W171Emit() w171_emit() end   -- the agent asks at every connect (its own copy starts at the defaults)
-function KCD2MP_W171SetStyle(arg)
-    local s = tostring(arg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
-    if s == "%line" or s == "" or s == "nil" then s = nil end
-    if s == "on" then s = "rotating" elseif s == "off" then s = "companion" end   -- the mod menu's "Marker style" is an on / off item
-    if s ~= nil and s ~= "rotating" and s ~= "flat" and s ~= "companion" then mp_log("mp_partner_marker_style: expected rotating|flat|companion, got '" .. s .. "'"); return false end
-    if s ~= nil then KCD2MP.w171.style = s end
-    mp_log("WO171-TOGGLE mp_partner_marker_style " .. KCD2MP.w171.style .. " -- rotating: the knight turns with your partner; flat: one picture facing north; companion: the game's own plain pin")
-    w171_emit()
-    return true
-end
-function KCD2MP_W171SetDirOffset(arg)
-    local s = tostring(arg or ""):gsub("^%s+", ""):gsub("%s+$", "")
-    local n = tonumber(s)
-    if s ~= "" and s ~= "%line" and (not n or n < 0 or n > 7 or n ~= math.floor(n)) then mp_log("mp_marker_dir_offset: expected 0..7, got '" .. s .. "'"); return false end
-    if n then KCD2MP.w171.offset = n end
-    mp_log("WO171-TOGGLE mp_marker_dir_offset " .. tostring(KCD2MP.w171.offset) .. " -- the knight's picture is turned by whole steps (if it looks off by a step)")
-    w171_emit()
-    return true
-end
-function KCD2MP_W171SetDirFlip(arg)
-    local v = KCD2MP_Wo122ParseBool(arg)
-    if v == "bad" then mp_log("mp_marker_dir_flip: expected on|off"); return false end
-    if v ~= nil then KCD2MP.w171.flip = v end
-    mp_log("WO171-TOGGLE mp_marker_dir_flip " .. (KCD2MP.w171.flip and "on" or "off") .. " -- on = the knight turns the other way (if it turns the wrong way)")
-    w171_emit()
-    return true
-end
-function KCD2MP_W171Status()
-    local w = KCD2MP.w171
-    mp_log(string.format("WO171-STATUS style=%s offset=%d flip=%s partner_marker=%s", w.style, w.offset, w.flip and "on" or "off", tostring(KCD2MP.w164 ~= nil and KCD2MP.w164.partnerPin)))
-    return true
-end
 function KCD2MP_W164SetJoinerEvents(arg) return w164_toggle("joinerEvents", "mp_joiner_events", arg, "on = a joiner's own random events are off during a session (the host's are the only ones)") end
 -- ---- WO-164 ESC: a quest NPC that follows the joiner ----------------------------------------------------------------------------
 -- Joiner: the quest just made an NPC follow this player (its follow step went to the host): the nearest of this game's own
@@ -23334,350 +22515,6 @@ function KCD2MP_W170Status()
     mp_log(string.format("WO170-STATUS figure_guard=%s scene_hold=%s scenes_running=%d held=%d holds=%d released=%d timeouts=%d rider_waits=%d rider_gave_up=%d",
         w.figureGuard and "on" or "off", w.sceneHold and "on" or "off", w.sceneRunning, held, w.stats.sceneHolds, w.stats.sceneReleased, w.stats.sceneTimeouts,
         w.stats.riderWaits, w.stats.riderGaveUp))
-    return true
-end
-
--- ---- WO-172 (0.48.8): a dead copy stays dead, riding repaired, the trade hold, the joiner's pickpocket, the black and the HUD ----
---   C1 mp_dead_wins (default on): a copy the host's death was applied to (or first seen dead) is told to the agent (w172_dead): the
---      DLL skips it for every activity, tool, retarget and strike, the agent plays no row on it and ends its WO-132 engagement; its
---      talk and its scene hold end here. A body that reads alive again (a reload) is told too (w172_alive).
---   R1 mp_ride_repair (default on): this player's own mount answer (IsMounted) goes to the agent on a change and every 2 s while
---      mounted -- the riding bit survives the engine clearing the horse tag (the field: nine minutes of riding=False in the saddle);
---      every 2 s a partner's figure whose stream rides but is not mounted (or the reverse), twice in a row, is mounted (dismounted)
---      again the riding start's own way; a horse copy let go or taken back by the stream is put on the terrain if it fell through.
---   FT1/UI1: a black lifted the field's way (wh_ui_FaderSuspend 1) is never put back on a timer while a fader may still be faded --
---      it is given back at the next load (the field: each 60 s restore put the black back, the joiner typed the command 7 times);
---      a quest travel this game refused while the host travelled has its black lifted 1.5 s after the leash placed this player;
---      after a travel, a scene release, a load and mp_unstuck the HUD is shown the game's own way (UIAction.ShowElement).
---   H1 mp_trade_hold (default on): a joiner's conversation with a trader is held -- the host's NPC and this copy -- past the
---      dialogue's end until the trade screen closes (its own UI sound), the player walks away (4 m for 1 s) or 300 s pass; a
---      cancelled haggle releases nothing (the field: released 3 s into the trade, the trader walked off on the host's screen).
---   P1 mp_joiner_pickpocket (default on): a joiner's pickpocket is the game's own minigame on this copy; every item it takes is
---      WO-134's take: sent to the host, which takes it out of its NPC's pockets, or it is taken back here ("Someone already took
---      that."). The copy's own list is never rewritten (a living body keeps its clothes).
---   WO172-DEAD / WO172-RIDE / WO172-FT / WO172-HUD / WO172-TRADE / WO172-PICK ... ; mp_w172_status
-KCD2MP.w172 = KCD2MP.w172 or {
-    deadWins = true, rideRepair = true, tradeHold = true, pickpocket = true, markShot = true,
-    mountSent = nil, mountAt = -1e9, rideAt = -1e9, tickAt = -1e9, ride = {}, faderHold = false, ftRefusedAt = nil,
-    screenOpen = nil, screenAt = -1e9,
-    stats = { deadMarks = 0, alive = 0, remounts = 0, dismounts = 0, gaveUp = 0, snaps = 0, tradeHolds = 0, tradeReleases = 0, picks = 0,
-              pickFails = 0, faderKept = 0, faderLoads = 0, hudRestores = 0, ftLifts = 0 },
-    MOUNT_RESEND_S = 2.0, RIDE_CHECK_S = 2.0, RIDE_MISS_N = 2, RIDE_TRIES = 5, SNAP_BELOW_M = 0.5,
-    TRADE_NEAR_M = 4.0, TRADE_AWAY_S = 1.0, TRADE_MAX_S = 300.0, TRADE_CLOSE_S = 0.5,
-}
-
--- ---- C1 -----------------------------------------------------------------------------------------------------------------
-function KCD2MP_W172CopyDied(name, via)
-    local W = KCD2MP.w172
-    if not W.deadWins or type(name) ~= "string" or not string.find(name, "^[%w_]+$") then return false end
-    W.stats.deadMarks = W.stats.deadMarks + 1
-    KCD2MP_EmitEvent("w172_dead", name)
-    local w137 = KCD2MP.w137
-    if w137 and w137.talking and w137.talking[name] and KCD2MP_W137TalkEndNow then pcall(KCD2MP_W137TalkEndNow, name, "dead") end
-    if KCD2MP.w170 and KCD2MP.w170.held then KCD2MP.w170.held[name] = nil end
-    mp_log(string.format("WO172-DEAD npc=%s via=%s -- the host's death wins here: no activity, tool, retarget, strike or row on it again", name, tostring(via)))
-    return true
-end
-
-function KCD2MP_W172CopyAlive(name)
-    local W = KCD2MP.w172
-    if type(name) ~= "string" or not string.find(name, "^[%w_]+$") then return false end
-    W.stats.alive = W.stats.alive + 1
-    KCD2MP_EmitEvent("w172_alive", name)
-    return true
-end
-
--- ---- R1 -----------------------------------------------------------------------------------------------------------------
--- The pure rule of the figure check: the stream's riding bit, the figure's mount (nil = unknown) and the misses so far -> the
--- action now ("mount", "dismount" or nil) and the new miss counts.
-function KCD2MP_W172RideRule(streamRiding, mounted, miss, extra, needN)
-    needN = needN or 2
-    if mounted == nil then return nil, 0, 0 end
-    if streamRiding and not mounted then
-        miss = (miss or 0) + 1
-        if miss >= needN then return "mount", 0, 0 end
-        return nil, miss, 0
-    elseif (not streamRiding) and mounted then
-        extra = (extra or 0) + 1
-        if extra >= needN then return "dismount", 0, 0 end
-        return nil, 0, extra
-    end
-    return nil, 0, 0
-end
-
-function KCD2MP_W172RideCheck(now)
-    local W = KCD2MP.w172
-    if not W.rideRepair then return end
-    for id, ghost in pairs(KCD2MP.ghosts or {}) do
-        local st = ghost and ghost.istate
-        if st and ghost.entity and KCD2MP_GhostIsMounted then
-            local r = W.ride[id] or { miss = 0, extra = 0, tries = 0 }
-            W.ride[id] = r
-            local riding = st.isRiding == true
-            if riding ~= r.lastRiding then r.tries = 0; r.lastRiding = riding; r.toldGaveUp = nil end   -- a new ride: new tries
-            local mounted = KCD2MP_GhostIsMounted(ghost)
-            local act
-            act, r.miss, r.extra = KCD2MP_W172RideRule(riding, mounted, r.miss, r.extra, W.RIDE_MISS_N)
-            if act and r.tries >= W.RIDE_TRIES then
-                if not r.toldGaveUp then
-                    r.toldGaveUp = true
-                    W.stats.gaveUp = W.stats.gaveUp + 1
-                    mp_log(string.format("WO172-RIDE gave-up id=%s want=%s after %d tries -- left as it is until the rider mounts or gets off again", tostring(id), act, r.tries))
-                end
-            elseif act == "mount" then
-                local pos = nil
-                pcall(function() pos = ghost.entity:GetWorldPos() end)
-                if pos then
-                    r.tries = r.tries + 1
-                    W.stats.remounts = W.stats.remounts + 1
-                    mp_log(string.format("WO172-RIDE remount id=%s try=%d -- the partner rides but the figure is not on a horse here: the riding start again", tostring(id), r.tries))
-                    pcall(KCD2MP_SpawnHorse, id, pos.x, pos.y, pos.z, st.rotZ or 0)
-                end
-            elseif act == "dismount" then
-                r.tries = r.tries + 1
-                W.stats.dismounts = W.stats.dismounts + 1
-                mp_log(string.format("WO172-RIDE dismount id=%s try=%d -- the partner is off the horse but the figure still rides here", tostring(id), r.tries))
-                pcall(KCD2MP_GhostDismount, id, ghost, "w172-check")
-                pcall(KCD2MP_RemoveHorse, id)
-            end
-        end
-    end
-end
-
--- A horse body below the terrain is put on it (a released copy falls through the ground while its physics wakes).
-function KCD2MP_W172GroundSnap(name, e, why)
-    local W = KCD2MP.w172
-    if not W.rideRepair then return false end
-    if not e and name then pcall(function() e = System.GetEntityByName(name) end) end
-    if not e then return false end
-    local p, g = nil, nil
-    pcall(function() p = e:GetWorldPos() end)
-    if not p then return false end
-    pcall(function() g = System.GetTerrainElevation({ x = p.x, y = p.y, z = p.z }) end)
-    g = tonumber(g)
-    if not g or p.z >= g - W.SNAP_BELOW_M then return false end
-    local ok = pcall(function() e:SetWorldPos({ x = p.x, y = p.y, z = g + 0.05 }) end)
-    W.stats.snaps = W.stats.snaps + 1
-    mp_log(string.format("WO172-RIDE horse ground-snapped npc=%s why=%s z=%.2f terrain=%.2f ok=%s -- a horse is never under the ground",
-        tostring(name), tostring(why), p.z, g, tostring(ok)))
-    return ok
-end
-
--- A released horse (a dismount): looked at now and while its physics settles.
-function KCD2MP_W172HorseReleased(name, e)
-    if not name then return end
-    pcall(KCD2MP_W172GroundSnap, name, e, "released")
-    for _, ms in ipairs({ 1500, 3500 }) do
-        Script.SetTimer(ms, function() pcall(KCD2MP_W172GroundSnap, name, nil, "released+" .. ms .. "ms") end)
-    end
-end
-
--- ---- FT1 / UI1 ----------------------------------------------------------------------------------------------------------
-function KCD2MP_W172HudRestore(why)
-    local W = KCD2MP.w172
-    local ok = pcall(function() UIAction.ShowElement("hud", -1) end)
-    W.stats.hudRestores = W.stats.hudRestores + 1
-    mp_log(string.format("WO172-HUD restored why=%s ok=%s -- the game's own HUD element shown", tostring(why), tostring(ok)))
-    return ok
-end
-
--- The black lifted (the field's own way out) and held until the next load: a fader still faded under it is never shown again.
-function KCD2MP_W172LiftBlack(name, why)
-    local W = KCD2MP.w172
-    local cur = nil
-    pcall(function() cur = tonumber(System.GetCVar("wh_ui_FaderSuspend")) end)
-    local ok = true
-    if cur ~= 1 then ok = pcall(function() System.SetCVar("wh_ui_FaderSuspend", 1) end) end
-    W.faderHold = true
-    W.stats.ftLifts = W.stats.ftLifts + 1
-    mp_log(string.format("WO172-FT fader restored name=%s why=%s ok=%s -- wh_ui_FaderSuspend held until the next load (a fader the game never faded back in stays hidden)",
-        tostring(name), tostring(why), tostring(ok)))
-    pcall(KCD2MP_W172HudRestore, "black-lifted")
-    return ok
-end
-
--- WO-167's restore asks first: the 60 s timer's restore (no scene end seen) keeps the black lifted (true = do not restore now);
--- a scene the engine ended gives the faders back as before.
-function KCD2MP_W172KeepFaderLifted(why)
-    local W = KCD2MP.w172
-    if not string.find(tostring(why), "after the black was lifted", 1, true) then return false end   -- only the timer's restore waits
-    W.faderHold = true
-    W.stats.faderKept = W.stats.faderKept + 1
-    mp_log("WO172-FT fader kept lifted why=" .. tostring(why) .. " -- a fader may still be faded under it: given back at the next load, never on a timer")
-    return true
-end
-
--- A load (the reload reset): faders start clean -- the suspend held for a stuck black goes back; the HUD is shown.
-function KCD2MP_W172OnLoad(why)
-    local W = KCD2MP.w172
-    if W.faderHold then
-        W.faderHold = false
-        W.stats.faderLoads = W.stats.faderLoads + 1
-        local ok = pcall(function() System.SetCVar("wh_ui_FaderSuspend", 0) end)
-        mp_log("WO172-FT faders given back at a load (wh_ui_FaderSuspend 0) ok=" .. tostring(ok))
-    end
-    Script.SetTimer(2000, function() pcall(KCD2MP_W172HudRestore, "load:" .. tostring(why)) end)
-end
-
--- This game refused a travel (a quest's own travel on the joiner, the engine switch off): remembered for the host's travel.
-function KCD2MP_W172TravelRefused(how)
-    KCD2MP.w172.ftRefusedAt = os.clock()
-end
-
--- The leash placed this player beside the host after the host's travel: a refused quest travel here left its black up.
-function KCD2MP_W172AfterHostTravel(why)
-    local W = KCD2MP.w172
-    if not (W.ftRefusedAt and (os.clock() - W.ftRefusedAt) < 120) then
-        Script.SetTimer(1500, function() pcall(KCD2MP_W172HudRestore, "host-travel") end)
-        return false
-    end
-    W.ftRefusedAt = nil
-    Script.SetTimer(1500, function() pcall(KCD2MP_W172LiftBlack, "quest-travel-refused", why) end)
-    return true
-end
-
--- ---- H1 -----------------------------------------------------------------------------------------------------------------
-function KCD2MP_W172IsTrader(name)
-    local e, shop = nil, false
-    pcall(function() e = System.GetEntityByName(name) end)
-    if not (e and e.soul and type(e.soul.HasScriptContext) == "function") then return false end
-    pcall(function() shop = e.soul:HasScriptContext("shop_sellerReadyToSell") == true end)
-    return shop
-end
-
-function KCD2MP_W172Dist(name)
-    local e, p, q = nil, nil, nil
-    pcall(function() e = System.GetEntityByName(name) end)
-    if e then pcall(function() q = e:GetWorldPos() end) end
-    pcall(function() p = player and player:GetWorldPos() end)
-    if not (p and q) then return nil end
-    return math.sqrt((p.x - q.x) ^ 2 + (p.y - q.y) ^ 2)
-end
-
--- W137TalkEnd's question at a dialogue's end: keep this talk (a trade follows) -- true = held, the end waits.
-function KCD2MP_W172TradeKeep(name, t)
-    local W = KCD2MP.w172
-    if not W.tradeHold or not t or not KCD2MP.w137 or not KCD2MP.w137.joiner then return false end
-    if t.trade then return true end
-    if not KCD2MP_W172IsTrader(name) then return false end
-    local d = KCD2MP_W172Dist(name)
-    if not d or d > W.TRADE_NEAR_M then return false end
-    t.trade = { since = os.clock(), awaySince = nil }
-    W.stats.tradeHolds = W.stats.tradeHolds + 1
-    mp_log(string.format("WO172-TRADE hold npc=%s d=%.1f -- a trader: the host's NPC and this copy stay until the trade screen closes (or you walk away)", name, d))
-    return true
-end
-
--- The agent: the inventory/trade screen's own UI sound (1 opened, 0 closed).
-function KCD2MP_W172TradeScreen(open)
-    local W = KCD2MP.w172
-    W.screenOpen = (tonumber(open) or 0) == 1
-    W.screenAt = os.clock()
-end
-
--- The pure release rule: why the trade hold ends now (nil = keep).
-function KCD2MP_W172TradeDue(since, now, dist, awaySince, screenOpen, screenAt, nearM, awayS, maxS, closeS)
-    if now - since >= maxS then return "max-time" end
-    if screenOpen == false and screenAt > since and now - screenAt >= closeS then return "screen-closed" end
-    if dist and dist > nearM and awaySince and now - awaySince >= awayS then return "walked-away" end
-    return nil
-end
-
-function KCD2MP_W172TradeTick(now)
-    local W = KCD2MP.w172
-    local w137 = KCD2MP.w137
-    if not (w137 and w137.talking and next(w137.talking)) then return end
-    local inDialog = false
-    pcall(function() inDialog = player ~= nil and player.human ~= nil and player.human:IsInDialog() == true end)
-    for name, t in pairs(w137.talking) do
-        local tr = t.trade
-        if tr then
-            local d = KCD2MP_W172Dist(name)
-            if d and d > W.TRADE_NEAR_M then tr.awaySince = tr.awaySince or now else tr.awaySince = nil end
-            local why = nil
-            if not inDialog then
-                why = KCD2MP_W172TradeDue(tr.since, now, d, tr.awaySince, W.screenOpen, W.screenAt, W.TRADE_NEAR_M, W.TRADE_AWAY_S, W.TRADE_MAX_S, W.TRADE_CLOSE_S)
-            end
-            if why then
-                t.trade = nil
-                W.stats.tradeReleases = W.stats.tradeReleases + 1
-                mp_log(string.format("WO172-TRADE release npc=%s why=%s held_s=%.1f", name, why, now - tr.since))
-                pcall(KCD2MP_W137TalkEndNow, name, "trade-" .. why)
-            end
-        end
-    end
-end
-
--- ---- P1 -----------------------------------------------------------------------------------------------------------------
--- W131LootAllowed's question for a pickpocket on a host copy: handled here (true) -- the game's own minigame runs on the copy and
--- every take is WO-134's (sent to the host, taken back if the host's NPC no longer has it).
-function KCD2MP_W172PickRequest(body, orig, user, slot)
-    local W = KCD2MP.w172
-    if not (W.pickpocket and orig and KCD2MP_W134JoinerActive and KCD2MP_W134JoinerActive()) then return false end
-    local w = KCD2MP.w134
-    if not (w and w.bodies and w.sessions) then return false end
-    local name = nil
-    pcall(function() name = body:GetName() end)
-    if not (name and string.find(name, "^[%w_]+$")) then return false end
-    if w.startLoop then pcall(w.startLoop) end   -- running already in a session (a start forgets old sessions: made before ours)
-    local snap = {}
-    pcall(function()
-        local tb = body.inventory:GetInventoryTable()
-        for i = 1, #tb do
-            local it = ItemManager.GetItem(tb[i])
-            if it and it.class then snap[#snap + 1] = { w = tb[i], cls = it.class, amt = it.amount or 1, hp = it.health or 1 } end
-        end
-    end)
-    local pinv = {}
-    pcall(function()
-        local tb = player.inventory:GetInventoryTable()
-        for i = 1, #tb do pinv[tostring(tb[i])] = true end
-    end)
-    w.sessions[name] = w.sessions[name] or { pend = {}, puts = {} }
-    local s = w.sessions[name]
-    s.snap, s.at, s.pinv, s.pick = snap, os.clock(), pinv, true
-    local ok, err = pcall(function() orig(body, user or player, slot) end)
-    W.stats.picks = W.stats.picks + 1
-    if not ok then W.stats.pickFails = W.stats.pickFails + 1 end
-    mp_log(string.format("WO172-PICK start npc=%s items=%d ok=%s%s -- the game's own pickpocket on this copy; every take is asked of the host",
-        name, #snap, tostring(ok), ok and "" or (" err=" .. tostring(err))))
-    return true
-end
-
--- ---- the tick (from the interp tick; 4 Hz inside) and the switches -----------------------------------------------------
-function KCD2MP_W172Tick()
-    local W = KCD2MP.w172
-    local now = os.clock()
-    if now - W.tickAt < 0.25 then return end
-    W.tickAt = now
-    local m = false
-    pcall(function() m = player ~= nil and player.human ~= nil and player.human:IsMounted() == true end)
-    if m ~= W.mountSent or (m and now - W.mountAt >= W.MOUNT_RESEND_S) then
-        W.mountSent, W.mountAt = m, now
-        KCD2MP_EmitEvent("w172_mount", m and "1" or "0")
-    end
-    if now - W.rideAt >= W.RIDE_CHECK_S then W.rideAt = now; pcall(KCD2MP_W172RideCheck, now) end
-    pcall(KCD2MP_W172TradeTick, now)
-end
-
-function KCD2MP_W172Switch(key, field, arg, what, evt)
-    local v = KCD2MP_Wo122ParseBool(arg)
-    if v == "bad" then mp_log("mp_" .. key .. ": expected on|off"); return false end
-    if v ~= nil then KCD2MP.w172[field] = v end
-    if evt then KCD2MP_EmitEvent("w172_cfg", key .. "=" .. (KCD2MP.w172[field] and "on" or "off")) end
-    mp_log(string.format("WO172-TOGGLE mp_%s %s -- %s", key, KCD2MP.w172[field] and "on" or "off", what))
-    return true
-end
-function KCD2MP_W172SetDeadWins(arg) return KCD2MP_W172Switch("dead_wins", "deadWins", arg, "a copy the host's death reached is never worked again (no activity, tool, retarget, strike or row)", true) end
-function KCD2MP_W172SetRideRepair(arg) return KCD2MP_W172Switch("ride_repair", "rideRepair", arg, "riding is kept right: your own mount is sent as the game says it, a figure is mounted/dismounted again every 2 s, a horse is never under the ground", true) end
-function KCD2MP_W172SetTradeHold(arg) return KCD2MP_W172Switch("trade_hold", "tradeHold", arg, "(joiner) a trader stays until your trade screen closes or you walk away") end
-function KCD2MP_W172SetPickpocket(arg) return KCD2MP_W172Switch("joiner_pickpocket", "pickpocket", arg, "(joiner) you can pickpocket the host's people: each item is asked of the host's NPC (taken back if it no longer has it)") end
-function KCD2MP_W172Status()
-    local W = KCD2MP.w172
-    local s = W.stats
-    mp_log(string.format("WO172-STATUS dead_wins=%s ride_repair=%s trade_hold=%s joiner_pickpocket=%s fader_held=%s | dead_marks=%d alive=%d remounts=%d dismounts=%d gave_up=%d snaps=%d | trade holds=%d releases=%d | picks=%d pick_fails=%d | fader kept=%d loads=%d ft_lifts=%d hud_restores=%d",
-        W.deadWins and "on" or "off", W.rideRepair and "on" or "off", W.tradeHold and "on" or "off", W.pickpocket and "on" or "off", tostring(W.faderHold),
-        s.deadMarks, s.alive, s.remounts, s.dismounts, s.gaveUp, s.snaps, s.tradeHolds, s.tradeReleases, s.picks, s.pickFails, s.faderKept, s.faderLoads, s.ftLifts, s.hudRestores))
     return true
 end
 
@@ -24069,7 +22906,6 @@ do
         W.fall[id] = { at = os.clock() }
         W.stats.fell = W.stats.fell + 1
         mp_log(string.format("WO155-FALL avatar=%s ok=true -- his friendly-fire knockdown: the engine's own fall and get-up play here", name))
-        Script.SetTimer(1200, function() if KCD2MP_W174FfEnd then pcall(KCD2MP_W174FfEnd, id) end end)   -- WO-174: the punch's fight ends with the knockdown
         Script.SetTimer(400, function() KCD2MP_W155FallTick(id) end)
     end
 
@@ -25201,7 +24037,6 @@ do
     -- picker), the actor's own StandUp (out of a bed, up from a knockdown). "hard" adds the game's own hit
     -- reaction as the interrupt, with no damage (TakeDamage 0 / 0, the DLL), and stands him up after it.
     function KCD2MP_W151Unstuck(arg)
-        if KCD2MP_W172HudRestore then pcall(KCD2MP_W172HudRestore, "mp_unstuck") end   -- WO-172 UI1: step 1 brings the HUD back too
         local hard = tostring(arg or ""):find("hard", 1, true) ~= nil
         local did = {}
         if KCD2MP_W164Unstuck then   -- WO-164 S3: a seat / bed / work station let go too; a second press within 10 s: beside the partner
@@ -25708,9 +24543,6 @@ do
         { id = "partner_marker", group = "Display", label = "Partner on the map", kind = "onoff", save = "PartnerMarker",
           cmd = "mp_partner_marker", fn = "KCD2MP_W164SetPartnerPin", get = function() return KCD2MP.w164 ~= nil and KCD2MP.w164.partnerPin end,
           help = "A pin on the map where your partner is." },
-        { id = "marker_style", group = "Display", label = "Marker style (knight)", kind = "onoff", save = "PartnerMarkerArt",
-          cmd = "mp_partner_marker_style", fn = "KCD2MP_W171SetStyle", get = function() return KCD2MP.w171 ~= nil and KCD2MP.w171.style ~= "companion" end,
-          help = "On: your partner is the artist's knight on the map, in their colour, turning with them. Off: the game's plain pin." },
         { id = "friendly_fire", group = "Gameplay", label = "Friendly fire", kind = "onoff", host = true, save = "FriendlyFire",
           cmd = "mp_friendly_fire", fn = "KCD2MP_Wo121SetFriendlyFire",
           get = function() return KCD2MP.w121 ~= nil and KCD2MP.w121.friendlyFire end,
@@ -25748,8 +24580,6 @@ do
           help = "The key that opens this menu. A new key works from the next game start." },
         { id = "unstuck", group = "Help", label = "I'm stuck", kind = "action", cmd = "mp_unstuck", fn = "KCD2MP_W151Unstuck",
           help = "Frees you from a stuck state: a bed, a picker that did not close, a knockdown." },
-        { id = "repair_combat", group = "Help", label = "Fix my weapons / stuck fight", kind = "action", cmd = "mp_repair_combat", fn = "KCD2MP_W174Repair",
-          help = "Frees weapons that will not draw and a fight that never ends. Then save your game into a new slot." },
         { id = "report", group = "Help", label = "Something's wrong here", kind = "action", cmd = "mark_odd", fn = "KCD2MP_Mark", arg = "odd",
           help = "Marks this moment in the logs. Then send your logs with Report a bug (in the launcher) before you restart." },
         { id = "version", group = "Help", label = "Version", kind = "info",
@@ -26877,19 +25707,9 @@ local ok, err = pcall(function()
     System.AddCCommand("mp_flee_limit", 'KCD2MP_W164SetFleeLimit(%line)', "WO-164: (joiner) no weapon tug-of-war on a fleeing host copy: one re-assert per 2 s, none while it flees, 20 s of rest after 3 in 10 s (default on): mp_flee_limit on|off")
     System.AddCCommand("mp_joiner_events", 'KCD2MP_W164SetJoinerEvents(%line)', "WO-164: (joiner) on = this game's own random events (caravans, riders, ambushes) are off during a session so the host's are the only ones; back when the session ends: mp_joiner_events on|off")
     System.AddCCommand("mp_partner_marker", 'KCD2MP_W164SetPartnerPin(%line)', "WO-164: a pin on the map where your partner is, moved as they walk, gone when they leave (default on): mp_partner_marker on|off")
-    System.AddCCommand("mp_partner_marker_style", 'KCD2MP_W171SetStyle(%line)', "WO-171: the partner's pin on the map: rotating = the artist's knight in their colour, turned to their facing; flat = one picture facing north; companion = the game's own plain pin (default rotating): mp_partner_marker_style rotating|flat|companion")
-    System.AddCCommand("mp_marker_dir_offset", 'KCD2MP_W171SetDirOffset(%line)', "WO-171: turn the knight's picture by whole steps (0..7, one step = 45 degrees) if it looks off by a step (default 0): mp_marker_dir_offset 0..7")
-    System.AddCCommand("mp_marker_dir_flip", 'KCD2MP_W171SetDirFlip(%line)', "WO-171: on = the knight turns the other way, if it turns the wrong way (default off): mp_marker_dir_flip on|off")
-    System.AddCCommand("mp_w171_status", 'KCD2MP_W171Status()', "WO-171: the partner marker's style, offset and flip")
     System.AddCCommand("mp_figure_guard", 'KCD2MP_W170SetFigureGuard(%line)', "WO-170: (host) a partner's figure never attacks, draws or sheathes on its own -- its combat automation stays off and a blow of its that no swing of the partner's matches is put back (default on): mp_figure_guard on|off")
     System.AddCCommand("mp_scene_hold", 'KCD2MP_W170SetSceneHold(%line)', "WO-170: (joiner) a copy is not paused again while its dialogue's scene is still running, 10 s at most (default on): mp_scene_hold on|off")
     System.AddCCommand("mp_w170_status", 'KCD2MP_W170Status()', "WO-170: the figure guard, the dialogue-scene hold and the rider mount gate of this build")
-    System.AddCCommand("mp_dead_wins", 'KCD2MP_W172SetDeadWins(%line)', "WO-172: (joiner) an enemy the host killed stays dead on your screen -- no activity, tool, retarget, strike or swing on its body again (default on): mp_dead_wins on|off")
-    System.AddCCommand("mp_ride_repair", 'KCD2MP_W172SetRideRepair(%line)', "WO-172: riding stays right -- your mount is sent as the game says it, your partner's figure is put back on (or off) its horse every 2 s if it differs, a horse is never under the ground (default on): mp_ride_repair on|off")
-    System.AddCCommand("mp_trade_hold", 'KCD2MP_W172SetTradeHold(%line)', "WO-172: (joiner) a trader you talk to stays until your trade screen closes or you walk away, a cancelled haggle included (default on): mp_trade_hold on|off")
-    System.AddCCommand("mp_joiner_pickpocket", 'KCD2MP_W172SetPickpocket(%line)', "WO-172: (joiner) you can pickpocket the host's people; every item is asked of the host's NPC and taken back if it no longer has it (default on): mp_joiner_pickpocket on|off")
-    System.AddCCommand("mp_mark_shot", 'KCD2MP_W172SetMarkShot(%line)', "WO-172: a mark (mark_odd, the menu's 'Something's wrong here') also takes the game's own screenshot into its screenshots folder (default on): mp_mark_shot on|off")
-    System.AddCCommand("mp_w172_status", 'KCD2MP_W172Status()', "WO-172: the dead-copy gate, riding repair, trade hold, pickpocket, black and HUD counters of this build")
     System.AddCCommand("mp_rider_unit", 'KCD2MP_W164SetRiderUnit(%line)', "WO-164: (joiner) a host rider is mounted on its horse's copy -- one unit, carried by the horse's stream (default on): mp_rider_unit on|off")
     System.AddCCommand("mp_w164_status", "KCD2MP_W164Status()", "WO-164: the sweep, the talk guard, the flee limiter, the random-event switch (WO164-STATUS here; MP-WO164-STATS in agent.log)")
     System.AddCCommand("mp_w164_sweep", 'KCD2MP_W164SweepCmd(%line)', "WO-164: sweep one host copy now (a test): mp_w164_sweep <npc>")
@@ -26899,17 +25719,6 @@ local ok, err = pcall(function()
     System.AddCCommand("mp_host_lock", 'KCD2MP_W165SetHostLock(%line)', "WO-165: (host) you can lock onto an NPC that is beating your partner: near it (6 m) and facing it, you join its fight as its foe; it keeps fighting your partner until you hit it (default on): mp_host_lock on|off")
     System.AddCCommand("mp_victim_decides", 'KCD2MP_W165SetVictimDecides(%line)', "WO-165: (joiner) your own game judges an enemy's blow and applies it; while you hold block the host's game decides, as before (UNTESTED with two players; default off since 0.48.2): mp_victim_decides on|off")
     System.AddCCommand("mp_block_recoil", 'KCD2MP_W165SetBlockRecoil(%line)', "WO-165: (joiner) an enemy whose blow you blocked plays the game's own bounce-back (UNTESTED with two players; default on): mp_block_recoil on|off")
-    System.AddCCommand("mp_real_hits", 'KCD2MP_W173SetRealHits(%line)', "WO-173: (host) your partner's blows are real hits in your world: the enemy blocks, parries, staggers and fights back by its own rules, the same on both screens; off = the old raw damage, never a knock-out from one blow (UNTESTED with two players; default OFF since 0.50.0 -- WO-176 could not stage a bandit that fights your partner -- the capped raw fallback is the default): mp_real_hits on|off")
-    System.AddCCommand("mp_arranged_guard", 'KCD2MP_W176SetArrangedGuard(%line)', "WO-176: (host) a quest's arranged fight is the story's: your partner's figure stays out of it -- no skirmish, no threat, no forced target, no lock-on, none of his blows land in it, and he is told once (default on): mp_arranged_guard on|off")
-    System.AddCCommand("mp_copy_blocks", 'KCD2MP_W176SetCopyBlocks(%line)', "WO-176: (joiner) an enemy that blocks or parries your blow in the host's world shows its block on your screen (default on): mp_copy_blocks on|off")
-    System.AddCCommand("mp_repair_combat", 'KCD2MP_W174Repair(%line)', "WO-174: frees stuck weapons -- clears partner-figure fight links, ends a stuck fight, re-equips a melee weapon -- and says so; on a save that was fine it changes nothing: mp_repair_combat")
-    System.AddCCommand("mp_weapon_autofix", 'KCD2MP_W174SetAutofix(%line)', "WO-174: after mp_repair_combat freed your weapons, every later load in this game session equips that weapon again, because the lock returns on a reload (default on): mp_weapon_autofix on|off")
-    System.AddCCommand("mp_save_guard", 'KCD2MP_W175SetGuard(%line)', "WO-175: no save while a dialogue, a scene, a fight, a quest's arranged fight or one of the mod's own changes is in progress; the game's saves wait under a lock while the mod changes your inventory, equipment or body (max 10 s) (default on): mp_save_guard on|off")
-    System.AddCCommand("mp_coop_playline", 'KCD2MP_W175SetCoopPlayline(%line)', "WO-175: co-op plays in a copy of your world in a save slot of its own, never in your own single-player saves (default on; remembered in mod-settings.json): mp_coop_playline on|off; bare = report")
-    System.AddCCommand("mp_save_health", 'KCD2MP_W175SetHealth(%line)', "WO-175: every save and every load is checked; a save whose quest fight never finished (your weapons locked) gets a repaired copy next to it and the copy is loaded; the original is never changed (default on): mp_save_health on|off")
-    Script.SetTimer(5000, function() if KCD2MP_W175Tick then pcall(KCD2MP_W175Tick) end end)   -- WO-175's save-lock chain
-    System.AddCCommand("mp_combat_autoclean", 'KCD2MP_W174SetAutoclean(%line)', "WO-174: before saves, when a partner leaves and after loads, the fight records between you and a partner's figure are cleared (default on): mp_combat_autoclean on|off")
-    System.AddCCommand("mp_w173_status", 'KCD2MP_W173Status()', "WO-173: real-hit counters (WO173-STATUS here; MP-WO173-STATS in agent.log)")
     System.AddCCommand("mp_copy_strikes", 'KCD2MP_W166SetCopyStrikes(%line)', "WO-166: (joiner) an enemy swinging at you counts as a real strike on your screen: the game's own block and riposte prompts; the host still decides the damage (UNTESTED with two players; default on): mp_copy_strikes on|off")
     System.AddCCommand("mp_snap_fix", 'KCD2MP_W166SetSnapFix(%line)', "WO-166: (joiner) an enemy's swing holds its figure only as long as the swing, never for seconds (less snapping in fights; default on): mp_snap_fix on|off")
     System.AddCCommand("mp_w166_automode", 'KCD2MP_W166SetAutoMode(%line)', "WO-166: test tool -- the partner figure's combat automation pattern while it is in combat (0 all off, 1 all on, 2-9 patterns)")
@@ -28538,7 +27347,6 @@ local ok2, err2 = pcall(function()
         if origOnInit then origOnInit(self) end
         System.LogAlways("[KCD2-MP] Player loaded!")
         KCD2MP_GetPos()
-        if KCD2MP_W175AfterLoad then pcall(KCD2MP_W175AfterLoad, "oninit") end   -- WO-175: every load (no agent needed): the save-lock chain
 
         -- Re-install OnAction hooks here (after player fully initialized).
         -- Player.Client.OnAction may be reset during game load; re-hooking in OnInit

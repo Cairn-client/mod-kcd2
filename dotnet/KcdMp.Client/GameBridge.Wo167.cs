@@ -475,7 +475,6 @@ public partial class GameBridge
             case 's' when !W137Host: Wo167Background("ft-mirror", "shared-travel", () => Wo167FtMirrorAsync(seq, arg)); return;
             case 'e' when !W137Host:
                 Console.WriteLine($"WO167-FT the host's travel seq={seq} ended at {arg}{(interrupted ? " INTERRUPTED midway (a road encounter): this player is placed beside the host there" : "")}{(_w167LocalTravel ? " -- this game's own run is still under way: placed beside the host when it ends" : "")}");
-                await ExecLuaAsync("if KCD2MP_W172AfterHostTravel then KCD2MP_W172AfterHostTravel(\"host-travel-ended\") end");   // WO-172 FT1: a refused quest travel's black lifted
                 return;
             default: Interlocked.Increment(ref _w164Malformed); return;
         }

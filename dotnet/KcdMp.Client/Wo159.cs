@@ -88,25 +88,6 @@ public static class Wo159
         return new SavesReport(usable.OrderByDescending(u => u.SaveTime).ToList(), regular, copies, prologue, FreePlaylines(saves));
     }
 
-    /// <summary>
-    /// The host's worlds as the menu lists them (the WO-125 / WO-157 classifier: the Henry store beside
-    /// <paramref name="ledger"/>), without the staged start saves and <paramref name="skip"/> (WO-175: the co-op copies
-    /// prepared for this launch).
-    /// </summary>
-    public static SavesReport HostWorlds(string saves, string ledger, ISet<string>? skip = null)
-    {
-        var henry = new HenryStore(Path.Combine(Path.GetDirectoryName(ledger)!, "henry"), log: _ => { });
-        var hosted = henry.Hosted();
-        var joined = henry.Worlds().Select(x => henry.BaseTagOf(x.Tag)).ToHashSet(StringComparer.Ordinal);
-        var hide = ReadLedger(ledger).Select(e => e.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        if (skip is not null) hide.UnionWith(skip);
-        return MenuSaves(saves, t => joined.Contains(t) && !hosted.Contains(t), p =>
-        {
-            try { return WhsSave.PlayerOf(WhsSave.Inflate(WhsSave.ReadShared(p)).Raw).IsHenry; }
-            catch (Exception ex) when (ex is IOException or InvalidDataException) { return false; }
-        }, hide);
-    }
-
     /// <summary>The playlines with no save at all (folder missing, or no .whs in it): where a new adventure may go.</summary>
     public static List<int> FreePlaylines(string saves)
     {
@@ -425,10 +406,15 @@ public static class Wo159
             case "saves":
             {
                 if (saves is null) { Out(new { ok = false, why = "no saves folder" }); return 1; }
-                // WO-175 S1: the co-op copies prepared for this launch are not worlds of their own; a co-op playline's
-                // newest save is listed as "Together: <the original world>"
-                string coop = Wo175Coop.LedgerPath(Path.GetDirectoryName(ledger));
-                var r = Wo175Coop.LabelTogether(HostWorlds(saves, ledger, Wo175Coop.PendingPaths(coop)), saves, Wo175Coop.ReadLedger(coop));
+                var henry = new HenryStore(Path.Combine(Path.GetDirectoryName(ledger)!, "henry"), log: _ => { });
+                var hosted = henry.Hosted();
+                var joined = henry.Worlds().Select(x => henry.BaseTagOf(x.Tag)).ToHashSet(StringComparer.Ordinal);
+                var staged = ReadLedger(ledger).Select(e => e.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var r = MenuSaves(saves, t => joined.Contains(t) && !hosted.Contains(t), p =>
+                {
+                    try { return WhsSave.PlayerOf(WhsSave.Inflate(WhsSave.ReadShared(p)).Raw).IsHenry; }
+                    catch (Exception ex) when (ex is IOException or InvalidDataException) { return false; }
+                }, staged);
                 // a staged start save never played: what New adventure loads
                 var st = ReadLedger(ledger).LastOrDefault(e => File.Exists(e.Path));
                 Out(new

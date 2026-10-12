@@ -140,38 +140,6 @@ public sealed class ActionRowCatalog
         return best;
     }
 
-    /// <summary>combat_action_block / _perfect_block action types the copy's own block plays (WO-176 B3): 6 block, 8 block broken, 14 perfect block.</summary>
-    public const int ActionBlock = 6, ActionBlockBroken = 8, ActionPerfectBlock = 14;
-
-    /// <summary>
-    /// WO-176 (B3a): the defender's own row for a blow the host's NPC blocked / perfectly blocked / had its block broken by -- an NPC row (no
-    /// <c>player</c> tag) of <c>combat_action_block</c> (action 6, 8 broken) or <c>combat_action_perfect_block</c> (action 14) whose weapon
-    /// tags (l_* / r_*) are exactly the copy's own (read from the last swing row it played); of several the one whose block zone is the
-    /// blow's (<c>dZ&lt;zone&gt;</c>, -1 = any), then the lowest tags, then the lowest GUID, so every machine picks the same. Null = none fits
-    /// (the caller logs why and plays nothing).
-    /// </summary>
-    public Row? BlockRow(Row copySwing, int action, int zone)
-    {
-        string table = action == ActionPerfectBlock ? "combat_action_perfect_block" : "combat_action_block";
-        var want = Wo165Rules.WeaponTags(copySwing.Tags);
-        if (want.Count == 0) return null;
-        var wantSet = new HashSet<string>(want, StringComparer.Ordinal);
-        string dz = zone >= 0 ? $"dZ{zone}" : "";
-        Row? best = null; Guid bestGuid = default; int bestScore = -1;
-        foreach (var (g, r) in _rows)
-        {
-            if (r.Table != table || r.ActionType != action) continue;
-            var tags = r.Tags.Split('+', StringSplitOptions.RemoveEmptyEntries);
-            if (tags.Contains("player", StringComparer.Ordinal)) continue;
-            var wt = Wo165Rules.WeaponTags(r.Tags);
-            if (wt.Count != wantSet.Count || !wt.All(wantSet.Contains)) continue;
-            int score = dz.Length > 0 && tags.Contains(dz, StringComparer.Ordinal) ? 1 : 0;
-            if (best is null || score > bestScore || (score == bestScore && (string.CompareOrdinal(r.Tags, best.Value.Tags) < 0
-                || (r.Tags == best.Value.Tags && g.CompareTo(bestGuid) < 0)))) { best = r; bestGuid = g; bestScore = score; }
-        }
-        return best;
-    }
-
     /// <summary>
     /// WO-167 (C4): a plain attack row to play instead of a paired (sync) one on a copy that has no sync data -- a <c>CombatAttackGen</c>
     /// row of the attack table with the same right-hand weapon (Wo167Rules.PlainScore: the attack type, the strength, the zone, the left

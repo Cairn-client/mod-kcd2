@@ -43,7 +43,6 @@ public static class Wo154MenuRules
         new("Whistle", Kind.OnOff, false),
         new("PartnerHerbs", Kind.OnOff, false),
         new("PartnerMarker", Kind.OnOff, false),   // WO-164 C2: mp_partner_marker
-        new("PartnerMarkerArt", Kind.OnOff, false),   // WO-171 M: "Marker style" (on = the knight, off = the game's plain pin)
     };
 
     /// <summary>
