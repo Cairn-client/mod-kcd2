@@ -121,8 +121,7 @@ SPHERE = {}
 INV = {}
 AI.IsPersonallyHostile = function(a, b) return HOSTILE[tostring(a) .. "|" .. tostring(b)] == true end
 AI.RemovePersonallyHostile = function(a, b) HOSTILE[tostring(a) .. "|" .. tostring(b)] = nil end
-Player = mkstub()
-Player.IsLockedToOpponent = function(id) return HOSTILE["1|" .. tostring(id)] == true end
+player.player = { IsLockedToOpponent = function(self, id) return HOSTILE["1|" .. tostring(id)] == true end }
 System.GetEntitiesInSphere = function(p, r) return SPHERE end
 player.id = 1
 player.this = { id = "wuid-dude" }
