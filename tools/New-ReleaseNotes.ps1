@@ -13,9 +13,8 @@ param(
 
 $root = Split-Path $PSScriptRoot -Parent
 $strict = '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
-$prev = @(& git -C $root tag --list | Where-Object { $_ -cmatch $strict -and $_ -ne $Tag } |
-    Sort-Object { [version]$_ }) | Select-Object -Last 1
-
+. (Join-Path $PSScriptRoot "CairnTags.ps1")
+$prev = Get-CairnReleaseTags $root $Tag | Select-Object -Last 1
 # the first release of this fork starts from the upstream tag it is based on (UPSTREAM.md), not from the whole upstream history
 $upstreamTag = "v" + ((Get-Content (Join-Path $root "UPSTREAM.md") -TotalCount 1) -replace '[^0-9.]', '').Trim('.')
 $range = if ($prev) { "$prev..HEAD" } else { "$upstreamTag..HEAD" }
