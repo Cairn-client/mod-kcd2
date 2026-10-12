@@ -175,3 +175,15 @@ backup (the throwaway `playline4` removed); the maintainer's `Mods\kdcmp` pak wa
 - The scene-name list is a heuristic by actor names; a scripted fight whose actors carry other names is not protected.
 - The native part has no new engine dependency (no `wo145` census rows): the guard only reads an entity's name through the existing
   `engine::entity_name`.
+
+## 9. The installer (local, unsigned, release candidate)
+
+Fresh clone of `ebd9056` (`release\c0491`, git-ignored), the three start saves copied in (SHA-1 equal to the source copies), `tools\Build-Installer.ps1
+-SoakWaiver "<the maintainer's standing rule, quoted in the WO-174 run prompt (2026-10-11): 'Ends in a release-candidate installer, always (soak
+waived under the standing rule, quoted and dated)'; built unattended 2026-10-11>"`: `release\KingdomComeTogether-Setup-0.49.1.exe`,
+**106,821,681 bytes**, sha256 `542f4bedf1b3377ec3b5813a2bc02f429aedde4459ba43f7158f8091ac90d963`, header version **0.49.1** (checked), the build's
+own gates green (agent 1,455 · native 9,318 · 59 Lua suites / 3,988 checks · relay 63 · setup 77 · logpack 14 · the installer cases 26/26 and 41/41,
+no FAIL line), unsigned (no signing settings on this machine). Local only: nothing uploaded. **The first build attempt of this run stopped at the
+gate** (`Test-WO154GameSynthetic`: the repair's Lua called `Player.IsLockedToOpponent` — there is no such global in the game's Lua, the call is
+`player.player:IsLockedToOpponent` — and used `AI` / `player` unguarded): fixed in `ebd9056` and the installer rebuilt from it; the gate did its job.
+
