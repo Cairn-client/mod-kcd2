@@ -21506,7 +21506,7 @@ end
 KCD2MP.w176.paused = KCD2MP.w176.paused or {}     -- figure name -> os.clock() when paused
 KCD2MP.w176.nearAt = KCD2MP.w176.nearAt or {}     -- figure name -> os.clock() a story actor was last seen near it
 KCD2MP.w176.stats = KCD2MP.w176.stats or { pause = 0, resume = 0 }
-KCD2MP.w176.radius, KCD2MP.w176.offAfterS, KCD2MP.w176.tickMs = 40, 5, 1000
+KCD2MP.w176.radius, KCD2MP.w176.offAfterS, KCD2MP.w176.tickMs, KCD2MP.w176.idleTickMs = 40, 5, 1000, 3000
 function KCD2MP_W176StoryNear(e)
     local found = nil
     pcall(function()
@@ -21543,13 +21543,15 @@ function KCD2MP_W176Tick(gen)
         if e and e.id then
             live[nm] = true
             local story = w.arrangedGuard and KCD2MP_W176StoryNear(e) or nil
-            if story then w.nearAt[nm] = now end
+            if story then w.nearAt[nm] = now; w.storySeenAt = now end
             if story then KCD2MP_W176Pause(nm, true, "story=" .. story)
             elseif w.paused[nm] and (not w.arrangedGuard or now - (w.nearAt[nm] or 0) >= w.offAfterS) then KCD2MP_W176Pause(nm, false, "story=-") end
         end
     end
     for nm, _ in pairs(w.paused) do if not live[nm] then w.paused[nm] = nil end end   -- a figure that left: its body is gone
-    Script.SetTimer(w.tickMs, function() KCD2MP_W176Tick(gen) end)
+    -- the sphere query walks the level: every 3 s while no story actor has been seen for 30 s, every second after one was
+    local ms = (w.storySeenAt and now - w.storySeenAt < 30) and w.tickMs or w.idleTickMs
+    Script.SetTimer(ms, function() KCD2MP_W176Tick(gen) end)
 end
 -- (Re)arm the chain: at start and after every load (a load kills timer chains, kcd2mp-lua-timer-liveness).
 function KCD2MP_W176Arm()

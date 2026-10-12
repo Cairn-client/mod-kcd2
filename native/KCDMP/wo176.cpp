@@ -40,6 +40,7 @@ std::unordered_map<uint32_t, Read> g_reads;
 std::unordered_map<uint32_t, Said> g_said;
 std::unordered_map<uint32_t, Shield> g_shields;   // figure eid -> what this module set on it (main thread only)
 double g_next = 0;
+std::atomic<double> g_storySeenAt{0.0};   // the last time any site or the walk saw a story actor (the walk's cadence follows it)
 std::atomic<uint32_t> c_asked{0}, c_keptContext{0}, c_keptName{0}, c_reads{0}, c_unreadable{0}, c_offThread{0}, c_removed{0}, c_removeFail{0},
                       c_ticks{0}, c_seen{0}, c_keptAftermath{0}, c_passive{0}, c_shieldOn{0}, c_shieldOff{0}, c_shieldFail{0};
 
@@ -155,6 +156,7 @@ void check_figures() {
         const Read r = read_contexts(npc);
         if (arranged(r.ctxA, r.ctxU, false) != Why::Context) continue;   // removal only while the fight runs (the aftermath has no skirmish)
         c_seen.fetch_add(1);
+        g_storySeenAt.store(now_s());
         void* nsoul = hits::soul_of_eid(npc);
         motion::NpcCombat nc{};
         const bool haveCombat = motion::read_npc_combat(npc, &nc);
@@ -222,6 +224,7 @@ bool kept_out(uint32_t eid, const char* site) {
     if (g_on.load()) r = read_contexts(eid);
     const Why w = g_on.load() ? arranged_now(r.ctxA, r.ctxU, listed, r.lastArranged, now_s()) : arranged(-1, -1, listed);
     if (w == Why::None) return false;
+    if (w == Why::Context || w == Why::Aftermath) g_storySeenAt.store(now_s());
     (w == Why::Context ? c_keptContext : w == Why::Aftermath ? c_keptAftermath : c_keptName).fetch_add(1);
     if (w == Why::Context || w == Why::Aftermath) say(eid, nm, w, r, site, nullptr, "yes");
     return true;   // the name list's own WO174-BRAWL line is the caller's (hits::scene_owned_eid)
@@ -236,7 +239,7 @@ void tick() {
     }
     const double now = now_s();
     if (now < g_next) return;
-    g_next = now + kTickS;
+    g_next = now + tick_interval(g_storySeenAt.load(), now);
     check_figures();
 }
 

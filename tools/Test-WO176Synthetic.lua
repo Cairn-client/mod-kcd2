@@ -189,6 +189,15 @@ do
     local gen0 = KCD2MP.w176.gen
     KCD2MP_W176Arm()
     check("P8: a load re-arms the chain (a new generation; the old chain stops)", KCD2MP.w176.gen == gen0 + 1)
+    TIMERS = {}
+    KCD2MP.w176.storySeenAt = NOW
+    KCD2MP_W176Arm()
+    check("P9: a story actor seen within 30 s -> the next check in 1 s", #TIMERS >= 1 and TIMERS[#TIMERS].ms == 1000, TIMERS[#TIMERS] and TIMERS[#TIMERS].ms)
+    TIMERS = {}
+    KCD2MP.w176.storySeenAt = NOW - 60
+    sphere = { f }
+    KCD2MP_W176Arm()
+    check("P10: none for 30 s -> the sphere query only every 3 s", #TIMERS >= 1 and TIMERS[#TIMERS].ms == 3000, TIMERS[#TIMERS] and TIMERS[#TIMERS].ms)
     ENTS["kcd2mp_1"] = nil; ENTS["tzel_man_2"] = nil
     System.GetEntitiesInSphere = function(p, r) return {} end
     noErrs("P")
