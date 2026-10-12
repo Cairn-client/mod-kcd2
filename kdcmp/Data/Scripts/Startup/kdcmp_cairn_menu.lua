@@ -33,6 +33,10 @@ do local function install()
     M.overlay = M.overlay == true
     M.CAIRN_CONTENT = M.CAIRN_CONTENT or { game = "Kingdom Come: Deliverance II", title = "Mod menu" }
 
+    -- rows of the mod's menu the launcher does not show: their switches stay as they are (the mod's defaults)
+    M.CAIRN_HIDDEN = M.CAIRN_HIDDEN or { clean_screen = true, partner_marker = true, sleep_vote = true, whistle = true,
+        partner_herbs = true, voice = true, menu_key = true, report = true }
+
     local KIND_WORD = { onoff = "onoff", crime = "choice", menukey = "key", voice = "onoff", action = "action", info = "info" }
     local function field(s) return (tostring(s or ""):gsub("[|~\r\n]", " ")) end
 
@@ -42,7 +46,7 @@ do local function install()
         pcall(function() blocked = M.blockedWhy() or "" end)
         local parts = { table.concat({ field(M.CAIRN_CONTENT.game), field(M.CAIRN_CONTENT.title), field(blocked), field(note) }, "~") }
         for _, it in ipairs(M.ITEMS) do
-            if not it.hidden or (it.showWhen and it.showWhen()) then
+            if (not it.hidden or (it.showWhen and it.showWhen())) and not M.CAIRN_HIDDEN[it.id] then
                 local v, locked = M.valueOf(it)
                 local on = "-"
                 if it.kind == "onoff" or it.kind == "voice" then on = (v == true) and "1" or (v == false) and "0" or "-" end
