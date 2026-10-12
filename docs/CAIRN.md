@@ -35,3 +35,12 @@ and runs what the player does with the menu through the game's console. Every pa
 seconds makes the launcher fall back to reading the log itself, which is also how a pack without a bridge works. It must stay one file
 (`Build-Pack.ps1` checks): the agent and the relay share its folder and carry newer copies of some dlls, and `tools/Test-PackSmoke.ps1`
 starts the relay and the bridge before a release is published.
+
+## The setup (`setup check`, `setup do`)
+
+`CairnBridgeKcd2.exe` is also the pack's program (`optionsProgram` in pack.json), and `"setup": true` says it does the game's setup. The launcher asks
+`setup check` for the checklist (Steam, the game, the disk space, the Modding Tools, the links between the game and the Modding Tools, the mod placed
+from this pack's own files, the C++ runtimes, the NPC lip-sync data) and passes back the action a step names to `setup do <action>`:
+`start-steam`, `install-game`, `install-moddingtools`, `link-workspace`, `place-mod`, `install-vcruntime`, `open-vc-download`, `link-facials`.
+The protocol is in the launcher's docs/PACKS.md. The code is `dotnet/KcdMp.CairnBridge/Setup/` and `SetupCli.cs`; the elevated link step is this
+program started again through UAC as `setup link-elevated`. A launcher that does not know `setup` keeps using its own checklist.
