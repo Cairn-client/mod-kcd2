@@ -18,7 +18,7 @@ $work = Join-Path $env:TEMP ('cairn-menu-synth-' + [guid]::NewGuid().ToString('N
 New-Item -ItemType Directory -Force $work | Out-Null
 try {
     # the mod, joined as the game loads it: kdcmp.lua, then the module
-    $joined = (Get-Content (Join-Path $startup 'kdcmp.lua') -Raw) + "`n" + (Get-Content (Join-Path $startup 'kdcmp_cairn_menu.lua') -Raw) + "`n" + (Get-Content (Join-Path $startup 'kdcmp_cairn_logs.lua') -Raw) + "`n" + (Get-Content (Join-Path $startup 'kdcmp_cairn_cutscene.lua') -Raw)
+    $joined = (Get-Content (Join-Path $startup 'kdcmp.lua') -Raw) + "`n" + (Get-Content (Join-Path $startup 'kdcmp_cairn_menu.lua') -Raw) + "`n" + (Get-Content (Join-Path $startup 'kdcmp_cairn_notice.lua') -Raw) + "`n" + (Get-Content (Join-Path $startup 'kdcmp_cairn_logs.lua') -Raw) + "`n" + (Get-Content (Join-Path $startup 'kdcmp_cairn_cutscene.lua') -Raw)
     $modPath = Join-Path $work 'joined.lua'
     [IO.File]::WriteAllText($modPath, $joined, (New-Object System.Text.UTF8Encoding($false)))
 

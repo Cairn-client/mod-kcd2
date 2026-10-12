@@ -65,7 +65,9 @@ do
     local head = fields((line:match("^([^|]*)")) or "")
     check("b: the header names the game and the menu", head[1] == "Kingdom Come: Deliverance II" and head[2] == "Mod menu", line:sub(1, 60))
     local items = itemsOf(line)
-    check("b: every item of the mod menu is there", #items == #M.ITEMS and #items >= 17, #items)
+    local hiddenN = 0
+    for _ in pairs(M.CAIRN_HIDDEN) do hiddenN = hiddenN + 1 end
+    check("b: every item of the mod menu is there, but the eight the launcher leaves out", hiddenN == 8 and #items == #M.ITEMS - hiddenN and #items >= 10, #items)
     local ok9, kinds = true, {}
     for _, it in ipairs(items) do
         local f = fields(it)
@@ -73,10 +75,12 @@ do
         kinds[f[3] or "?"] = true
     end
     check("b: every item has its nine fields", ok9)
-    check("b: the kinds are the launcher's words", kinds.onoff and kinds.action and kinds.info and kinds.choice and kinds.key and not kinds.voice, next(kinds))
+    check("b: the kinds are the launcher's words", kinds.onoff and kinds.action and kinds.info and kinds.choice and not kinds.key and not kinds.voice, next(kinds))
     local byId = {}
     for _, it in ipairs(items) do local f = fields(it); byId[f[1]] = f end
-    check("b: the map pin is an item of the menu", byId.partner_marker ~= nil and byId.partner_marker[3] == "onoff")
+    local gone = true
+    for _, id in ipairs({ "clean_screen", "partner_marker", "sleep_vote", "whistle", "partner_herbs", "voice", "menu_key", "report" }) do if byId[id] ~= nil then gone = false end end
+    check("b: the eight left-out rows are not sent, the marker style and the rest are", gone and byId.marker_style ~= nil and byId.friendly_fire ~= nil and byId.crime_mode ~= nil)
     check("b: there is no teleport-the-partner item and no F3 item", byId.bring_partner == nil and byId.noclip == nil)
     check("b: a switch reads on/off in field 4", byId.name_badges[4] == "1", byId.name_badges[4])
     check("b: no Lua errors", #ERRS == 0, ERRS[1])
@@ -165,6 +169,29 @@ do
     KCD2MP_CairnSetCutsceneShare("on")
     check("h: and back on", s.enabled == true)
     check("h: no Lua errors", #ERRS == 0, ERRS[1])
+end
+
+do
+    -- the mod's on-screen lines go to the launcher as one notice
+    local N = KCD2MP.cairnNotice
+    check("i: the notice module loaded", N ~= nil and type(KCD2MP_CairnRow) == "function" and type(KCD2MP_CairnNotice) == "function")
+    KCD2MP.launcherDraws = false
+    check("i: while the mod draws itself, rows and toasts are left to it", KCD2MP_CairnRow("msg", 110, "x") == false and KCD2MP_CairnNotice("toast", "x", 5) == false)
+    KCD2MP.launcherDraws = true
+    local mark = #LOG
+    check("i: while the launcher draws, a row is taken", KCD2MP_CairnRow("w140_prompt_keys", 262, "F11 yes / F12 no  (or mp_sleep_yes / mp_sleep_no)") == true)
+    KCD2MP_CairnRow("w140_prompt", 236, "Sleep until morning? (23s)")
+    check("i: and a toast", KCD2MP_CairnNotice("toast", "Your logs are saved", 6) == true)
+    N.lastAt = -1; KCD2MP_W154MenuBackstop()
+    local e = evts("notice", mark)
+    check("i: one notice, the toast first, then the rows from the top, console hints cut", #e == 1 and e[1] == "Your logs are saved^^Sleep until morning? (23s)^^F11 yes / F12 no", e[1])
+    N.lastAt = -1; N.toasts = {}; KCD2MP_W154MenuBackstop()
+    local h = evts("notice_hide", mark)
+    check("i: when nothing is left the notice is hidden", #h == 1)
+    N.lastAt = -1; KCD2MP_W154MenuBackstop()
+    check("i: and said once", #evts("notice_hide", mark) == 1)
+    KCD2MP.launcherDraws = false
+    check("i: no Lua errors", #ERRS == 0, ERRS[1])
 end
 
 local pass, fail = 0, 0

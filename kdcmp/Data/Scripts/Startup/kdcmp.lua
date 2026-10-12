@@ -256,6 +256,8 @@ local function mp_draw_row(key, x, y, text, size, stableText)
         KCD2MP._stats.screenRows = KCD2MP._stats.screenRows + 1
         mp_log(string.format('MP-SCREEN row=%s text="%s"', key, (logText:gsub('"', "'"))))
     end
+    -- CAIRN: while the launcher draws the in-game menu it also draws these lines, as one notice card (kdcmp_cairn_notice.lua)
+    if KCD2MP.launcherDraws and KCD2MP_CairnRow and KCD2MP_CairnRow(key, y, text) then return end
     System.DrawText(x, y, text, size)
 end
 -- Called once per frame after the rows are drawn: a row that was logged but
@@ -1070,6 +1072,8 @@ function KCD2MP_ShowNativeToast(text)
     mp_log_text("native", text)   -- WO-98 Phase 6
     if KCD2MP_W164NoteToast then pcall(KCD2MP_W164NoteToast, text) end   -- WO-164 M
     if KCD2MP.w154menu and KCD2MP.w154menu.clean then return end   -- WO-154: the clean screen shows no toast (still logged)
+    -- CAIRN: while the launcher draws the in-game menu it draws this toast too, in the menu's look at the top left
+    if KCD2MP.launcherDraws and KCD2MP_CairnNotice and KCD2MP_CairnNotice("toast", text, 6) then return end
     local ok = pcall(function()
         UIAction.CallFunction("hud", -1, "ShowInfoText", tostring(text), 10, 5000, true)
     end)
