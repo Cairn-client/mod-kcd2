@@ -115,6 +115,71 @@ public class EndToEndTests : IDisposable
     }
 
     [Fact]
+    public async Task TheLauncherCanListAndDeleteTheGamesSaves()
+    {
+        string saves = Path.Combine(_dir, "saves", "playline0"); Directory.CreateDirectory(saves);
+        string oldSave = Path.Combine(saves, "old.whs"); File.WriteAllBytes(oldSave, new byte[1024]); File.SetLastWriteTimeUtc(oldSave, DateTime.UtcNow.AddDays(-3));
+        string freshSave = Path.Combine(saves, "now.whs"); File.WriteAllBytes(freshSave, new byte[1024]);   // written just now: in use
+        string data = Path.Combine(_dir, "data"); string chr = Path.Combine(data, "hosted-henry", "Ann", "world1"); Directory.CreateDirectory(chr);
+        File.WriteAllBytes(Path.Combine(chr, "s.bin"), new byte[100]);
+
+        string pipeName = "cairn-e2e-" + Guid.NewGuid().ToString("N")[..12];
+        using var server = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 65536, 65536);
+        File.WriteAllText(Path.Combine(_dir, "kcd.log"), $"Log Started at {DateTime.Now:yyyy-MM-dd HH:mm:ss} (local)\n");
+        Environment.SetEnvironmentVariable("CAIRN_BRIDGE_PIPE", pipeName);
+        Environment.SetEnvironmentVariable("CAIRN_GAME_DIR", _dir);
+        Environment.SetEnvironmentVariable("CAIRN_GAME_START", DateTime.Now.ToString("o"));
+        Environment.SetEnvironmentVariable("CAIRN_GAME_PID", null);
+        Environment.SetEnvironmentVariable("CAIRN_CONSOLE_URL", _consoleUrl);
+        Environment.SetEnvironmentVariable("CAIRN_SAVES_ROOT", Path.Combine(_dir, "saves"));
+        Environment.SetEnvironmentVariable("CAIRN_DATA_ROOTS", data);
+        try
+        {
+            var bridge = Task.Run(Program.Main);
+            await server.WaitForConnectionAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            using var reader = new StreamReader(server, new UTF8Encoding(false), false, 4096, leaveOpen: true);
+            async Task<JsonElement> Next() => JsonDocument.Parse((await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(8)))!).RootElement.Clone();
+            async Task Say(string line) { var b = Encoding.UTF8.GetBytes(line + "\n"); await server.WriteAsync(b); await server.FlushAsync(); }
+            Assert.Equal("hello", (await Next()).GetProperty("t").GetString());
+
+            await Say("""{"t":"saves_ask"}""");
+            var list = await Next();
+            Assert.Equal("saves", list.GetProperty("t").GetString());
+            var slots = list.GetProperty("slots").EnumerateArray().ToList();
+            Assert.Equal(3, slots.Count);
+            string oldId = slots.First(s => s.GetProperty("name").GetString() == "playline0: old").GetProperty("id").GetString()!;
+            string freshId = slots.First(s => s.GetProperty("name").GetString() == "playline0: now").GetProperty("id").GetString()!;
+
+            // a save in use is refused with a plain message; the old one goes; the list comes back without it
+            await Say("{\"t\":\"save_delete\",\"id\":\"" + freshId + "\"}");
+            var refused = await Next();
+            Assert.Equal("toast", refused.GetProperty("t").GetString());
+            Assert.True(refused.GetProperty("error").GetBoolean());
+            Assert.Equal(3, (await Next()).GetProperty("slots").GetArrayLength());
+            Assert.True(File.Exists(freshSave));
+
+            await Say("{\"t\":\"save_delete\",\"id\":\"" + oldId + "\"}");
+            var done = await Next();
+            Assert.False(done.GetProperty("error").GetBoolean());
+            Assert.Equal(2, (await Next()).GetProperty("slots").GetArrayLength());
+            Assert.False(File.Exists(oldSave));
+
+            // a name that is not a listed save deletes nothing
+            await Say("""{"t":"save_delete","id":"../../../Windows"}""");
+            Assert.True((await Next()).GetProperty("error").GetBoolean());
+            await Next();
+
+            await Say("""{"t":"bye","reason":"done"}""");
+            Assert.Equal(0, await bridge.WaitAsync(TimeSpan.FromSeconds(8)));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("CAIRN_SAVES_ROOT", null);
+            Environment.SetEnvironmentVariable("CAIRN_DATA_ROOTS", null);
+        }
+    }
+
+    [Fact]
     public async Task TheBridgeEndsWhenTheGameIsGone()
     {
         string pipeName = "cairn-e2e-" + Guid.NewGuid().ToString("N")[..12];
