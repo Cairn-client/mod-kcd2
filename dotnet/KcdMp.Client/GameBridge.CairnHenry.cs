@@ -55,19 +55,25 @@ public partial class GameBridge
         try { all = HenryBackupMsg.Pack(store.ReadRaw(s), store.LoadChestLedger(s)); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Console.WriteLine($"MP-HENRY backup: {s.Short} not readable ({ex.Message}) -- not sent"); return; }
         if (all.Length > Protocol.HenryMaxBytes) { Console.WriteLine($"MP-HENRY backup: {s.Short} is {all.Length} B, over the limit -- not sent"); return; }
+        await CairnHenrySendBytesAsync(target, seed, s.File, all, $"snapshot {s.Short}", why);
+    }
+
+    /// <summary>One transfer (an offer, then its chunks) of already packed bytes to the host or to one joiner.</summary>
+    private async Task CairnHenrySendBytesAsync(byte target, uint seed, string name, byte[] all, string what, string why)
+    {
         int chunks = (all.Length + Protocol.HenryChunkMax - 1) / Protocol.HenryChunkMax;
         uint xfer = (uint)Random.Shared.Next(1, int.MaxValue);
         await _cairnHenrySendGate.WaitAsync(_wo122Ct);
         try
         {
-            await WriteJoinAsync(HenryBackupMsg.Offer(xfer, seed, all.Length, chunks, SHA256.HashData(all), s.File).BuildUp(target));
+            await WriteJoinAsync(HenryBackupMsg.Offer(xfer, seed, all.Length, chunks, SHA256.HashData(all), name).BuildUp(target));
             for (int i = 0; i < chunks; i++)
             {
                 int at = i * Protocol.HenryChunkMax;
                 await WriteJoinAsync(HenryBackupMsg.Chunk(xfer, i, all.AsSpan(at, Math.Min(Protocol.HenryChunkMax, all.Length - at))).BuildUp(target));
                 if (i + 1 < chunks) await Task.Delay(Protocol.HenryChunkPauseMs, _wo122Ct);
             }
-            Console.WriteLine($"MP-HENRY backup: sent snapshot {s.Short} ({all.Length} B, {chunks} chunk(s)) to {(target == Protocol.JoinTargetHost ? "the host" : $"ghost {target}")} -- {why}");
+            Console.WriteLine($"MP-HENRY backup: sent {what} ({all.Length} B, {chunks} chunk(s)) to {(target == Protocol.JoinTargetHost ? "the host" : $"ghost {target}")} -- {why}");
         }
         finally { _cairnHenrySendGate.Release(); }
     }
@@ -141,6 +147,117 @@ public partial class GameBridge
         }
     }
 
+    // ---------------------------------------------------------------- a new character from the host's start save
+    //
+    // "Join with a new character" with a playstyle needs that playstyle's start save. A joiner who has none (nothing ships them to a
+    // player) asks the host, whose own New adventure needs them anyway: the host sends the file as a Fresh transfer, the joiner keeps it
+    // as its copy and joins from it exactly as from a start save of its own. The joiner's character then lives on the host like any other.
+
+    private string? _freshAskedStyle;          // joiner: the playstyle already asked for (once per answer)
+    private bool _freshAwaitingHost;           // joiner: the file has been asked for and has not come
+    private bool _freshHostHasNone;            // joiner: the host answered that it has no start save of that playstyle
+
+    /// <summary>Where a start save the host sent is kept on this machine (a copy of the host's: never the launcher's own folder).</summary>
+    internal static string CairnHostFreshRoot() => Path.Combine(Path.GetDirectoryName(HenryStore.DefaultRoot())!, "host-start-saves");
+
+    /// <summary>Joiner: the host's copy of a playstyle's start save, when it already came (null otherwise).</summary>
+    internal static string? CairnHostFreshFile(string style)
+    {
+        string file = Path.Combine(CairnHostFreshRoot(), style + ".whs");
+        return File.Exists(file) ? file : null;
+    }
+
+    /// <summary>Joiner: asks the host for that playstyle's start save, once. False when the ask could not go out.</summary>
+    private bool CairnFreshAsk(string style)
+    {
+        if (_isDamageAuthority || _wo122Stream is null) return false;
+        if (_freshAskedStyle == style && (_freshAwaitingHost || _freshHostHasNone)) return true;
+        _freshAskedStyle = style;
+        _freshAwaitingHost = true;
+        _freshHostHasNone = false;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _cairnHenrySendGate.WaitAsync(_wo122Ct);
+                try { await WriteJoinAsync(HenryBackupMsg.FreshAsk(style).BuildUp(Protocol.JoinTargetHost)); }
+                finally { _cairnHenrySendGate.Release(); }
+                Console.WriteLine($"MP-HENRY fresh: no {style} start save here -- asked the host for its own");
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                _freshAwaitingHost = false;
+                Console.WriteLine($"MP-HENRY fresh: the ask for the {style} start save was not sent ({ex.GetType().Name})");
+            }
+        });
+        return true;
+    }
+
+    /// <summary>Host: one joiner wants a new character of a playstyle: this host's own start save of it goes down, or "none".</summary>
+    private async Task CairnFreshAnswerAsync(byte g, string style)
+    {
+        string who = _ghostNames.TryGetValue(g, out var n) ? n : $"ghost {g}";
+        try
+        {
+            if (Wo159Rules.StartSaveRoot() is not string root || Wo159.StyleFile(root, style) is not string file)
+            {
+                Console.WriteLine($"MP-HENRY fresh: {who} asked for a {style} start save and this host has none");
+                await WriteJoinAsync(new HenryBackupMsg(Protocol.HenryStored, 0, new[] { Protocol.HenryStoredNoStartSave }).BuildUp(g));
+                return;
+            }
+            byte[] bytes = WhsSave.ReadShared(file);
+            var v = WhsSave.Verify(bytes);
+            var all = HenryBackupMsg.Pack(bytes, null);
+            if (!v.Ok || all.Length > Protocol.HenryMaxBytes)
+            {
+                Console.WriteLine($"MP-HENRY fresh: this host's {style} start save cannot be sent ({(v.Ok ? $"{all.Length} B" : v.Reason)})");
+                await WriteJoinAsync(new HenryBackupMsg(Protocol.HenryStored, 0, new[] { Protocol.HenryStoredNoStartSave }).BuildUp(g));
+                return;
+            }
+            string name = HenryBackupMsg.FreshName(DateTime.UtcNow, MD5.HashData(bytes));
+            await CairnHenrySendBytesAsync(g, Protocol.HenryFreshSeed(style), name, all, $"the {style} start save", $"{who} wants a new {style} character");
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or ArgumentException)
+        {
+            Console.WriteLine($"MP-HENRY fresh: the {style} start save could not be sent to {who} ({ex.GetType().Name}: {ex.Message})");
+        }
+    }
+
+    /// <summary>Joiner: the host's start save came whole: kept as this playstyle's copy, and the join goes on from it.</summary>
+    private void CairnFreshStartSaveReceived(string style, byte[] bytes)
+    {
+        try
+        {
+            var v = WhsSave.Verify(bytes);
+            if (!v.Ok) { Console.WriteLine($"MP-HENRY fresh: the host's {style} start save is not a save ({v.Reason}) -- dropped"); _freshAwaitingHost = false; _freshHostHasNone = true; return; }
+            var c = WhsSave.Inflate(bytes);
+            if (!WhsSave.PlayerOf(c.Raw).IsHenry) { Console.WriteLine($"MP-HENRY fresh: the host's {style} start save has no Henry in it -- dropped"); _freshAwaitingHost = false; _freshHostHasNone = true; return; }
+            Directory.CreateDirectory(CairnHostFreshRoot());
+            string file = Path.Combine(CairnHostFreshRoot(), style + ".whs"), part = file + ".part";
+            File.WriteAllBytes(part, bytes);
+            File.Move(part, file, overwrite: true);
+            Console.WriteLine($"MP-HENRY fresh: kept the host's {style} start save ({bytes.Length} B) -- joining from it");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            Console.WriteLine($"MP-HENRY fresh: the host's {style} start save could not be kept ({ex.GetType().Name}: {ex.Message})");
+            _freshHostHasNone = true;
+        }
+        _freshAwaitingHost = false;
+        _autoNextUtc = DateTime.UtcNow;   // the join is looked at again now
+    }
+
+    /// <summary>Joiner: the host has no start save of that playstyle.</summary>
+    private void CairnFreshHostHasNone()
+    {
+        Console.WriteLine($"MP-HENRY fresh: the host has no {_freshAskedStyle} start save");
+        _freshAwaitingHost = false;
+        _freshHostHasNone = true;
+        _autoNextUtc = DateTime.UtcNow;
+    }
+
     // ---------------------------------------------------------------- frames in
 
     private async Task CairnHenryBackupOnFrameAsync(byte src, byte[] body)
@@ -183,6 +300,7 @@ public partial class GameBridge
                         return;
                     }
                     if (_isDamageAuthority) await CairnHenryBackupHostKeepAsync(src, m.Xfer, rx.Seed, rx.Name, hblk, chest);
+                    else if (Protocol.HenryFreshStyleOf(rx.Seed) is string freshStyle) CairnFreshStartSaveReceived(freshStyle, hblk);
                     else CairnHenryBackupJoinerImport(rx.Seed, rx.Name, hblk, chest);
                     return;
                 }
@@ -195,6 +313,13 @@ public partial class GameBridge
                     Console.WriteLine($"MP-HENRY backup: {name} starts over in world {tag} -- the host's copy {(had ? "deleted" : "was empty")}");
                     return;
                 }
+                case Protocol.HenryFreshAsk when _isDamageAuthority:
+                    if (HenryBackupMsg.TryFreshAsk(m.Data, out string askedStyle)) await CairnFreshAnswerAsync(src, askedStyle);
+                    else Console.WriteLine($"MP-HENRY fresh: a malformed ask from ghost {src} dropped");
+                    return;
+                case Protocol.HenryStored when !_isDamageAuthority && m.Data.Length > 0 && m.Data[0] == Protocol.HenryStoredNoStartSave:
+                    CairnFreshHostHasNone();
+                    return;
                 case Protocol.HenryStored when !_isDamageAuthority:
                     if (m.Data.Length > 0 && m.Data[0] != Protocol.HenryStoredOk) Console.WriteLine("MP-HENRY backup: the host could NOT keep a snapshot (it is still kept here)");
                     return;

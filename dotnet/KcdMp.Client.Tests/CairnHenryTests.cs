@@ -28,6 +28,59 @@ public class CairnHenryTests : IDisposable
         Assert.NotEqual(Protocol.W164Up, Protocol.HenryBackupUp);
     }
 
+    [Theory]
+    [InlineData("soldier")]
+    [InlineData("adviser")]
+    [InlineData("scout")]
+    public void ANewCharactersAskAndItsStartSaveTransferRoundTrip(string style)
+    {
+        // the ask: one message to the host, the playstyle in it
+        var ask = HenryBackupMsg.FreshAsk(style);
+        Assert.Equal(Protocol.HenryFreshAsk, ask.Kind);
+        Assert.True(HenryBackupMsg.TryFreshAsk(ask.Data, out string got));
+        Assert.Equal(style, got);
+        var wire = ask.BuildUp(Protocol.JoinTargetHost);
+        var row = Protocol.JoinWireFor(Protocol.HenryBackupUp)!.Value;
+        Assert.InRange(wire.Length - 3, row.Min, row.Max);
+        Assert.True(HenryBackupMsg.TryDecode(wire.AsSpan(8), out var back));
+        Assert.Equal(Protocol.HenryFreshAsk, back.Kind);
+
+        // the answer's transfer: a name the offer accepts, and a seed that names the playstyle and no world's
+        var save = new byte[1_350_000];
+        new Random(7).NextBytes(save);
+        string name = HenryBackupMsg.FreshName(new DateTime(2026, 10, 12, 15, 30, 0, DateTimeKind.Utc), MD5.HashData(save));
+        Assert.True(HenryBackupMsg.ValidName(name));
+        Assert.EndsWith("-fresh.hblk", name);
+        uint seed = Protocol.HenryFreshSeed(style);
+        Assert.Equal(style, Protocol.HenryFreshStyleOf(seed));
+        var all = HenryBackupMsg.Pack(save, null);
+        Assert.True(all.Length <= Protocol.HenryMaxBytes);
+        int chunks = (all.Length + Protocol.HenryChunkMax - 1) / Protocol.HenryChunkMax;
+        var offer = HenryBackupMsg.Offer(7, seed, all.Length, chunks, SHA256.HashData(all), name);
+        Assert.True(HenryBackupMsg.TryOffer(offer.Data, out uint s2, out int size, out int c2, out _, out string n2));
+        Assert.Equal((seed, all.Length, chunks, name), (s2, size, c2, n2));
+        Assert.True(HenryBackupMsg.TryUnpack(all, out var hblk, out var chest));
+        Assert.Equal(save, hblk);
+        Assert.Null(chest);
+    }
+
+    [Theory]
+    [InlineData(new byte[] { })]
+    [InlineData(new byte[] { 0 })]
+    [InlineData(new byte[] { 4, (byte)'b', (byte)'a', (byte)'r', (byte)'d' })]     // not a playstyle
+    [InlineData(new byte[] { 9, (byte)'s', (byte)'o', (byte)'l', (byte)'d', (byte)'i', (byte)'e', (byte)'r' })]   // the length lies
+    public void AnAskThatIsNotAPlaystyleIsRefused(byte[] data) => Assert.False(HenryBackupMsg.TryFreshAsk(data, out _));
+
+    [Fact]
+    public void AWorldsSeedIsNeverTakenForAStartSave()
+    {
+        Assert.Null(Protocol.HenryFreshStyleOf(0x12345678));
+        Assert.Null(Protocol.HenryFreshStyleOf(0));
+        Assert.Null(Protocol.HenryFreshStyleOf(Protocol.HenryFreshSeed("scout") + 1));
+        Assert.Equal(3, Protocol.HenryFreshStyles.Select(Protocol.HenryFreshSeed).Distinct().Count());
+        Assert.Equal("fresh-ask", Protocol.HenryKindName(Protocol.HenryFreshAsk));
+    }
+
     [Fact]
     public void Henry_backup_messages_and_import_round_trip()
     {

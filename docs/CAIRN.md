@@ -15,6 +15,7 @@ what we changed. Where a file of upstream's had to be edited, the edit is marked
 | Log collection: the host's one row "Collect everyone's logs" (`mp_collect_logs`) takes every player's logs, the joiner's included (`kdcmp_cairn_logs.lua`, `GameBridge.CairnLogs.cs`, `ProtocolCairnLogs.cs`, join wire 0x76/0x77) | done |
 | Shared cutscenes (`kdcmp_cairn_cutscene.lua`, `GameBridge.CairnCutscene.cs`): the joiner holds its input and plays the host's scene | done, untried in the game |
 | Save system: the host keeps every joiner's character (`GameBridge.CairnHenry.cs`, `HenryStore.Cairn.cs`, join wire 0x78/0x79); the world fallback is not ported (upstream's per-host worlds replace it) | done, untried in the game |
+| A joiner picks a playstyle and joins with no start saves of its own: the host builds the new character from its own start save and sends it (`GameBridge.CairnHenry.cs`, a fresh ask on join wire 0x78/0x79); the host still needs its start saves | done, untried in the game |
 
 Versions: this mod has its own, starting at 0.1.0 (`VERSION`). Two players need the same MAJOR.MINOR.
 

@@ -90,7 +90,7 @@ $packJson = [ordered]@{
     native      = "bin/$nativeName"
     brandPak    = 'bin/kdcmp_brand.pak'
     agentConfig = 'kcdmp-client.json'
-    launcherMin = '0.1.0'
+    launcherMin = '0.3.7'
     lua         = [ordered]@{   # how the launcher talks to the mod through the game's console and log
         eventPrefix         = '[KCD2-MP-EVT] v1 '
         startGameEvent      = 'w159'
@@ -141,7 +141,7 @@ $index = [ordered]@{
     file     = $zipName
     sha256   = Get-Sha256 $zipPath
     size     = (Get-Item $zipPath).Length
-    launcherMin = '0.1.0'
+    launcherMin = '0.3.7'
 }
 [IO.File]::WriteAllText((Join-Path $release 'pack-index.json'), (($index | ConvertTo-Json) + "`n"), (New-Object System.Text.UTF8Encoding($false)))
 Write-Host "pack: $zipPath ($([math]::Round((Get-Item $zipPath).Length / 1MB, 1)) MB), version $version, based on upstream $upstream"
