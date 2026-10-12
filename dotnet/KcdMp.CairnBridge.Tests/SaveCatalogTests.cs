@@ -146,4 +146,52 @@ public class SaveCatalogTests : IDisposable
         Assert.Equal("Playline 10", SaveCatalog.FriendlyLine("playline10"));
         Assert.Equal("elsewhere", SaveCatalog.FriendlyLine("elsewhere"));
     }
+
+    // ---- the same questions with the game closed (the launcher's settings window), through the program's command line ----
+
+    private (int Code, List<JsonElement> Lines) Cli(bool running, params string[] args)
+    {
+        var sw = new StringWriter();
+        int code = SavesCli.Run(args, sw, Catalog, () => running);
+        return (code, sw.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(l => JsonDocument.Parse(l).RootElement.Clone()).ToList());
+    }
+
+    [Fact]
+    public void TheCommandLineListsTheSavesAsTheBridgeWould()
+    {
+        World("playline0", "autosave001.whs", DateTime.UtcNow.AddDays(-1));
+        var (code, lines) = Cli(false, "saves", "list");
+        Assert.Equal(0, code);
+        var list = Assert.Single(lines);
+        Assert.Equal("saves", list.GetProperty("t").GetString());
+        Assert.Equal("Autosave 1", list.GetProperty("slots")[0].GetProperty("name").GetString());
+    }
+
+    [Fact]
+    public void WithTheGameClosedASaveJustWrittenCanBeDeleted()
+    {
+        var path = World("playline0", "exit.whs", DateTime.UtcNow);                     // the exit save of the game that was just closed
+        var id = Catalog.List()[0].Id;
+        var (refusedCode, refused) = Cli(true, "saves", "delete", id);                   // running: it may be in use
+        Assert.Equal(1, refusedCode); Assert.True(refused[0].GetProperty("error").GetBoolean()); Assert.True(File.Exists(path));
+        var (code, lines) = Cli(false, "saves", "delete", id);                           // closed: nothing can be using it
+        Assert.Equal(0, code);
+        Assert.False(lines[0].GetProperty("error").GetBoolean());
+        Assert.Equal(0, lines[1].GetProperty("slots").GetArrayLength());
+        Assert.False(File.Exists(path));
+    }
+
+    [Theory]
+    [InlineData("saves")]
+    [InlineData("saves", "delete")]
+    [InlineData("saves", "list", "extra")]
+    [InlineData("saves", "format")]
+    public void ARequestItDoesNotKnowIsRefusedWithoutDeletingAnything(params string[] args)
+    {
+        var keep = World("playline0", "old.whs", DateTime.UtcNow.AddDays(-5));
+        var (code, lines) = Cli(false, args);
+        Assert.Equal(2, code);
+        Assert.True(lines[0].GetProperty("error").GetBoolean());
+        Assert.True(File.Exists(keep));
+    }
 }

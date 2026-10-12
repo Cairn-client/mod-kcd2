@@ -19,7 +19,7 @@ public sealed record SaveSlot(string Id, string Name, string Detail, string Kind
 /// </summary>
 public sealed class SaveCatalog
 {
-    /// <summary>A world save written less than this long ago may be the one the game is playing: it is not deleted from here.</summary>
+    /// <summary>While the game runs, a world save written less than this long ago may be the one it is playing: it is not deleted. With the game closed there is no such save.</summary>
     public static readonly TimeSpan RecentlyWritten = TimeSpan.FromMinutes(10);
 
     private readonly string _savesRoot;
@@ -73,11 +73,11 @@ public sealed class SaveCatalog
     }
 
     /// <summary>Deletes one listed save. False with the reason, in plain words, when it cannot be: unknown, in use, or not deletable now.</summary>
-    public (bool Ok, string Message) Delete(string id, DateTime nowUtc)
+    public (bool Ok, string Message) Delete(string id, DateTime nowUtc, bool gameRunning = true)
     {
         var slot = List().FirstOrDefault(s => s.Id == id);
         if (slot is null) return (false, "That save is not there any more.");
-        if (slot.Kind == "world" && nowUtc - slot.WhenUtc < RecentlyWritten)
+        if (gameRunning && slot.Kind == "world" && nowUtc - slot.WhenUtc < RecentlyWritten)
             return (false, "That save was written a moment ago, so the game may be using it. Delete it after you leave the game.");
         try
         {
