@@ -4446,6 +4446,7 @@ public partial class GameBridge(ClientConfig config)
         try { await ExecLuaAsync($"if KCD2MP_SetHitSensor then KCD2MP_SetHitSensor({(isAuthority ? "true" : "false")}) end"); }
         catch (Exception ex) { Console.WriteLine($"[role] could not tell the mod: {ex.Message}"); }
         await Wo133TickAsync();   // WO-133: the role decides the shared-world quest gate; tell the mod now, not on the next tick
+        await Wo176PushConfigAsync();   // WO-176: the figure check runs in the host's world only
     }
 
     private async Task SendAppearanceAsync(Stream stream, Guid[] itemClasses, CancellationToken ct)

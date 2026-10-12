@@ -28,7 +28,7 @@ against each other from inside the game itself.
 > Kingdom Come: Deliverance II, its assets and its content belong to Warhorse
 > Studios and PLAION; this is a free, non-commercial fan project.
 
-> **The current version is 0.49.2**, a release candidate for the maintainer and one tester (not on the releases
+> **The current version is 0.50.0**, a release candidate for the maintainer and one tester (not on the releases
 > page). `main` (this repo's source) is ahead of the last published installer; the feature list below describes
 > `main`. Installing from the
 > [releases page](https://github.com/DeepFriedDepp/KingdomCome-Together/releases)
@@ -38,6 +38,12 @@ against each other from inside the game itself.
 >
 > **What 0.48.5 is, in plain words**
 >
+> - **0.50.0 (after 0.49.2): a quest's own fights stay the story's.** When a quest arranges a fight (the Tachov–Zelejov meadow fight,
+>   quest fist fights), the partner's figure is kept out of it by the fight's own marks: none of the partner's blows count in it and they
+>   are told so once; the fight ends the way the story says and weapons draw afterwards. A save with the old weapon lock is repaired
+>   the moment it loads (checked in the game). An enemy that blocks or parries the joiner's blow shows its block on the joiner's
+>   screen. `mp_real_hits` is **off** again by default (it could not be tested against a bandit that fights the partner). Not played by
+>   two people yet.
 > - **0.49.2 (after 0.49.1): your saves are safe.** Co-op plays in its own copy of your world (a free save slot; your own saves are never written),
 >   the launcher backs up your saves before every session (RESTORE SAVES brings one back), and the weapon lock is found: a quest fist fight that ended
 >   without a winner left the game's "fists only" rule on; the mod no longer saves during a conversation, scene or fight, and a locked save gets a
