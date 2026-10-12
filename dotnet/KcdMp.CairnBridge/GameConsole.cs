@@ -11,7 +11,8 @@ public sealed class GameConsole : IDisposable
     /// <summary>The console's own limit (past about 2,100 encoded characters the rest is cut, silently).</summary>
     public const int MaxEncoded = 1900;
 
-    private readonly HttpClient _http = new() { BaseAddress = new Uri("http://127.0.0.1:1403"), Timeout = TimeSpan.FromSeconds(5) };
+    /// <summary>The console of the game; CAIRN_CONSOLE_URL points it elsewhere (the tests' stand-in for the game).</summary>
+    private readonly HttpClient _http = new() { BaseAddress = new Uri(Environment.GetEnvironmentVariable("CAIRN_CONSOLE_URL") is { Length: > 0 } u && Uri.TryCreate(u, UriKind.Absolute, out var parsed) && parsed.IsLoopback ? u : "http://127.0.0.1:1403"), Timeout = TimeSpan.FromSeconds(5) };
 
     public async Task<bool> LuaAsync(string lua, CancellationToken ct = default)
     {

@@ -26,7 +26,9 @@ public static class Program
         if (string.IsNullOrWhiteSpace(pipeName) || gameDir.Length == 0) return 2;
         DateTime start = DateTime.TryParse(Environment.GetEnvironmentVariable("CAIRN_GAME_START"), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var s)
             ? s.ToLocalTime() : DateTime.Now;
-        Process? game = int.TryParse(Environment.GetEnvironmentVariable("CAIRN_GAME_PID"), out int pid) ? TryProcess(pid) : null;
+        bool pidGiven = int.TryParse(Environment.GetEnvironmentVariable("CAIRN_GAME_PID"), out int pid);
+        Process? game = pidGiven ? TryProcess(pid) : null;
+        bool gameGone = pidGiven && game is null;   // the game was asked for but is not running (any more): there is nothing to bridge
         var (prefix, function) = ReadNames();
 
         using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
@@ -72,7 +74,7 @@ public static class Program
 
         try
         {
-            while (!cts.IsCancellationRequested && game is not { HasExited: true })
+            while (!cts.IsCancellationRequested && !gameGone && game is not { HasExited: true })
             {
                 var lines = new List<string>();
                 tail.Poll(lines.Add);
