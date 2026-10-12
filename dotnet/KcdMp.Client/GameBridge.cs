@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2026 the Kingdom Come: Together contributors (AUTHORS). SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 the Kingdom Come: Together contributors (AUTHORS). SPDX-License-Identifier: GPL-3.0-only
 // GPLv3 section 7 additional terms: NOTICE. This project's own code only; Kingdom Come: Deliverance II and its
 // content belong to Warhorse Studios and PLAION. Unofficial, free, not affiliated with or endorsed by them.
 // Portions from the original project, marczukmichal/kcd2-multiplayer; its author keeps their copyright (AUTHORS).
@@ -5946,6 +5946,9 @@ public partial class GameBridge(ClientConfig config)
             case "w154_menu_set":    // WO-154 7b: a mod-menu choice to remember (mod-settings.json; MenuKey: settings.json)
             case "w154_menu_cfg":    // WO-154 7b: mp_fast_travel (the host's lever)
                 Wo154MenuOnEvent(name, arg);
+                return;
+            case "cairn_logs_collect": // CAIRN: the host's menu: collect everyone's logs
+                _ = CairnLogsCollectAsync();
                 return;
             case "mp_mark":          // WO-140: the checklist's markers (mark_<word>)
                 Console.WriteLine($"MP-MARK {(arg ?? "").Trim()} -- the tester's marker (typed on this machine)");

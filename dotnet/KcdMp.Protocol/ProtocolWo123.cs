@@ -103,6 +103,8 @@ public static partial class Protocol
         (HitVerdictUp,  HitVerdictDown,  "hit-verdict",  JoinHeaderLen + HitVerdictFixedLen, JoinHeaderLen + HitVerdictBodyMax, JoinFrom.Host),
         // WO-164: the mark snapshot ping and the torch side-channel (ProtocolWo164.cs) -- the LootMsg shape, either way
         (W164Up,        W164Down,        "w164",         JoinHeaderLen + LootFixedLen + 1, JoinHeaderLen + LootFixedLen + W164TextMax, JoinFrom.Either),
+        // CAIRN: the host collects everyone's logs (ProtocolCairnLogs.cs) -- a request to one joiner, a joiner's bundle to the host
+        (LogUp,         LogDown,         "logs",         JoinHeaderLen + LogFixedLen, JoinHeaderLen + LogBodyMax, JoinFrom.Either),
     };
 
     /// <summary>The JoinWire row for an up type, or null.</summary>

@@ -47,6 +47,7 @@ $Manifest = Join-Path $RepoRoot 'kdcmp\mod.manifest'
 $Files = @(
     'Scripts\Startup\kdcmp.lua',
     'Scripts\Startup\kdcmp_cairn_menu.lua',   # Cairn module: the launcher draws the mod menu (loads after kdcmp.lua)
+    'Scripts\Startup\kdcmp_cairn_logs.lua',   # Cairn module: the host collects everyone's logs (after the menu module)
     'Libs\Tables\item\clothing_preset__kdcmp.xml',
     'Libs\Tables\rpg\buff__kcdmp.xml'    # WO-113: the death-guard buff row
 )
