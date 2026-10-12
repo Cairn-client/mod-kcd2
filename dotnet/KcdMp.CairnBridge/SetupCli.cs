@@ -95,7 +95,10 @@ public static class SetupCli
                 foreach (var s in steps) output.WriteLine(StepJson(s, snap, steps));
                 bool ready = SetupChecklist.IsReady(steps);
                 Say(output, new { done = true, ready, optionalNeedsYou = SetupChecklist.OptionalNeedsYou(steps) });
-                if (snap.ModdingToolsExe is { } exe) Say(output, new { found = new { gameExe = exe, moddingToolsExe = exe, gameRoot = snap.GameRoot, moddingToolsRoot = snap.ModdingToolsRoot } });
+                // the executable the player chose is not the right build: said in the pack's words, the launcher shows it beside the setting
+                if (!string.IsNullOrWhiteSpace(mtExe) && File.Exists(mtExe) && !GameLocator.IsModdingToolsBuild(mtExe))
+                    Say(output, new { gameExeNote = "This does not look like the Modding Tools build. Multiplayer needs the KingdomCome.exe in the Modding Tools' Bin\\Win64ReleaseSteamLTO_DLL folder: the retail executable has no debug API and no module DLLs to hook." });
+                if (snap.ModdingToolsExe is { } exe) Say(output, new { found = new { gameExe = exe, gameDir = snap.ModdingToolsRoot, moddingToolsExe = exe, gameRoot = snap.GameRoot, moddingToolsRoot = snap.ModdingToolsRoot } });
                 return 0;
             }
             case "do" when args.Length >= 3:
