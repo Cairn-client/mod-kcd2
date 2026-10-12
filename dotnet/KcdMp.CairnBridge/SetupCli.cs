@@ -144,6 +144,11 @@ public static class SetupCli
             case "place-mod":
                 (ok, message) = await PlaceModAsync(snap, packRoot, output);
                 break;
+            case "unplace-mod":
+                (ok, message) = snap.ModdingToolsRoot is not string mtRoot ? (true, "nothing to remove")
+                    : snap.GameProcessRunning ? (false, "Close the game first.")
+                    : ModInstall.Unplace(mtRoot, packRoot) is var u ? (u.Ok, u.Ok ? u.Message : "The mod could not be taken out of the game (" + u.Message + ").") : (false, "");
+                break;
             case "install-vcruntime":
                 (ok, message) = await InstallRuntimesAsync(snap, output, ct);
                 break;

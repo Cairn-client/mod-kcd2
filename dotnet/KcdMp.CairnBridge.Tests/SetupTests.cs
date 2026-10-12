@@ -163,4 +163,13 @@ public class SetupTests : IDisposable
         Assert.Equal(2, await SetupCli.RunAsync(args, new StringWriter(), new FakeHost(null, false), Pack));
         Assert.Contains("refused", File.ReadAllText(status));
     }
+
+    [Fact]
+    public async Task Taking_the_mod_out_with_no_modding_tools_has_nothing_to_remove()
+    {
+        MakePack();
+        var sw = new StringWriter();
+        Assert.Equal(0, await SetupCli.RunAsync(new[] { "setup", "do", "unplace-mod" }, sw, new FakeHost(null, false), Pack));
+        Assert.Contains("nothing to remove", sw.ToString());
+    }
 }
