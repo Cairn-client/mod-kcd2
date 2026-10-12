@@ -1872,6 +1872,7 @@ public partial class GameBridge(ClientConfig config)
             tailForPause.LoadStarted += Wo124OnLoadStarted;          // WO-124
             tailForPause.GameQuit += Wo124OnGameQuit;                // WO-124: quitting from the host's world
             tailForPause.SaveLoadAccepted += Wo124OnSaveLoadAccepted;   // WO-124
+            tailForPause.SaveLoadAccepted += Wo175OnSaveLoadAccepted;   // WO-175: the loaded file, for the health check
             tailForPause.LoadFailedToMenu += Wo124OnLoadFailedToMenu;   // WO-124
             tailForPause.MainMenuShown += Wo124OnMainMenuShown;         // WO-124
 
@@ -5954,6 +5955,9 @@ public partial class GameBridge(ClientConfig config)
             case "w154_menu_cfg":    // WO-154 7b: mp_fast_travel (the host's lever)
                 Wo154MenuOnEvent(name, arg);
                 return;
+            case "w175_coop":        // WO-175 S1: mp_coop_playline on|off|status (mod-settings.json)
+                Wo175CoopOnEvent(arg);
+                return;
             case "mp_mark":          // WO-140: the checklist's markers (mark_<word>)
                 Console.WriteLine($"MP-MARK {(arg ?? "").Trim()} -- the tester's marker (typed on this machine)");
                 // WO-164 M: "Something's wrong here" (mark_odd) -- a state snapshot here and on the partner's machine, joined by mark=
@@ -6002,6 +6006,10 @@ public partial class GameBridge(ClientConfig config)
                 return;
             case "w174_endfig":      // WO-174: a friendly-fire knockdown -> the figure leaves the punch's skirmish
                 Wo174OnEvent(arg);
+                return;
+            case "w175_check":       // WO-175 S4: check the loaded (or just written) save for a stuck quest fight
+            case "w175_cfg":         // WO-175: mp_save_health / mp_save_guard
+                Wo175OnEvent(name, arg);
                 return;
             case "w154_voice":       // WO-154 6.7: the mod menu's voice switch (on|off), connected or not
                 Wo154OnVoiceEvent(arg);

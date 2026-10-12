@@ -93,6 +93,19 @@ something holds you, and "Something's wrong here" to mark a moment for a bug rep
 [MOD-MENU.md](MOD-MENU.md). Fast travel is off while you play together unless the host
 turns it on there, and voice chat is off unless you turn it on.
 
+## Your saves
+
+- **Co-op plays in its own copy of your world.** When you host one of your worlds, the mod copies it into a free save slot first, and the
+  session plays and saves only there. Your own saves are never written while you play together. Next time the menu shows that copy as
+  **"Together: <your world>"**. If all five save slots already hold your own worlds, hosting tells you so and loads nothing: free one slot,
+  or turn the copy off with `mp_coop_playline off` (then co-op plays in the original).
+- **Your saves are backed up before every session.** The launcher copies your whole saves folder to
+  `%LOCALAPPDATA%\KingdomComeTogether\save-backups\` and checks the copy. The last 10 sessions are kept.
+- **To go back:** close the game, click **RESTORE SAVES** at the bottom of the launcher, pick a date, confirm. Your current saves are
+  backed up first, so a restore can be undone the same way.
+- **Every save and load is checked.** If a save has the weapon lock of 0.49 (a quest fist fight that never finished), the mod writes a
+  repaired copy next to it and loads that. The original stays as it was.
+
 ## If something breaks later
 
 A Steam update, or a game that moved to another drive, can undo part of the setup. The

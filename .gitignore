@@ -54,3 +54,4 @@ assets/start-save/*/*.whs
 
 # WO-174: the save tool's bytecode
 tools/savegame/__pycache__/
+tools/dev-input/keys.log
