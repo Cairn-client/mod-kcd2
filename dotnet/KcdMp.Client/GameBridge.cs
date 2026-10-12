@@ -4946,7 +4946,9 @@ public partial class GameBridge(ClientConfig config)
                                 $"MP-DMG dir=in ghost={ndSource} npc={ndName} hp={ndHealth:F1} st={ndStamina:F1} fatal={(ndFatal ? 1 : 0)} result={(localGuid is null ? "nosoul" : !ndHasDelta ? "nodelta" : ndApplied ? "applied" : "failed")} authority={(_isDamageAuthority ? 1 : 0)}"));
                             if (ndApplied)
                                 _ = TriggerReactiveAggroAsync(ndSource, ct);
-                            if (ndFatal)
+                            if (ndFatal && _isDamageAuthority && Wo176IsArranged(ndName))
+                                Wo176NoteFatalKept(ndName, ndSource);   // WO-176 A1: a quest's arranged fight decides its own deaths
+                            else if (ndFatal)
                                 await ApplyRemoteNpcDeathAsync(ndName, localGuid, ndSource, "0x31 FATAL", ct);
                         }
                     }
@@ -6016,6 +6018,9 @@ public partial class GameBridge(ClientConfig config)
                 return;
             case "w165_cfg":         // WO-165: mp_host_lock, mp_victim_decides, mp_block_recoil
                 Wo165OnEvent(name, arg);
+                return;
+            case "w176_cfg":         // WO-176: mp_arranged_guard (A1), mp_copy_blocks (B3a)
+                Wo176OnEvent(name, arg);
                 return;
             case "w166_talkstate":   // WO-166 T3: a talk that never started -- the copy's facts
             case "w166_talk":        // WO-166 T4: a talk refused, the host's NPC busy

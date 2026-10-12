@@ -7223,6 +7223,7 @@ function KCD2MP_W137Session(host, joiner, active)
         KCD2MP_EmitEvent("w137_sync", w.sync and "on" or "off")
         if KCD2MP.w170 then KCD2MP_EmitEvent("w166_cfg", "figure_guard=" .. (KCD2MP.w170.figureGuard and "on" or "off")) end   -- WO-170 F1
         if KCD2MP.w173 then KCD2MP_EmitEvent("w173_cfg", "real_hits=" .. (KCD2MP.w173.realHits and "on" or "off")) end   -- WO-173
+        if KCD2MP.w176 and KCD2MP_W176Emit then KCD2MP_W176Emit() end   -- WO-176
         if KCD2MP.w172 then   -- WO-172: the switches the agent acts on
             KCD2MP_EmitEvent("w172_cfg", "dead_wins=" .. (KCD2MP.w172.deadWins and "on" or "off"))
             KCD2MP_EmitEvent("w172_cfg", "ride_repair=" .. (KCD2MP.w172.rideRepair and "on" or "off"))
@@ -21426,13 +21427,13 @@ function KCD2MP_W166SetAutoMode(arg)
     return true
 end
 
--- WO-173 (0.49.0): the joiner's blows become real hits in the host's world (docs/WO-173-findings.md). Default ON since 0.49.1 (WO-174 D: the maintainer's choice).
+-- WO-173 (0.49.0): the joiner's blows become real hits in the host's world (docs/WO-173-findings.md). Default ON in 0.49.1-0.49.2 (WO-174 D), OFF again since 0.50.0 (WO-176 B1: its check could not be staged).
 --   mp_real_hits (host; the agent and the DLL act on it): the joiner's blow on a host NPC goes through the host game's own hit processor --
 --      the NPC's own rules decide hit / block / parry, it reacts as to the host's blows; off = the old raw damage, its stamina capped so
 --      one blow never knocks a fighter out.
 --   KCD2MP_W173Down(name, state) (joiner, from the agent): the host's NPC is up (0) / knocked out (1) / dead (2) -- its copy follows now.
 --   WO173-TOGGLE ...   WO173-DOWN npc=<n> state=<0|1|2> ...
-KCD2MP.w173 = KCD2MP.w173 or { realHits = true, fastWake = {}, stats = { down = 0, up = 0, dead = 0 } }
+KCD2MP.w173 = KCD2MP.w173 or { realHits = false, fastWake = {}, stats = { down = 0, up = 0, dead = 0 } }   -- WO-176 B1: off again in 0.50.0
 function KCD2MP_W173SetRealHits(arg)
     local v = KCD2MP_Wo122ParseBool(arg)
     if v == "bad" then mp_log("mp_real_hits: expected on|off"); return false end
@@ -21459,6 +21460,105 @@ function KCD2MP_W173Down(name, state)
     end
     mp_log(string.format("WO173-DOWN npc=%s state=%d copy=%s", tostring(name), state, p and "yes" or "no"))
 end
+
+-- ===== WO-176 (0.50.0): a quest's arranged fight is the story's; blocks shown on both screens (docs/WO-176-findings.md) =====
+--   mp_arranged_guard (host; the DLL acts on it, default ON): a fight whose souls carry the quest's arranged-fight contexts
+--      (combat_arrangedFight, combat_forceUnarmedWhileInUnarmedSkirmish) never takes a partner's figure -- no skirmish add, no threat, no
+--      forced target, no lock-on pair, no blow routed into it -- and a figure already in it is taken out at once. WO-174's name list stays
+--      as the second net. The joiner whose blow was kept out is told once (KCD2MP_W176Say).
+--   mp_copy_blocks (joiner; the agent acts on it, default ON): a host NPC that blocked / parried your blow plays its own block row on your
+--      screen when the host's game sent no reaction of its own.
+--   WO176-TOGGLE ...   WO176-NOTICE <text>
+KCD2MP.w176 = KCD2MP.w176 or { arrangedGuard = true, copyBlocks = true }
+function KCD2MP_W176Emit()
+    KCD2MP_EmitEvent("w176_cfg", "arranged_guard=" .. (KCD2MP.w176.arrangedGuard and "on" or "off")
+        .. " copy_blocks=" .. (KCD2MP.w176.copyBlocks and "on" or "off"))
+end
+function KCD2MP_W176SetArrangedGuard(arg)
+    local v = KCD2MP_Wo122ParseBool(arg)
+    if v == "bad" then mp_log("mp_arranged_guard: expected on|off"); return false end
+    if v ~= nil then KCD2MP.w176.arrangedGuard = v end
+    KCD2MP_W176Emit()
+    mp_log("WO176-TOGGLE mp_arranged_guard " .. (KCD2MP.w176.arrangedGuard and "on" or "off")
+        .. " -- a quest's arranged fight is the story's: your partner's figure stays out of it (off: WO-174's name list only)")
+    return true
+end
+function KCD2MP_W176SetCopyBlocks(arg)
+    local v = KCD2MP_Wo122ParseBool(arg)
+    if v == "bad" then mp_log("mp_copy_blocks: expected on|off"); return false end
+    if v ~= nil then KCD2MP.w176.copyBlocks = v end
+    KCD2MP_W176Emit()
+    mp_log("WO176-TOGGLE mp_copy_blocks " .. (KCD2MP.w176.copyBlocks and "on" or "off")
+        .. " -- an enemy that blocks or parries your blow in the host's world shows its block on your screen")
+    return true
+end
+-- The joiner's notice (from the agent, once per story fight), on the game's own HUD.
+function KCD2MP_W176Say(text)
+    mp_log("WO176-NOTICE " .. tostring(text))
+    KCD2MP_ShowNativeToast(tostring(text))
+end
+
+-- A1 (live finding): a partner's figure is spawned from a local NPC's soul for its face; inside a village fight its own brain joins the
+-- side of that soul's village (the meadow fight: the figure from tzel_man_10 joined Zelejov 176 times, the DLL took it out each time).
+-- While a story actor (either arranged-fight context) is within 40 m of a figure, the figure's brain is paused with the game's own
+-- wh_ai_PauseNPC (the mod's WO-102 lever; its body still moves and swings as its partner does); resumed 5 s after none is near.
+--   WO176-PAUSE figure=<n> on story=<actor> | off
+KCD2MP.w176.paused = KCD2MP.w176.paused or {}     -- figure name -> os.clock() when paused
+KCD2MP.w176.nearAt = KCD2MP.w176.nearAt or {}     -- figure name -> os.clock() a story actor was last seen near it
+KCD2MP.w176.stats = KCD2MP.w176.stats or { pause = 0, resume = 0 }
+KCD2MP.w176.radius, KCD2MP.w176.offAfterS, KCD2MP.w176.tickMs = 40, 5, 1000
+function KCD2MP_W176StoryNear(e)
+    local found = nil
+    pcall(function()
+        local p = e:GetWorldPos()
+        for _, o in ipairs(System.GetEntitiesInSphere(p, KCD2MP.w176.radius) or {}) do
+            local nm = o.GetName and o:GetName() or ""
+            if o.id ~= e.id and o.soul and o.soul.HasScriptContext and not tostring(nm):match("^kcd2mp_%d+$") then
+                if o.soul:HasScriptContext("combat_arrangedFight") or o.soul:HasScriptContext("combat_forceUnarmedWhileInUnarmedSkirmish") then
+                    found = nm; break
+                end
+            end
+        end
+    end)
+    return found
+end
+function KCD2MP_W176Pause(name, on, why)
+    local w = KCD2MP.w176
+    if on == (w.paused[name] ~= nil) then return end
+    local ok, err = pcall(System.ExecuteCommand, (on and "wh_ai_PauseNPC " or "wh_ai_ResumeNPC ") .. tostring(name))
+    if on then w.paused[name] = os.clock(); w.stats.pause = w.stats.pause + 1 else w.paused[name] = nil; w.stats.resume = w.stats.resume + 1 end
+    mp_log(string.format("WO176-PAUSE figure=%s %s %s exec=%s -- %s", tostring(name), on and "on" or "off", tostring(why),
+        ok and "ok" or ("err:" .. tostring(err)), on and "a quest's arranged fight is near: the figure's own brain stays out of it" or "no story fight near"))
+end
+function KCD2MP_W176Tick(gen)
+    local w = KCD2MP.w176
+    if gen and gen ~= w.gen then return end   -- an older chain (a load re-armed a new one)
+    w.tickAt = os.clock()
+    local now = os.clock()
+    local live = {}
+    for i = 0, 8 do
+        local nm = "kcd2mp_" .. i
+        local e = nil
+        pcall(function() e = System.GetEntityByName(nm) end)
+        if e and e.id then
+            live[nm] = true
+            local story = w.arrangedGuard and KCD2MP_W176StoryNear(e) or nil
+            if story then w.nearAt[nm] = now end
+            if story then KCD2MP_W176Pause(nm, true, "story=" .. story)
+            elseif w.paused[nm] and (not w.arrangedGuard or now - (w.nearAt[nm] or 0) >= w.offAfterS) then KCD2MP_W176Pause(nm, false, "story=-") end
+        end
+    end
+    for nm, _ in pairs(w.paused) do if not live[nm] then w.paused[nm] = nil end end   -- a figure that left: its body is gone
+    Script.SetTimer(w.tickMs, function() KCD2MP_W176Tick(gen) end)
+end
+-- (Re)arm the chain: at start and after every load (a load kills timer chains, kcd2mp-lua-timer-liveness).
+function KCD2MP_W176Arm()
+    local w = KCD2MP.w176
+    w.gen = (w.gen or 0) + 1
+    w.paused = {}   -- a load re-creates the figures: nothing of ours is paused any more
+    KCD2MP_W176Tick(w.gen)
+end
+KCD2MP_W176Arm()
 
 -- ===== WO-174 (0.49.1): the host's weapons stuck -- the repair command and the clean-up (docs/WO-174-findings.md) =====
 --
@@ -21976,6 +22076,7 @@ do   -- WO-175's do-block
         w.lockHeld = false   -- a load wipes every script lock
         w.tickAt = -1e9
         KCD2MP_W175Tick()
+        if KCD2MP_W176Arm then KCD2MP_W176Arm() end   -- WO-176 A1: the figures' brain pause near a story fight
         if w.health then KCD2MP_EmitEvent("w175_check", "load") end
     end
 
@@ -26792,7 +26893,9 @@ local ok, err = pcall(function()
     System.AddCCommand("mp_host_lock", 'KCD2MP_W165SetHostLock(%line)', "WO-165: (host) you can lock onto an NPC that is beating your partner: near it (6 m) and facing it, you join its fight as its foe; it keeps fighting your partner until you hit it (default on): mp_host_lock on|off")
     System.AddCCommand("mp_victim_decides", 'KCD2MP_W165SetVictimDecides(%line)', "WO-165: (joiner) your own game judges an enemy's blow and applies it; while you hold block the host's game decides, as before (UNTESTED with two players; default off since 0.48.2): mp_victim_decides on|off")
     System.AddCCommand("mp_block_recoil", 'KCD2MP_W165SetBlockRecoil(%line)', "WO-165: (joiner) an enemy whose blow you blocked plays the game's own bounce-back (UNTESTED with two players; default on): mp_block_recoil on|off")
-    System.AddCCommand("mp_real_hits", 'KCD2MP_W173SetRealHits(%line)', "WO-173: (host) your partner's blows are real hits in your world: the enemy blocks, parries, staggers and fights back by its own rules, the same on both screens; off = the old raw damage, never a knock-out from one blow (UNTESTED with two players; default ON since 0.49.1, the capped raw fallback stays per blow): mp_real_hits on|off")
+    System.AddCCommand("mp_real_hits", 'KCD2MP_W173SetRealHits(%line)', "WO-173: (host) your partner's blows are real hits in your world: the enemy blocks, parries, staggers and fights back by its own rules, the same on both screens; off = the old raw damage, never a knock-out from one blow (UNTESTED with two players; default OFF since 0.50.0 -- WO-176 could not stage a bandit that fights your partner -- the capped raw fallback is the default): mp_real_hits on|off")
+    System.AddCCommand("mp_arranged_guard", 'KCD2MP_W176SetArrangedGuard(%line)', "WO-176: (host) a quest's arranged fight is the story's: your partner's figure stays out of it -- no skirmish, no threat, no forced target, no lock-on, none of his blows land in it, and he is told once (default on): mp_arranged_guard on|off")
+    System.AddCCommand("mp_copy_blocks", 'KCD2MP_W176SetCopyBlocks(%line)', "WO-176: (joiner) an enemy that blocks or parries your blow in the host's world shows its block on your screen (default on): mp_copy_blocks on|off")
     System.AddCCommand("mp_repair_combat", 'KCD2MP_W174Repair(%line)', "WO-174: frees stuck weapons -- clears partner-figure fight links, ends a stuck fight, re-equips a melee weapon -- and says so; on a save that was fine it changes nothing: mp_repair_combat")
     System.AddCCommand("mp_weapon_autofix", 'KCD2MP_W174SetAutofix(%line)', "WO-174: after mp_repair_combat freed your weapons, every later load in this game session equips that weapon again, because the lock returns on a reload (default on): mp_weapon_autofix on|off")
     System.AddCCommand("mp_save_guard", 'KCD2MP_W175SetGuard(%line)', "WO-175: no save while a dialogue, a scene, a fight, a quest's arranged fight or one of the mod's own changes is in progress; the game's saves wait under a lock while the mod changes your inventory, equipment or body (max 10 s) (default on): mp_save_guard on|off")

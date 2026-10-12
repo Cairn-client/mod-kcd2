@@ -350,6 +350,10 @@ public partial class GameBridge
                 if (W137Host) { Interlocked.Increment(ref _w164Malformed); return; }
                 await Wo173OnNpcDownInAsync(m.Text);
                 return;
+            case Protocol.W164StoryFight:   // WO-176 A1: my blow was kept out of a quest's arranged fight
+                if (W137Host) { Interlocked.Increment(ref _w164Malformed); return; }
+                await Wo176OnStoryFightInAsync(m.Text);
+                return;
             case Protocol.W164Weather when W164Text.TryParseWeather(m.Text, out float wrain, out string? wprof):   // WO-166 W1
                 if (W137Host) { Interlocked.Increment(ref _w164Malformed); return; }   // only the host's weather is the session's
                 await Wo166OnHostWeatherAsync(wrain, wprof);

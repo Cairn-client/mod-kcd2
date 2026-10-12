@@ -488,6 +488,20 @@ int forget_avatar(uint32_t avatarEid, const char* why) {
     return forced;
 }
 
+int forget_npc(uint32_t npcEid, const char* why) {
+    if (!npcEid) return 0;
+    int n = 0;
+    if (g_forced.count(npcEid)) { unforce(npcEid, why); ++n; }
+    auto t = g_threat.find(npcEid);
+    if (t != g_threat.end()) { n += static_cast<int>(t->second.evs.size()); g_threat.erase(t); }
+    for (auto it = g_pending.begin(); it != g_pending.end();) {
+        if (it->npc == npcEid) { it = g_pending.erase(it); ++n; }
+        else ++it;
+    }
+    if (n) logf("WO136-FORGET npc eid=0x%X: %d forced / threat / queued row(s) dropped -- %s", npcEid, n, why);
+    return n;
+}
+
 int status_text(char* out, int n) {
     return std::snprintf(out, n,
         "wo136 fights=%s threat=%u switch=%u switch_fail=%u swing=%u swing_none=%u combatant=%u handover=%u handover_late=%u handover_lost=%u handover_none=%u tracked=%zu pending=%zu forced=%zu forced_set=%u forced_clear=%u forced_fail=%u host_target=%s host_struck=%u host_counted=%u forget=%u",

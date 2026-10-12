@@ -11,6 +11,7 @@
 #include "wo132.h"
 #include "wo166.h"
 #include "wo173.h"
+#include "wo176.h"
 #include "combat_swing.h"
 #include "wo135.h"
 #include "wo137.h"
@@ -236,7 +237,8 @@ DWORD WINAPI plugin_main(LPVOID) {
     kcdmp::main_thread::post_repeating("hits::tick", &kcdmp::hits::tick);
     kcdmp::main_thread::post_repeating("wo132::tick", &kcdmp::wo132::tick);   // WO-132: the host's NPC combat-state watch
     kcdmp::main_thread::post_repeating("wo166::tick", &kcdmp::wo166::tick);   // WO-166 C3: the copies' striking windows
-    kcdmp::main_thread::post_repeating("wo173::tick", &kcdmp::wo173::tick);   // WO-173 C1: the joiner's real hits' measures and corrections
+    kcdmp::main_thread::post_repeating("wo173::tick", &kcdmp::wo173::tick);
+    kcdmp::main_thread::post_repeating("wo176::tick", &kcdmp::wo176::tick);   // WO-176 A1: a figure already in a quest's arranged fight is taken out   // WO-173 C1: the joiner's real hits' measures and corrections
     kcdmp::main_thread::post_repeating("rttr::swing_watch_tick", &kcdmp::rttr::swing_watch_tick);   // WO-167 C3: shown means rendered
     // WO-124: the joiner's placement gives the fall damage back; the save-list
     // research trigger (kcdmp-savelist-test.txt, opt-in, absent = idle).

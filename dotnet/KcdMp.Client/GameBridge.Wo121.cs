@@ -539,6 +539,15 @@ public partial class GameBridge
         var r = await Wo173AttributedAsync(source, npcName, localGuid, stamina, health, flags, avatarEid, ct)
                 ?? await _combat.AttributedDamageAsync(localGuid, stamina, health, flags, avatarEid, npcName, ct);
         _w121AttribIn++;
+        if (Wo176Rules.KeptOut(r.Reason) && !r.Ok)
+        {
+            // WO-176 A1: a quest's arranged fight -- the DLL routed nothing into it (no damage, history, skirmish or threat); no engage, no
+            // brain message, nothing for the crime and fight watchers. The real-hit path already told the joiner; the older path tells him here.
+            if (r.Reason == Wo176Rules.AttribReasonKept) await Wo176KeptAsync(source, npcName, "wo121");
+            Console.WriteLine(FormattableString.Invariant(
+                $"MP-ATTRIB npc={npcName} attacker_ghost={source} attacker_eid=0x{avatarEid:X} hp={health:F1} st={stamina:F1} result=kept-out(arranged-fight) damage=0 history=0 skirmish=0 brain_msg=0 reason={r.Reason}"));
+            return false;
+        }
         string steps = $"damage={((r.Steps & 1) != 0 ? 1 : 0)} history={((r.Steps & 2) != 0 ? 1 : 0)} skirmish={((r.Steps & 4) != 0 ? 1 : 0)}";
         bool brain = false;
         // WO-174: a scripted brawl's actor keeps its own fight -- the blow's damage stands (the DLL applied it), but the avatar is not engaged

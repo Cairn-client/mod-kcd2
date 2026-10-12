@@ -12,6 +12,7 @@
 #include "wo167.h"
 #include "wo172.h"
 #include "wo173.h"
+#include "wo176.h"
 
 #include <atomic>
 #include <cstdio>
@@ -202,6 +203,9 @@ uint8_t handle(const uint8_t* body, size_t len, uint8_t* out, size_t cap, size_t
         case kcdmp::wo173::kOpConfig:
         case kcdmp::wo173::kOpDownPoll:
             return kcdmp::wo173::handle(body[0], body, len, out, cap, outLen);
+        case kcdmp::wo176::kOpStatus:   // WO-176 A1
+        case kcdmp::wo176::kOpConfig:
+            return kcdmp::wo176::handle(body[0], body, len, out, cap, outLen);
         default:
             return kRBadRequest;
     }

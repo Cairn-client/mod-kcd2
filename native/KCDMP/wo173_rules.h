@@ -167,6 +167,7 @@ inline const char* react_name(React r) {
 enum class Fallback : uint8_t {
     None = 0, Off = 1, Faulted = 2, NotArmed = 3, NoRow = 4, NoSwingWindow = 5, NoVictim = 6, VictimDead = 7, Replay = 8, Filtered = 9,
     CoreNotRun = 10,
+    Arranged = 11,   // WO-176 (A1): the victim is in a quest's arranged fight -- neither path runs: the blow is not routed into the story's fight
 };
 inline const char* fallback_name(Fallback f) {
     switch (f) {
@@ -181,15 +182,19 @@ inline const char* fallback_name(Fallback f) {
         case Fallback::Replay: return "replay-refused";
         case Fallback::Filtered: return "engine-filtered";
         case Fallback::CoreNotRun: return "engine-core-not-run";
+        case Fallback::Arranged: return "arranged-fight";
         default: return "?";
     }
 }
 
 struct Pre {
     bool on = true, faulted = false, armed = true, rowKnown = true, striking = true, victimFound = true, victimDead = false;
+    bool arranged = false;   // WO-176 (A1)
 };
-// The preconditions in their order (the first that fails names the fallback).
+// The preconditions in their order (the first that fails names the fallback). An arranged fight comes first: whatever the switches, the
+// blow goes nowhere (routes_nowhere below).
 inline Fallback precondition(const Pre& p) {
+    if (p.arranged) return Fallback::Arranged;
     if (!p.on) return Fallback::Off;
     if (p.faulted) return Fallback::Faulted;
     if (!p.armed) return Fallback::NotArmed;
@@ -199,6 +204,9 @@ inline Fallback precondition(const Pre& p) {
     if (!p.striking) return Fallback::NoSwingWindow;
     return Fallback::None;
 }
+
+// WO-176 (A1): the one fallback that takes neither the engine path nor the raw path.
+inline bool routes_nowhere(Fallback f) { return f == Fallback::Arranged; }
 
 // The engine's own outcome (wo165_rules.h Outcome: 0 none, 1 hit, 2 blocked, 3 perfect block, 4 broken, 5 filtered) -> who applies.
 // Applied by the engine = the processor ran its core on this blow (hit or any block). Filtered / not run = the raw path.

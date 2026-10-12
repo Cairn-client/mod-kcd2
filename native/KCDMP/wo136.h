@@ -76,6 +76,9 @@ bool host_target();
 // forgotten and its queued switches dropped. Returns the pairs cleared.
 //   WO136-FORGET avatar eid=0x<id>: <n> forced pair(s) cleared, ... -- <why>
 int forget_avatar(uint32_t avatarEid, const char* why);
+// WO-176 (A1): the actor is in a quest's arranged fight -- its forced target, its threats from avatars and its queued switches go.
+// Returns how many rows were dropped. Main thread.
+int forget_npc(uint32_t npcEid, const char* why);
 
 void set_enabled(bool on);
 bool enabled();
