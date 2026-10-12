@@ -54,7 +54,14 @@ if (-not $SkipBuild) {
     foreach ($p in $projects) {
         & dotnet publish (Join-Path $root $p) -c Release -p:PublishProfile=FolderProfile --nologo -v q
         if ($LASTEXITCODE -ne 0) { throw "publish failed: $p" }
-        Copy-Item (Join-Path (Split-Path (Join-Path $root $p) -Parent) 'bin\Release\net8.0\publish\*') (Join-Path $stage 'bin') -Recurse -Force
+        $published = Join-Path (Split-Path (Join-Path $root $p) -Parent) 'bin\Release\net8.0\publish'
+        if ($p -like '*CairnBridge*') {
+            # the bridge shares this folder with the agent and the relay, which carry newer copies of shared dlls (System.Text.Json 10): it must be ONE file,
+            # or it overwrites them and the relay no longer starts (0.2.1 shipped that way)
+            $files = @(Get-ChildItem $published -File)
+            if ($files.Count -ne 1 -or $files[0].Name -ne 'CairnBridgeKcd2.exe') { throw "the bridge must publish as one file, CairnBridgeKcd2.exe; got: $($files.Name -join ', ')" }
+        }
+        Copy-Item (Join-Path $published '*') (Join-Path $stage 'bin') -Recurse -Force
     }
 
     # the native plugin (always rebuilt: a stale one beside a fresh agent has no handshake to catch it)

@@ -36,6 +36,10 @@ jobs:
           # a beta pack carries the menu bridge (docs/CAIRN.md); the stable one does not, until the bridge has been proven in the game
           if ((Get-Content RELEASE_CHANNEL -Raw).Trim() -eq 'beta') { ./tools/Build-Pack.ps1 -Bridge } else { ./tools/Build-Pack.ps1 }
 
+      - name: The programs of the pack start
+        shell: pwsh
+        run: ./tools/Test-PackSmoke.ps1
+
       - name: Changelog
         shell: pwsh
         run: ./tools/New-ReleaseNotes.ps1 -OutFile notes.md -Tag $env:GITHUB_REF_NAME
