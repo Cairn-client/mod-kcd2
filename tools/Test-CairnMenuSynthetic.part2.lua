@@ -146,6 +146,27 @@ do
     check("g: no Lua errors", #ERRS == 0, ERRS[1])
 end
 
+do
+    MOVIE = { played = {}, stopped = {} }
+    Movie = { PlaySequence = function(n) MOVIE.played[#MOVIE.played + 1] = n; return true end,
+              StopSequence = function(n) MOVIE.stopped[#MOVIE.stopped + 1] = n end }
+    local s = KCD2MP.csShare
+    check("h: the cutscene module loaded (its state and its functions exist)", s ~= nil and s.enabled == true and type(KCD2MP_CairnCutsceneShare) == "function"
+        and CCMDS.mp_cutscene_share ~= nil and CCMDS.mp_cutscene_share.body:find("KCD2MP_CairnSetCutsceneShare", 1, true) ~= nil)
+    check("h: the host's cutscene starts the scene on the joiner", KCD2MP_CairnCutsceneShare(true, "cs_test", "Ingame") == true and MOVIE.played[1] == "cs_test" and s.seq == "cs_test")
+    check("h: a second edge while sharing one is ignored", KCD2MP_CairnCutsceneShare(true, "cs_other", "Ingame") == false and #MOVIE.played == 1)
+    check("h: the end edge stops the scene and lets go", KCD2MP_CairnCutsceneShare(false, "") == true and MOVIE.stopped[1] == "cs_test" and s.seq == nil and s.held == false)
+    check("h: an end edge with nothing running does nothing", KCD2MP_CairnCutsceneShare(false, "") == false)
+    KCD2MP.cutsceneActive = true
+    check("h: a machine in its own cutscene does not start the host's", KCD2MP_CairnCutsceneShare(true, "cs_own", "Rendered") == false and #MOVIE.played == 1)
+    KCD2MP.cutsceneActive = false
+    KCD2MP_CairnSetCutsceneShare("off")
+    check("h: switched off, nothing is shared", s.enabled == false and KCD2MP_CairnCutsceneShare(true, "cs_off", "Ingame") == false and #MOVIE.played == 1)
+    KCD2MP_CairnSetCutsceneShare("on")
+    check("h: and back on", s.enabled == true)
+    check("h: no Lua errors", #ERRS == 0, ERRS[1])
+end
+
 local pass, fail = 0, 0
 for _, r in ipairs(RESULTS) do if r:sub(1, 4) == "PASS" then pass = pass + 1 else fail = fail + 1 end end
 OUT = table.concat(RESULTS, "\n") .. string.format("\n%d passed, %d failed", pass, fail)
