@@ -9,8 +9,8 @@ namespace KcdMp.CairnBridge;
 
 /// <summary>
 /// The game's setup, as the pack's program does it (pack.json's <c>setup</c>, docs/CAIRN.md in this repository; the launcher's side is
-/// Cairn.Setup/PackSetup.cs): <c>setup check [--mt-exe EXE]</c> prints one JSON line per step, then <c>{"done":true,"ready":...}</c>;
-/// <c>setup do ACTION [--mt-exe EXE]</c> does one thing, prints <c>{"say":...}</c> and <c>{"progress":0..1}</c> lines while it works and ends with
+/// Cairn.Setup/PackSetup.cs): <c>setup check [--game-exe EXE]</c> prints one JSON line per step, then <c>{"done":true,"ready":...}</c>;
+/// <c>setup do ACTION [--game-exe EXE]</c> does one thing, prints <c>{"say":...}</c> and <c>{"progress":0..1}</c> lines while it works and ends with
 /// <c>{"ok":...,"message":...}</c>. The launcher draws the list and runs what a step asks for; what the steps ARE (Steam, the game, the Modding Tools,
 /// the links between them, the mod in place, the runtimes, the lip-sync data) is this game's, so it is here. It was the launcher's own code.
 /// </summary>
@@ -84,7 +84,7 @@ public static class SetupCli
         host ??= RealSetupHost.Instance;
         if (args.Length < 2 || args[0] != "setup") { Say(output, new { ok = false, message = "Not a request this program knows." }); return 2; }
         var opt = Options(args.Skip(2));
-        opt.TryGetValue("mt-exe", out var mtExe);
+        if (!opt.TryGetValue("game-exe", out var mtExe)) opt.TryGetValue("mt-exe", out mtExe);   // the game's executable as the player chose it (mt-exe: the name betas before 0.2.12 sent)
 
         switch (args[1])
         {
@@ -95,7 +95,7 @@ public static class SetupCli
                 foreach (var s in steps) output.WriteLine(StepJson(s, snap, steps));
                 bool ready = SetupChecklist.IsReady(steps);
                 Say(output, new { done = true, ready, optionalNeedsYou = SetupChecklist.OptionalNeedsYou(steps) });
-                if (snap.ModdingToolsExe is { } exe) Say(output, new { found = new { moddingToolsExe = exe, gameRoot = snap.GameRoot, moddingToolsRoot = snap.ModdingToolsRoot } });
+                if (snap.ModdingToolsExe is { } exe) Say(output, new { found = new { gameExe = exe, moddingToolsExe = exe, gameRoot = snap.GameRoot, moddingToolsRoot = snap.ModdingToolsRoot } });
                 return 0;
             }
             case "do" when args.Length >= 3:
