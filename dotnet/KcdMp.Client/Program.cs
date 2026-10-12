@@ -23,6 +23,15 @@ if (args.Contains("--keys-pak"))
 if (args.Contains("--w159"))
     return Wo159.RunCli(args, Console.Out);
 
+// --w175coop (WO-175 S1): the co-op playline -- the host's world copied before the game starts, the menu's pick
+// committed, the copies not picked taken back; the mp_coop_playline switch. Before the config load, like --w159.
+if (args.Contains("--w175coop"))
+    return Wo175Coop.RunCli(args, Console.Out);
+
+// --w175 (WO-175 S4): the save health check and the stuck-quest-fight repair (a NEW file next to the save, never in place).
+if (args.Contains("--w175"))
+    return Wo175SaveHealth.RunCli(args, Console.Out);
+
 // Settings live in kcdmp-client.json next to the executable; it is created with
 // defaults on first run. Everything can still be overridden on the command line:
 //   named:      --host <ip> --port <n> --name <s> --game-api <url> [--no-voice]

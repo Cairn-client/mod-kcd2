@@ -49,6 +49,11 @@ void note_avatar(uint32_t eid, void* soul, bool on);
 struct AttribResult { bool ok = false; uint8_t steps = 0; uint8_t reason = 0; uint64_t attackerWuid = 0, victimWuid = 0; };
 // 0x19, main thread: [guid:16][st:4f][hp:4f][flags:1][attackerEid:4][nameLen:1][name]
 AttribResult apply_attributed(const uint8_t* body, size_t len);
+// WO-173 (main thread), the same body: rawDamage = the TakeDamage step runs (false: the engine already applied the blow -- only the
+// victim-side history, the skirmish and, with threat, WO-136's avatar-hit threat run; steps bit 0 then means "the engine applied it");
+// stCap >= 0 caps the stamina of the raw step (the capped fallback); threat = WO-136's note_threat (the substitute for a hit the engine
+// cannot perceive).
+AttribResult apply_attributed_ex(const uint8_t* body, size_t len, bool rawDamage, float stCap, bool threat);
 
 // 0x1A, main thread: [st:4f][hp:4f][flags:1][attackerGhost:1]
 bool apply_pvp_hit(const uint8_t* body, size_t len);
@@ -79,6 +84,10 @@ void note_player_damage(float stamina, float health);
 bool skirmish_ready();
 bool skirmish_add(void* soul, void* reference, uint8_t overrideRelation, uint64_t* rv);
 bool skirmish_remove(void* soul, uint64_t* rv);
+// WO-174 (main thread): does this NPC belong to a scripted brawl or scene (by its name; wo174_rules.h)? true = the mod keeps a partner's figure out of
+// its fight: no skirmish add, no threat, no forced target, no lock. Logs WO174-BRAWL (once per actor per 10 s) and counts; site names the caller.
+bool scene_owned_eid(uint32_t eid, const char* site);
+uint32_t scene_kept_count();
 // WO-163 (A7; docs/WO-162 Q2.3, read-only, main thread, fault-guarded): the engine's own relation test on two souls -- true iff
 // they are hostile opponents inside ONE skirmish (the player-lock rule's own question: same skirmish, active members, a hostile pair or
 // a negative faction value). false/false = the call could not be made (not armed, no manager, a soul missing): *answered stays false.

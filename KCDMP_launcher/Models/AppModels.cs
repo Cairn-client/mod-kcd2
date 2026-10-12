@@ -239,6 +239,15 @@ namespace KCDMP_launcher.Models
         // relay is started as before 0.45.0.
         public bool RelayReuse { get; set; } = true;
 
+        // WO-175 S2: before every game this launcher starts, the whole saves folder is copied (and checked) into
+        // %LOCALAPPDATA%\KingdomComeTogether\save-backups\<date-time>\; the last 10 are kept (Models/Wo175Backup.cs).
+        // A failed backup is logged and shown, and the game starts anyway. false = no backup (logged).
+        public bool BackupSavesBeforeSession { get; set; } = true;
+
+        // WO-175 S6: the plain-words notice (co-op plays in its own copy of your world, backups are kept, how to restore)
+        // is shown once, on the first start of a launcher that has save safety.
+        public bool Wo175NoticeShown { get; set; }
+
         // WO-127 (Settings, advanced): the Steam app id both players use. 2429020 is the
         // game's own (Modding Tools); 480 and 1771300 are selectable. The maintainer decides
         // the final default after the WO-128 test.

@@ -61,6 +61,7 @@
             OnReportBug="@(() => showReportBug = true)"
             OnAbout="@(() => showAbout = true)"
             OnCheckSetup="@OpenSetupChecklist"
+            OnRestoreSaves="@(() => showRestoreSaves = true)"
 />
 
 @* WO-150: the first-run checklist (and "Check setup"); hidden whenever setup is complete *@
@@ -94,6 +95,11 @@
                 {
                     @* WO-154: why CONNECT waits, in plain words (Models/ConnectGate.cs) *@
                     <div class="kcd-hint" style="margin-bottom: 12px;">@connectGateReason</div>
+                }
+                @if (wo175StatusBad && !string.IsNullOrEmpty(wo175StatusLine))
+                {
+                    @* WO-175 S2: the saves backup failed (the game started anyway) *@
+                    <div class="kcd-hint" style="margin-bottom: 12px; color: var(--kcd-warn);">@wo175StatusLine</div>
                 }
 
                 <div class="modal-actions">
@@ -176,6 +182,11 @@
 
 <AboutModal IsVisible="@showAbout" OnClose="@(() => showAbout = false)" />
 
+@* WO-175 S2: put back one of the saves backups made before each session *@
+<RestoreSavesModal IsVisible="@showRestoreSaves"
+                   GamePath="@settings.GamePath"
+                   OnClose="@(() => showRestoreSaves = false)" />
+
 <ReportBugModal IsVisible="@showReportBug"
                 GameRoot="@LogBundleGameRoot"
                 AgentDirectory="@LogBundleAgentDirectory"
@@ -221,6 +232,14 @@
     @* WO-127: the agent's connection in plain words (never raw exception text) *@
     <div class="conn-status-banner" style="position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%); padding: 8px 20px; background: rgba(20, 14, 8, 0.88); border: 1px solid @(connStatusBad ? "#a0522d" : "#8a6d3b"); color: #e8d9b5; font-size: 15px; z-index: 899; max-width: 80%; text-align: center;">
         @connStatusLine
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(wo175StatusLine))
+{
+    @* WO-175 S2: the saves backup before a session, the same look as the connection line *@
+    <div class="conn-status-banner" style="position: fixed; left: 50%; bottom: @(string.IsNullOrEmpty(connStatusLine) ? "64px" : "112px"); transform: translateX(-50%); padding: 8px 20px; background: rgba(20, 14, 8, 0.88); border: 1px solid @(wo175StatusBad ? "#a0522d" : "#8a6d3b"); color: #e8d9b5; font-size: 15px; z-index: 899; max-width: 80%; text-align: center;">
+        @wo175StatusLine
     </div>
 }
 

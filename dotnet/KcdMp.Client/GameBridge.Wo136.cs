@@ -269,6 +269,8 @@ public partial class GameBridge
         bool down = Wo136Rules.Down(flags);
         bool was = _w136HostDown.TryGetValue(npc, out bool d0) && d0;
         _w136HostDown[npc] = down;
+        // WO-172 C1: the host's dead bit stops this copy's rows at once (the Lua's w172_dead follows ~50 ms later: one row slipped through live)
+        if ((flags & Protocol.NpcStateFlagDead) != 0 && _w172DeadWins) _w172Dead[npc] = Environment.TickCount64;
         if (down && !was && _w132Engaged.TryRemove(npc, out var eg))
         {
             Interlocked.Increment(ref _w136KoReleased);

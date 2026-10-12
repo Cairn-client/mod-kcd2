@@ -44,6 +44,8 @@
 		<ProjectReference Include="..\dotnet\KcdMp.Protocol\KcdMp.Protocol.csproj" />
 		<!-- WO-150: the first-run checklist; the same detection code Setup runs (KcdMpSetup.exe). -->
 		<ProjectReference Include="..\dotnet\KcdMp.Setup\KcdMp.Setup.csproj" />
+		<!-- WO-171 L: the log bundle's packer (collapsed noise, zstd, parts that fit a Discord upload). -->
+		<ProjectReference Include="..\dotnet\KcdMp.LogPack\KcdMp.LogPack.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>

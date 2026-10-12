@@ -147,6 +147,7 @@ public partial class GameBridge
         _needsMenuTold = false;
         _gameQuitting = false;
         _ = ExecLuaAsync("if KCD2MP_Wo124CfgEmit then KCD2MP_Wo124CfgEmit() end");
+        _ = ExecLuaAsync("if KCD2MP_W171Emit then KCD2MP_W171Emit() end");   // WO-171: the marker's style / offset / flip as the mod has them
         _ = Wo124LoopAsync(ct);
     }
 
@@ -523,9 +524,18 @@ public partial class GameBridge
                 $"MP-JOIN joiner: join 0x{j.JoinId:x8} spliced world={hostBytes.Length} B + henry={choice.Detail} ({choice.Mode}) -> {res.File.Length} B in {spliceMs:F0} ms; check PASS, verify ok; quest items stripped={rp.QuestItemsRemoved.Count}, keys host_kept={rp.KeysHostKept} joiner_added={rp.KeysJoinerAdded}"));
             try { File.Delete(stagedPath); } catch { }
 
-            // ---- Phase 3: place, read back, rescan, listed. In the playline of this player's newest own
-            // save (= the menu's current playline, WO-124 s4.2); in a world: the playline it is in.
-            j.Playline = j.InWorld && _lastWorldPlayline >= 0 ? _lastWorldPlayline : Wo125NewestOwn(out _)?.Playline ?? choice.Save?.Playline ?? 0;
+            // ---- Phase 3: place, read back, rescan, listed. WO-175 S1 (mp_coop_playline, on by default): in the co-op
+            // playline of the host's world, never one holding this player's own saves. Off: in the playline of this
+            // player's newest own save (= the menu's current playline, WO-124 s4.2); in a world: the playline it is in.
+            string hostTag = WhsSave.ReadSeed(splicedRaw) is uint hostSeed ? WhsSave.SeedTag(hostSeed) : "";
+            int? coopPl = Wo175JoinPlayline(saves, hostTag, j.JoinId);
+            if (coopPl is null)
+            {
+                await AbortJoinerJoinAsync(j, Protocol.JoinAbortIo, "no-free-playline", Wo175Coop.JoinerNoFreeText);
+                return;
+            }
+            j.Playline = coopPl >= 0 ? coopPl.Value
+                : j.InWorld && _lastWorldPlayline >= 0 ? _lastWorldPlayline : Wo125NewestOwn(out _)?.Playline ?? choice.Save?.Playline ?? 0;
             _lastWorldPlayline = j.Playline;
             j.Name = $"mpworld{j.JoinId:x8}";
             string dir = Path.Combine(saves, $"playline{j.Playline}");
@@ -545,6 +555,7 @@ public partial class GameBridge
                 return;
             }
             Console.WriteLine($"MP-JOIN joiner: join 0x{j.JoinId:x8} placed {SaveDisplay(final)} ({back.Length} B, read back: sha256 = the splice, verify ok)");
+            if (coopPl >= 0) Wo175JoinPlaced(j.JoinId, hostTag, j.Playline, final, j.SplicedSha);
             var listed = await _combat.SaveListAsync(1, j.Playline, j.Name);
             if (listed is null || !listed.Listed)
             {

@@ -20,8 +20,12 @@ public static class Wo165Rules
     // Striking on the joiner's screen and the host decides the outcome (the local engine's blow is put back)
     public const bool DefaultHostLock = true, DefaultVictimDecides = false, DefaultBlockRecoil = true;
 
-    /// <summary>The replay's flags: skip the engine's repeat filter (our verdicts are deduped by id), refer a blocking victim to the host's verdict.</summary>
-    public const byte ReplayFlags = 0x01 | 0x10;
+    /// <summary>
+    /// The replay's flags: skip the engine's repeat filter (our verdicts are deduped by id), refer a blocking victim to the host's verdict --
+    /// WO-176 (B2): only when the copy that swung is NOT in its WO-166 C3 striking window (0x80); a striking copy lets the engine judge the
+    /// player's own block (a DLL without the flag refers as before).
+    /// </summary>
+    public const byte ReplayFlags = 0x01 | 0x10 | 0x80;
 
     /// <summary>How long after the replay its damage is read back (the slot hook watches the victim 0.6 s).</summary>
     public const int DamageReadMs = 800;

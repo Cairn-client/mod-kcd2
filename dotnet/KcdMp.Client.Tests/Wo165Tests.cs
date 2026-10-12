@@ -42,7 +42,7 @@ public class Wo165Tests
         Assert.True(Wo165Rules.DefaultHostLock);
         Assert.False(Wo165Rules.DefaultVictimDecides);
         Assert.True(Wo165Rules.DefaultBlockRecoil);
-        Assert.Equal(0x11, Wo165Rules.ReplayFlags);     // skip the repeat filter + refer a blocking victim (P3) to the host's verdict
+        Assert.Equal(0x91, Wo165Rules.ReplayFlags);     // skip the repeat filter + refer a blocking victim (P3) to the host's verdict, unless the copy strikes (WO-176 B2)
     }
 
     // ---------------------------------------------------------------- the DLL's answer

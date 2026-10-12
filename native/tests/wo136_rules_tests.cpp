@@ -47,8 +47,10 @@ int wo136_rules_tests(int* passed) {
         Ev e[] = { {kAvatar, 10.0, 2}, {kAvatar, 11.0, 2} };
         auto p = pick(e, 2, 11.1, kPlayer, 9.0);
         RCHECK(p.to == kNone, "a switch 2.1 s ago holds (hold %.0f s)", kSwitchHoldS);
-        auto q = pick(e, 2, 12.5, kPlayer, 9.0);
-        RCHECK(q.to == kAvatar, "3.5 s after the last switch it may turn again");
+        auto q0 = pick(e, 2, 12.5, kPlayer, 9.0);
+        RCHECK(q0.to == kNone, "3.5 s after the last switch it still holds (WO-172 C2: hold %.0f s)", kSwitchHoldS);
+        auto q = pick(e, 2, 13.1, kPlayer, 9.0);
+        RCHECK(q.to == kAvatar, "4.1 s after the last switch it may turn again");
     }
     // Old threat is forgotten.
     {
@@ -125,7 +127,7 @@ int wo136_rules_tests(int* passed) {
         // the hold still applies on top of the damage rule; and nobody to be sticky to: the first threat decides, damage or not
         Ev e[] = { {kAvatar, 10.0, 2, 30.0f}, {kAvatar, 11.0, 2, 30.0f} };
         RCHECK(pick(e, 2, 11.1, kPlayer, 9.0).to == kNone, "a switch 2.1 s ago holds even against 60 hp");
-        RCHECK(pick(e, 2, 12.5, kPlayer, 9.0).to == kAvatar, "3.5 s after the last switch it may turn");
+        RCHECK(pick(e, 2, 13.1, kPlayer, 9.0).to == kAvatar, "4.1 s after the last switch it may turn (WO-172 C2: 4 s hold)");
         Ev z[] = { {kAvatar, 10.0, 1} };
         RCHECK(pick(z, 1, 10.1, kNone, -1e9).to == kAvatar, "no opponent yet: a swing alone is the first threat");
         // two challengers: the one that hurt it most turns it, not the one with the larger count
@@ -134,6 +136,20 @@ int wo136_rules_tests(int* passed) {
                    {kPlayer, 10.7, 2, 1.0f} };
         auto p = pick(t, 8, 11.0, kPlayer, -1e9);
         RCHECK(p.to == kAvatar2, "of two challengers the one with the most damage (25 hp) takes it, not the larger count (to=0x%X)", p.to);
+    }
+    // WO-172 C2: nobody fighting it -- the player who is fighting it (the last to land a hit) takes it, not the larger count
+    {
+        Ev e[] = { {kAvatar, 10.0, 2}, {kAvatar, 10.2, 2}, {kAvatar, 10.4, 2}, {kPlayer, 10.9, 2} };
+        auto p = pick(e, 4, 11.0, kNone, -1e9);
+        RCHECK(p.to == kPlayer, "no opponent: the last to land a hit (the host at 10.9) takes it over the avatar's three earlier hits (to=0x%X)", p.to);
+        Ev s1[] = { {kAvatar, 10.0, 1}, {kAvatar, 10.2, 1}, {kPlayer, 10.1, 1} };
+        RCHECK(pick(s1, 3, 10.5, kNone, -1e9).to == kAvatar, "no opponent and only swings: the strongest by count");
+        Ev h[] = { {kAvatar, 10.0, 2}, {kPlayer, 10.5, 1} };
+        RCHECK(pick(h, 2, 10.6, kNone, -1e9).to == kAvatar, "a landed hit beats a later swing");
+        // the hold: three hits from a second player within 4 s of a switch turn nothing; after 4 s they may
+        Ev k[] = { {kAvatar2, 20.0, 2, 30.0f}, {kAvatar2, 20.5, 2, 30.0f}, {kAvatar2, 21.0, 2, 30.0f} };
+        RCHECK(pick(k, 3, 21.1, kAvatar, 18.0).to == kNone, "switches at most once per 4 s");
+        RCHECK(pick(k, 3, 22.1, kAvatar, 18.0).to == kAvatar2, "4.1 s after the last switch the clear threat takes it");
     }
     if (passed) *passed = g_pass;
     return g_fail;
