@@ -36,9 +36,19 @@ do local function install()
         return true
     end
 
+    -- a partner joining shows as who it is, nothing else: the bar's stages, its ladder and its hint stay out of the card
+    local function whoJoins(text)
+        local who = tostring(text or ''):match("^(.-) is ")
+        if not who or who == '' then who = "Your partner" end
+        return who .. " is joining..."
+    end
+
     function KCD2MP_CairnRow(key, y, text)
         if not KCD2MP.launcherDraws then return false end
-        N.rows[tostring(key)] = { y = tonumber(y) or 0, text = clean(text), key = tostring(key) }
+        key = tostring(key)
+        if key == "join_bar" or key == "join_hint" then return true end
+        if key == "join_title" then text = whoJoins(text) end
+        N.rows[key] = { y = tonumber(y) or 0, text = clean(text), key = key }
         return true
     end
 
@@ -47,6 +57,8 @@ do local function install()
         local now = os.clock()
         local lines = {}
         for i = #N.toasts, 1, -1 do if N.toasts[i].expires < now then table.remove(N.toasts, i) end end
+        if N.join and N.join.expires < now then N.join = nil end
+        if N.join then lines[#lines + 1] = N.join.text end
         for _, t in ipairs(N.toasts) do lines[#lines + 1] = t.text end
         local rows = {}
         for _, r in pairs(N.rows) do if r.text ~= "" then rows[#rows + 1] = r end end
@@ -61,6 +73,23 @@ do local function install()
         end
     end
     N.flush = flush
+
+    -- the host's join panel (the game's gilded tutorial card, pushed by the agent while a partner's world loads) is the same short line
+    -- in the card; it stays until the panel is hidden, and the old bar's rows stay quiet meanwhile (joinPanelOn, as when the panel shows)
+    local panelOrig, panelHideOrig = KCD2MP_W154JoinPanel, KCD2MP_W154JoinPanelHide
+    function KCD2MP_W154JoinPanel(partner, phase, pct, stageS)
+        if KCD2MP.launcherDraws then
+            N.join = { text = clean((tostring(partner or '') ~= '' and tostring(partner) or "Your partner") .. " is joining..."), expires = os.clock() + 600 }
+            KCD2MP.w154 = KCD2MP.w154 or {}
+            KCD2MP.w154.joinPanelOn = true
+            return true
+        end
+        return panelOrig and panelOrig(partner, phase, pct, stageS)
+    end
+    function KCD2MP_W154JoinPanelHide(why)
+        N.join = nil
+        return panelHideOrig and panelHideOrig(why)
+    end
 
     -- the frame loop calls this once a frame, after every row (kdcmp.lua: KCD2MP_W154MenuBackstop)
     local backstopOrig = KCD2MP_W154MenuBackstop

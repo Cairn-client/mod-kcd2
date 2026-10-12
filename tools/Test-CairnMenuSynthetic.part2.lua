@@ -194,6 +194,32 @@ do
     check("i: no Lua errors", #ERRS == 0, ERRS[1])
 end
 
+do
+    -- a partner joining: the host's join panel and the old bar are one short line, who it is
+    local N = KCD2MP.cairnNotice
+    KCD2MP.launcherDraws = true
+    N.toasts, N.rows, N.join = {}, {}, nil
+    local mark = #LOG
+    local ret = KCD2MP_W154JoinPanel("ZipetteBabinks", "loading", 10, 3)
+    check("j: the panel is taken (the game's own card is not pushed)", ret == true and N.join ~= nil and KCD2MP.w154.joinPanelOn == true)
+    N.lastAt = -1; KCD2MP_W154MenuBackstop()
+    local e = evts("notice", mark)
+    check("j: the card says who joins and nothing more", #e == 1 and e[1] == "ZipetteBabinks is joining...", e[1])
+    -- the old bar's rows: only its title, shortened to the same line; its ladder and hint stay out
+    KCD2MP_W154JoinPanelHide("test")
+    check("j: hiding the panel ends the line", N.join == nil)
+    N.lastAt = -1; KCD2MP_W154MenuBackstop()   -- the card goes (notice_hide) before the old bar shows its own
+    mark = #LOG
+    KCD2MP_CairnRow("join_title", 480, "ZipetteBabinks is loading your world... 12 s")
+    KCD2MP_CairnRow("join_bar", 520, "[x] save   [x] send   [>] load 12 s   [ ] ready")
+    KCD2MP_CairnRow("join_hint", 556, "The world is paused until they arrive (mp_join_cancel to stop).")
+    N.lastAt = -1; KCD2MP_W154MenuBackstop()
+    e = evts("notice", mark)
+    check("j: the old bar is the same line: its ladder and its hint are left out", #e == 1 and e[1] == "ZipetteBabinks is joining...", e[1])
+    KCD2MP.launcherDraws = false
+    check("j: no Lua errors", #ERRS == 0, ERRS[1])
+end
+
 local pass, fail = 0, 0
 for _, r in ipairs(RESULTS) do if r:sub(1, 4) == "PASS" then pass = pass + 1 else fail = fail + 1 end end
 OUT = table.concat(RESULTS, "\n") .. string.format("\n%d passed, %d failed", pass, fail)
