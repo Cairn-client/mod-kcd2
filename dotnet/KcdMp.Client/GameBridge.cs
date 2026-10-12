@@ -1852,6 +1852,7 @@ public partial class GameBridge(ClientConfig config)
             tailForPause.PauseStateChanged += OnLocalPauseDetected;
             tailForPause.SkipTimeStateChanged += OnLocalSkipTime;
             tailForPause.StoryBeatDetected += OnLocalStoryBeat;
+            tailForPause.SaveInitiated += Wo174OnSaveInitiated;      // WO-174
             tailForPause.LevelDetected += OnLocalLevel;              // WO-94
             tailForPause.CutsceneStateChanged += OnLocalCutscene;    // WO-94
             tailForPause.PlayerTeleported += OnLocalTeleport;        // WO-94
@@ -2260,6 +2261,7 @@ public partial class GameBridge(ClientConfig config)
                 tailForPause2.PauseStateChanged -= OnLocalPauseDetected;
                 tailForPause2.SkipTimeStateChanged -= OnLocalSkipTime;
                 tailForPause2.StoryBeatDetected -= OnLocalStoryBeat;   // WO-90
+                tailForPause2.SaveInitiated -= Wo174OnSaveInitiated;    // WO-174
                 tailForPause2.LevelDetected -= OnLocalLevel;            // WO-94
                 tailForPause2.CutsceneStateChanged -= OnLocalCutscene;  // WO-94
                 tailForPause2.PlayerTeleported -= OnLocalTeleport;      // WO-94
@@ -4825,6 +4827,9 @@ public partial class GameBridge(ClientConfig config)
                     // alone is not enough -- a reconnecting peer reuses the
                     // ghost id, and a queued swing would then wait for the NEW
                     // body's id and play on it.
+                    // WO-174: the host takes the figure out of every skirmish BEFORE its body goes (the engine's own RemoveSoul: no
+                    // vanished party stays in a fight, a scripted brawl's included); the entity id is still known here
+                    if (_isDamageAuthority) { try { await Wo174LeaveBeforeRemoveAsync(ghostId); } catch (Exception ex) { Console.WriteLine($"MP-W174 leave-fight failed: {ex.Message}"); } }
                     _ghostEntityIds.TryRemove(ghostId.ToString(), out _);
                     BumpGhostGeneration(ghostId.ToString(), "peer disconnected");
                     if (_peerApproach.TryRemove(ghostId, out _))
@@ -5994,6 +5999,9 @@ public partial class GameBridge(ClientConfig config)
             case "w154_ride":        // WO-154 5: a ridden horse bound to the native writer (or let go)
             case "w154_status":
                 Wo154OnEvent(name, arg);
+                return;
+            case "w174_endfig":      // WO-174: a friendly-fire knockdown -> the figure leaves the punch's skirmish
+                Wo174OnEvent(arg);
                 return;
             case "w154_voice":       // WO-154 6.7: the mod menu's voice switch (on|off), connected or not
                 Wo154OnVoiceEvent(arg);

@@ -27,10 +27,10 @@ public readonly record struct Wo173Hit(bool Ok, byte Reason, byte Applied, byte 
 public static class Wo173Rules
 {
     /// <summary>
-    /// mp_real_hits. The WO (a public release): on only if every C1-C3 check passes, otherwise off with the capped fallback shipped. The
-    /// block-rate check could not be staged unattended (docs/WO-173-findings.md C1), so it ships OFF; the capped raw path is what runs.
+    /// mp_real_hits. WO-173 shipped it OFF (its public-release rule: the block-rate check could not be staged unattended, findings C1);
+    /// WO-174 D (0.49.1, for the maintainer and one partner to test) is ON by the maintainer's choice. The capped raw path stays the per-blow fallback.
     /// </summary>
-    public const bool DefaultRealHits = false;
+    public const bool DefaultRealHits = true;
 
     /// <summary>The joiner's last swing row is the one a hit belongs to when it is at most this old (a swing's start + hit is under 1.3 s).</summary>
     public const long RowFreshMs = 2_500;

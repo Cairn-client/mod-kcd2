@@ -427,6 +427,7 @@ void lock_tick(const uint32_t* npcs, int n) {
         LockDecision d = on ? lock_rule(cs[i].v) : LockDecision{cs[i].v.paired ? LockAct::Remove : LockAct::None, "mp_host_lock-off"};
         switch (d.act) {
             case LockAct::Set: {
+                if (hits::scene_owned_eid(cs[i].eid, "wo165-lock")) break;   // WO-174: the host never joins a scripted brawl's skirmish through the mod's lock
                 const uint32_t peid = player_eid();
                 void* hs = peid ? hits::soul_of_eid(peid) : nullptr;
                 void* ns = hits::soul_of_eid(cs[i].eid);

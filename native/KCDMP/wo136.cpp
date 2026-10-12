@@ -176,6 +176,7 @@ bool shows(uint32_t npc, uint32_t to) {
 // queued for tick()'s read back; *asked false = the calls themselves failed.
 bool retarget(uint32_t npc, uint32_t to, void* targetSoul, bool* asked, bool forceIt = true) {
     *asked = false;
+    if (hits::scene_owned_eid(npc, "wo136-retarget")) return false;   // WO-174: a scripted brawl's actor keeps its own fight
     void* ns = hits::soul_of_eid(npc);
     if (!ns || !targetSoul) return false;
     if (forceIt) force(npc, to, ns, targetSoul, "retarget");
@@ -261,6 +262,7 @@ bool enabled() { return g_on.load(); }
 
 void note_threat(uint32_t npcEid, uint32_t srcEid, int weight, const char* why, float damage) {
     if (!g_on.load() || !npcEid) return;
+    if (srcEid != kPlayer && hits::scene_owned_eid(npcEid, "wo136-threat")) return;   // WO-174: no avatar is a threat to a scripted brawl's actor
     const bool host = srcEid == kPlayer;
     const bool hostTarget = host && g_hostTarget.load();
     // WO-154 3.1: the host's blow frees the NPC from the mod's own lock on an avatar

@@ -16,10 +16,10 @@ namespace KcdMp.Client.Tests;
 public class Wo173Tests
 {
     [Fact]
-    public void Real_hits_ship_off_with_the_capped_fallback_because_a_check_was_not_met()
+    public void Real_hits_default_on_since_0_49_1_with_the_capped_fallback_per_blow()
     {
-        // the WO: on only if every C1-C3 check passes (public release); the block-rate check could not be staged (findings)
-        Assert.False(Wo173Rules.DefaultRealHits);
+        // WO-173 shipped it off (public-release rule, block-rate check not staged); WO-174 D: the maintainer chose on for 0.49.1
+        Assert.True(Wo173Rules.DefaultRealHits);   // WO-174 D: on since 0.49.1
     }
 
     private static byte[] Answer(byte applied, byte outcome, byte fallback, byte react, byte steps, ulong aw, ulong vw, uint seq, float st, float hp)

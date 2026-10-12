@@ -1186,6 +1186,25 @@ people). Run items 253-258 twice: first as shipped (`mp_real_hits off`, the old 
 
 Switches (console, host): `mp_real_hits on|off` (default off in 0.49.0), `mp_w173_status`.
 
+## WO-174 — the host's stuck weapons, the repair, the clean-up (0.49.1)
+
+Evidence: `docs/WO-174-findings.md`. Plain-words repair guide: `docs/HOW-TO-REPAIR-WEAPONS.md`. Everything below was run on one machine against
+a synthetic partner; none of it with two real players. **Type `mark_odd` at every miss.**
+
+261. **Punch your partner (friendly fire), then he leaves the game; save; load that save.** Your weapons draw. (`agent.log`: *peer … friendly-fire
+     knockdown … its avatar left its skirmish*, then *… partner left …*; the game log: `WO174-CLEAN reason=leave`.)
+262. **Play the petty-feud side quest's neighbours' brawl** (Tachov pub, `koneczabomysichvalek`) **with your partner nearby, hitting the
+     brawlers.** He is **not pulled in** (no figure in the brawl; the game log shows `WO174-BRAWL … figure_kept_out=yes`); **the brawl ends by
+     itself**, **the quest advances** as alone, and **your weapons draw afterwards**.
+263. **A village brawl you join, then you leave the area and save.** Weapons draw after loading that save.
+264. **`mp_repair_combat` on a good save** says *Nothing was wrong* and changes nothing (your sword comes out and goes away once: that is its test).
+265. **If your weapons ever stick** (or after sleeping, stealing from someone, looting): `mp_repair_combat` — they come back — then save into a
+     **new slot**, load it: they still draw (the re-apply `WO174-REPAIR step=autofix-after-load` is in the game log). **Tell us what you did
+     before they stuck.** After a game restart type the command again.
+266. **The mod menu:** Insert → Help → *Fix my weapons / stuck fight* does the same as the console command.
+267. **The switches:** `mp_combat_autoclean on|off`, `mp_weapon_autofix on|off`, `mp_real_hits on|off` (on by default since 0.49.1; the WO-173
+     items 253-260 apply again with it on). **Report a bug → Collect logs** afterwards (both machines).
+
 ## Logs to send afterwards
 
 Both machines: Report a bug in the launcher. Since 0.48.9 it collects the current launch by default as a small file (or a few numbered

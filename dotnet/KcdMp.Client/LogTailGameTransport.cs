@@ -255,6 +255,9 @@ public sealed class LogTailGameTransport : IGameTransport
     /// </summary>
     public event Action<string>? StoryBeatDetected;
 
+    /// <summary>WO-174: the game's own save request line ("InitiateSaveGame() ...", a loadable kind): the mod clears partner-figure fight records now.</summary>
+    public event Action<string>? SaveInitiated;
+
     /// <summary>
     /// WO-94: the engine's own level-load banner,
     /// "============================ Loading level trosecko ============================"
@@ -844,6 +847,13 @@ public sealed class LogTailGameTransport : IGameTransport
 
     private string? _lastStoryMarker;
 
+    private void ProcessSaveMarker(ReadOnlySpan<char> line)
+    {
+        if (!Wo174Rules.IsLoadableSaveKind(line)) return;
+        try { SaveInitiated?.Invoke(line.Length > 120 ? line[..120].ToString() : line.ToString()); }
+        catch (Exception ex) { Console.WriteLine($"[save] handler threw: {ex.Message}"); }
+    }
+
     /// <summary>
     /// The most recent quest objective this client crossed, or null before
     /// the first checkpoint of the session. Read by the agent when a new peer
@@ -1002,6 +1012,7 @@ public sealed class LogTailGameTransport : IGameTransport
             // the hot (DATA-tagged) path.
             ProcessPauseMarkers(line);
             ProcessStoryMarkers(line);
+            ProcessSaveMarker(line);    // WO-174
             ProcessLevelMarker(line);   // WO-94
             ProcessTeleportMarker(line); // WO-94
             ProcessFastTravelMarker(line); // WO-114

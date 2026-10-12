@@ -5,6 +5,7 @@
 #include "hits.h"
 #include "wo166.h"
 #include "wo170_rules.h"
+#include "wo174_rules.h"
 #include "fault_guard.h"
 
 #include <windows.h>
@@ -185,7 +186,9 @@ std::unordered_map<std::string, uint32_t> g_nameEids;
 
 std::atomic<uint32_t> c_melee{0}, c_missile{0}, c_avatarHits{0}, c_restored{0}, c_ffQueued{0}, c_marks{0},
     c_attrib{0}, c_attribHistory{0}, c_skirmish{0}, c_pvpIn{0}, c_faults{0},
-    c_npcAvatarHits{0}, c_npcHitsSent{0}, c_discardHits{0}, c_discarded{0}, c_skirmishKept{0}, c_skirmishRemove{0}, c_relationAsked{0};
+    c_npcAvatarHits{0}, c_npcHitsSent{0}, c_discardHits{0}, c_discarded{0}, c_skirmishKept{0}, c_skirmishRemove{0}, c_relationAsked{0}, c_sceneKept{0};
+// WO-174: actor eid -> when WO174-BRAWL was last said for it
+std::unordered_map<uint32_t, double> g_sceneSaid;
 
 double now_s() { LARGE_INTEGER q, f; QueryPerformanceCounter(&q); QueryPerformanceFrequency(&f); return double(q.QuadPart) / double(f.QuadPart); }
 
@@ -524,6 +527,9 @@ AttribResult apply_attributed_ex(const uint8_t* body, size_t len, bool rawDamage
     void* victimActor = veid ? actor_by_eid(veid) : nullptr;
     void* victimSoulA = soul_of_actor(victimActor);
     r.victimWuid = victimEnt ? actions::entity_wuid(victimEnt) : 0;
+    // WO-174: a scripted brawl's actor keeps its own fight: the damage above stands (the blow was real), but no combat history, no skirmish
+    // and no threat link it to the avatar
+    if (veid && scene_owned_eid(veid, "wo121-attributed")) { r.ok = (r.steps & 1) != 0; return r; }
     // 2. combat history: {+0x00 attacker WUID, +0x10 victim WUID}
     if (victimSoulA && r.attackerWuid && r.victimWuid) {
         void* vcs = static_cast<char*>(victimSoulA) + kSoulCombat;
@@ -535,7 +541,7 @@ AttribResult apply_attributed_ex(const uint8_t* body, size_t len, bool rawDamage
             else c_faults.fetch_add(1);
         }
     }
-    // 3. skirmish, once per engagement
+    // 3. skirmish, once per engagement (WO-174: never a scripted brawl's -- its actors keep their fight, the avatar stays out of it)
     if (victimSoulA && veid) {
         const uint64_t key = (static_cast<uint64_t>(veid) << 32) | avatarEid;
         const double now = now_s();
@@ -630,6 +636,23 @@ bool discard_from(uint32_t eid, bool on) {
 int discard_count() { int n = 0; for (auto& d : g_discard) if (d.load()) ++n; return n; }
 
 bool skirmish_ready() { return g_attribArmed && g_fnSkirmishGetter && g_vftSkirmish; }
+
+bool scene_owned_eid(uint32_t eid, const char* site) {
+    if (!eid) return false;
+    char nm[64]{};
+    copy_name(eid, nm, sizeof nm);
+    if (!wo174rules::scene_owned(nm)) return false;
+    c_sceneKept.fetch_add(1);
+    const double now = now_s();
+    auto it = g_sceneSaid.find(eid);
+    if (it == g_sceneSaid.end() || now - it->second >= wo174rules::kBrawlLogEveryS) {
+        g_sceneSaid[eid] = now;
+        logf("WO174-BRAWL skirmish=scripted quest=by-actor-name npc=%s site=%s figure_kept_out=yes -- a scripted brawl is the game's own: no partner's figure joins its skirmish, no threat, no forced target, no lock", nm, site ? site : "?");
+    }
+    return true;
+}
+
+uint32_t scene_kept_count() { return c_sceneKept.load(); }
 
 bool skirmish_add(void* soul, void* reference, uint8_t ovr, uint64_t* rv) {
     if (!skirmish_ready() || !soul || !reference) return false;
@@ -894,13 +917,13 @@ int status_text(char* out, int n) {
         "hit_slot=%s attribution=%s ff=%d attrib_cfg=%d melee=%u missile=%u avatar_hits=%u restored=%u ff_sent=%u player_marks=%u "
         "attributed=%u history=%u skirmish=%u pvp_in=%u hit_faults=%u npc_watch=%s npc_avatar_hits=%u npc_hits_sent=%u "
         "discard_hits=%u discarded=%u discard_eids=%d skirmish_kept_host=%u skirmish_remove=%u skirmish_relation=%s relation_asked=%u "
-        "figure_guard=%s fig_seen=%u fig_relayed=%u fig_dropped=%u fig_put_back=%u fig_fatal=%u fig_cancelled=%u fig_unread=%u fig_missile_passed=%u",
+        "scene_kept=%u figure_guard=%s fig_seen=%u fig_relayed=%u fig_dropped=%u fig_put_back=%u fig_fatal=%u fig_cancelled=%u fig_unread=%u fig_missile_passed=%u",
         g_hookArmed ? "armed" : "off", g_attribArmed ? "armed" : "off", g_ff.load() ? 1 : 0, g_attribution.load() ? 1 : 0,
         c_melee.load(), c_missile.load(), c_avatarHits.load(), c_restored.load(), c_ffQueued.load(), c_marks.load(),
         c_attrib.load(), c_attribHistory.load(), c_skirmish.load(), c_pvpIn.load(), c_faults.load(),
         (g_hookArmed && g_npcWatch.load()) ? "armed" : "off", c_npcAvatarHits.load(), c_npcHitsSent.load(),
         c_discardHits.load(), c_discarded.load(), discard_count(), c_skirmishKept.load(), c_skirmishRemove.load(),
-        skirmish_relation_armed() ? "armed" : "off", c_relationAsked.load(),
+        skirmish_relation_armed() ? "armed" : "off", c_relationAsked.load(), c_sceneKept.load(),
         g_figureGuard.load() ? "on" : "off", c_figSeen.load(), c_figRelayed.load(), c_figDropped.load(), c_figPutBack.load(), c_figFatal.load(),
         c_figCancelled.load(), c_figUnread.load(), c_figMissile.load());
 }
