@@ -14,9 +14,12 @@ public sealed class GameConsole : IDisposable
     /// <summary>The console of the game; CAIRN_CONSOLE_URL points it elsewhere (the tests' stand-in for the game).</summary>
     private readonly HttpClient _http = new() { BaseAddress = new Uri(Environment.GetEnvironmentVariable("CAIRN_CONSOLE_URL") is { Length: > 0 } u && Uri.TryCreate(u, UriKind.Absolute, out var parsed) && parsed.IsLoopback ? u : "http://127.0.0.1:1403"), Timeout = TimeSpan.FromSeconds(5) };
 
-    public async Task<bool> LuaAsync(string lua, CancellationToken ct = default)
+    public Task<bool> LuaAsync(string lua, CancellationToken ct = default) => CommandAsync("#" + lua, ct);
+
+    /// <summary>A console command as it is (no Lua prefix).</summary>
+    public async Task<bool> CommandAsync(string command, CancellationToken ct = default)
     {
-        string enc = Uri.EscapeDataString("#" + lua);
+        string enc = Uri.EscapeDataString(command);
         if (enc.Length > MaxEncoded) return false;
         for (int attempt = 0; attempt < 8 && !ct.IsCancellationRequested; attempt++)
         {

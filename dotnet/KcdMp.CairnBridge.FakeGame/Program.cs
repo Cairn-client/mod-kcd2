@@ -4,7 +4,8 @@
 using System.Runtime.InteropServices;
 
 // <root>\Bin\<config>\KingdomCome.exe, like the Modding Tools build. Beside it: WHGame.dll (loaded, so the launcher sees the game is injectable).
-// In <root>: steam_appid.txt, and the kcd.log this writes. The test steers it with flag files in <root>: world.flag (a save loaded), quit.flag (exit).
+// In <root>: steam_appid.txt, and the kcd.log this writes. The test steers it with flag files in <root>: world.flag (a save loaded), quit.flag (exit),
+// and append.txt (its lines are added to kcd.log, like the mod's menu events).
 string exeDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
 string root = Path.GetFullPath(Path.Combine(exeDir, "..", ".."));
 string log = Path.Combine(root, "kcd.log");
@@ -16,6 +17,7 @@ using (var w = new StreamWriter(new FileStream(log, FileMode.Create, FileAccess.
     w.WriteLine("PlayVideoOnly 'main_menu'");
     var until = DateTime.UtcNow.AddMinutes(3);
     bool world = false;
+    string append = Path.Combine(root, "append.txt");
     while (DateTime.UtcNow < until && !File.Exists(Path.Combine(root, "quit.flag")))
     {
         if (!world && File.Exists(Path.Combine(root, "world.flag")))
@@ -24,6 +26,12 @@ using (var w = new StreamWriter(new FileStream(log, FileMode.Create, FileAccess.
             w.WriteLine("Loading saved game");
             Thread.Sleep(300);
             w.WriteLine("Gameplay started");
+        }
+        if (File.Exists(append))
+        {
+            string add = File.ReadAllText(append);
+            File.Delete(append);
+            foreach (var l in add.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)) w.WriteLine(l);
         }
         Thread.Sleep(100);
     }

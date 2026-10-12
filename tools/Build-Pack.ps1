@@ -94,7 +94,7 @@ foreach ($n in @("bin\$agentName", "bin\$relayName", "bin\$nativeName", 'mod\mod
 # the menu bridge, when this pack carries one (a stage built without -NoBridge): the launcher then talks to the mod's menu through it and needs a launcher that speaks the bridge
 $bridgeName = 'CairnBridgeKcd2.exe'
 $hasBridge = Test-Path (Join-Path $stage "bin\$bridgeName")
-$launcherMin = if ($hasBridge) { '0.3.10' } else { '0.3.7' }
+$launcherMin = if ($hasBridge) { '0.3.19' } else { '0.3.7' }   # 0.3.19: the start-game flow is the pack's; an older launcher would run it too
 
 # the launcher's contract with this mod. The compatibility rule: two players need the same MAJOR.MINOR of the pack.
 $packJson = [ordered]@{
