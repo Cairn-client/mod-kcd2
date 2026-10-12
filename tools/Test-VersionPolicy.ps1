@@ -20,7 +20,7 @@ $version = (Get-Content (Join-Path $root "VERSION") -TotalCount 1).Trim()
 if ($version -cnotmatch $strict) { Fail "VERSION '$version' is not strict MAJOR.MINOR.PATCH" }
 
 . (Join-Path $PSScriptRoot "CairnTags.ps1")
-$tags = Get-CairnReleaseTags $root $Tag
+$tags = @(Get-CairnReleaseTags $root $Tag)
 $latest = if ($tags.Count) { $tags[-1] } else { $null }
 
 if ($Tag) {
