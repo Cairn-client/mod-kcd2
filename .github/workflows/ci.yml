@@ -49,3 +49,18 @@ jobs:
       - name: Native unit tests
         shell: pwsh
         run: ./native/build/tests/KCDMP_NativeTests.exe
+
+  lua:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: 8.0.x }
+      - name: Synthetic suites of the Cairn modules and the menu
+        shell: pwsh
+        run: |
+          foreach ($s in 'Test-WO154Synthetic.ps1', 'Test-CairnMenuSynthetic.ps1') {
+            Write-Host "== $s"
+            & powershell -ExecutionPolicy Bypass -File "tools/$s"
+            if ($LASTEXITCODE -ne 0) { throw "$s failed" }
+          }
