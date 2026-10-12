@@ -91,6 +91,37 @@ public sealed class SaveCatalog
         }
     }
 
+
+    /// <summary>Every save of the game and every character and chest the mod kept, so a new adventure starts clean (Settings > Delete all saves). Refused while the game runs.</summary>
+    public (bool Ok, string Message) DeleteAll(bool gameRunning)
+    {
+        if (gameRunning) return (false, "Close the game first: its saves cannot be deleted while it is running.");
+        var targets = new List<string>();
+        if (Directory.Exists(_savesRoot))
+            foreach (var line in Directory.EnumerateDirectories(_savesRoot, "playline*")) targets.AddRange(Directory.EnumerateFiles(line, "*.whs"));
+        foreach (var root in _dataRoots.Where(Directory.Exists))
+        {
+            foreach (var d in new[] { "henry", "chests", "hosted-henry" })
+            {
+                string p = System.IO.Path.Combine(root, d);
+                if (Directory.Exists(p)) targets.Add(p);
+            }
+            targets.AddRange(Directory.EnumerateFiles(root, "*-staged.json"));
+        }
+        int saves = 0, folders = 0;
+        string error = "";
+        foreach (var path in targets)
+        {
+            try
+            {
+                if (Directory.Exists(path)) { Directory.Delete(path, true); folders++; }
+                else { File.Delete(path); if (path.EndsWith(".whs", StringComparison.OrdinalIgnoreCase)) saves++; else folders++; }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { error = $"{System.IO.Path.GetFileName(path)}: {ex.Message}"; }
+        }
+        if (error.Length > 0) return (false, "Some saves could not be deleted (is the game closed?): " + error);
+        return (true, saves + folders == 0 ? "There were no saves to delete." : $"Deleted {saves} save(s) and the mod's characters and chests.");
+    }
     /// <summary>The bridge message that lists the saves (docs/BRIDGE.md).</summary>
     public static string ToJson(IReadOnlyList<SaveSlot> slots)
     {

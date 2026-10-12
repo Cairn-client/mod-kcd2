@@ -17,6 +17,13 @@ public static class SavesCli
         catalog ??= SaveCatalog.Default();
         gameRunning ??= () => Process.GetProcessesByName("KingdomCome").Length > 0;
         if (args.Length == 2 && args[0] == "saves" && args[1] == "list") { Say(output, SaveCatalog.ToJson(catalog.List())); return 0; }
+        if (args.Length == 2 && args[0] == "saves" && args[1] == "delete-all")
+        {
+            var (ok, message) = catalog.DeleteAll(gameRunning());
+            Say(output, SaveCatalog.ToastJson(message, error: !ok));
+            Say(output, SaveCatalog.ToJson(catalog.List()));
+            return ok ? 0 : 1;
+        }
         if (args.Length == 3 && args[0] == "saves" && args[1] == "delete" && args[2].Length is > 0 and <= 60)
         {
             var (ok, message) = catalog.Delete(args[2], DateTime.UtcNow, gameRunning());
