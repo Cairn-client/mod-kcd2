@@ -25,6 +25,8 @@ PEER = os.environ.get('SYNTHPEER') or os.path.join(live.HERE, 'synthpeer', 'bin'
 STATE = os.path.join(live.LOGS, 'run165.state.json')
 DETACHED = 0x00000008 | 0x00000200
 VERSION = os.path.join(live.HERE, '..', '..', 'VERSION')
+# WO-176: the relay port (another relay -- e.g. an installed launcher's -- may hold 7778)
+PORT = int(os.environ.get('KCDMP_TEST_PORT', '7778'))
 
 
 def launch(path):
@@ -81,12 +83,13 @@ def load(playline, save):
 
 def relay(dll):
     st = load_state()
-    if listening(7778):
-        print('7778 already listening'); return
-    r = subprocess.Popen(launch(os.path.abspath(dll)) + ['--port', '7778'], cwd=os.path.dirname(os.path.abspath(dll)),
+    if listening(PORT):
+        print('%d already listening' % PORT); return
+    urls = ['--urls', os.environ['KCDMP_TEST_URLS']] if os.environ.get('KCDMP_TEST_URLS') else []   # WO-176: the relay's own HTTP port, too
+    r = subprocess.Popen(launch(os.path.abspath(dll)) + ['--port', str(PORT)] + urls, cwd=os.path.dirname(os.path.abspath(dll)),
                          stdout=open(os.path.join(live.LOGS, 'relay165.log'), 'a'), stderr=subprocess.STDOUT, creationflags=DETACHED)
     for _ in range(40):
-        if listening(7778): break
+        if listening(PORT): break
         time.sleep(0.25)
     st['relay'] = r.pid; save_state(st)
     print('relay pid', r.pid)
@@ -95,7 +98,7 @@ def relay(dll):
 def peer(tag, plan, opts):
     st = load_state()
     log = os.path.join(live.LOGS, 'run165.peer.%s.log' % tag)
-    h = subprocess.Popen([live.dotnet(), PEER, '--port', '7778', '--name', os.environ.get('PEER_NAME', 'synth-host'), '--plan', os.path.abspath(plan),
+    h = subprocess.Popen([live.dotnet(), PEER, '--port', str(PORT), '--name', os.environ.get('PEER_NAME', 'synth-host'), '--plan', os.path.abspath(plan),
                           '--version-file', os.path.abspath(VERSION)] + opts,
                          stdout=open(log, 'w'), stderr=subprocess.STDOUT, creationflags=DETACHED)
     st['peer'] = h.pid; st['peerlog'] = log; save_state(st)
@@ -111,7 +114,7 @@ def agent(tag, dll, envs):
         k, v = kv.split('=', 1)
         env[k] = v
     log = os.path.join(live.LOGS, 'run165.agent.%s.log' % tag)
-    a = subprocess.Popen(launch(os.path.abspath(dll)) + ['--host', '127.0.0.1', '--port', '7778', '--name', 'wo165-agent', '--no-voice', '--no-discord'],
+    a = subprocess.Popen(launch(os.path.abspath(dll)) + ['--host', '127.0.0.1', '--port', str(PORT), '--name', 'wo165-agent', '--no-voice', '--no-discord'],
                          cwd=os.path.dirname(os.path.abspath(dll)), stdout=open(log, 'w'), stderr=subprocess.STDOUT,
                          creationflags=DETACHED, env=env)
     st['agent'] = a.pid; st['agentlog'] = log; save_state(st)
