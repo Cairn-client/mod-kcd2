@@ -38,8 +38,9 @@ public partial class GameBridge
     {
         try
         {
-            var r = await _combat.Wo163Async(23, [(byte)(_w176ArrangedGuard ? 1 : 0)]);
-            Console.WriteLine($"MP-W176 mp_arranged_guard {(_w176ArrangedGuard ? "on" : "off")} -> DLL {(r is { Ok: true } x && x.Payload.Length > 0 ? (x.Payload[0] != 0 ? "on" : "off") : "no answer (an older DLL: WO-174's name list only)")}");
+            // walk: the figure check's level-wide walk is the host's only (arranged fights run in the host's world)
+            var r = await _combat.Wo163Async(23, [(byte)(_w176ArrangedGuard ? 1 : 0), (byte)(_isDamageAuthority ? 1 : 0)]);
+            Console.WriteLine($"MP-W176 mp_arranged_guard {(_w176ArrangedGuard ? "on" : "off")} figure_check={(_isDamageAuthority ? "host" : "off")} -> DLL {(r is { Ok: true } x && x.Payload.Length > 0 ? (x.Payload[0] != 0 ? "on" : "off") : "no answer (an older DLL: WO-174's name list only)")}");
         }
         catch (Exception ex) { Console.WriteLine($"MP-W176 mp_arranged_guard not pushed: {ex.GetType().Name}"); }
     }

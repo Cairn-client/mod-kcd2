@@ -8,14 +8,16 @@
 //     soul carries combat_arrangedFight or combat_forceUnarmedWhileInUnarmedSkirmish (the engine's own context store, read through the WO-143
 //     reader -- main thread only; another thread gets the cached answer), else WO-174's name list. Logs, once per actor per 10 s:
 //       WO176-ARRANGED skirmish=npc:<actor> quest=<context|by-actor-name> context=<name> npc=<actor> site=<caller> figure_kept_out=yes
-//   tick(): twice a second, every actor within 40 m of a figure is read; a figure already inside such a fight (the actor's opponent is the
-//     figure, or the engine's relation test says hostile in one skirmish) leaves that skirmish at once (RemoveSoulFromSkirmish), the mod's
-//     forced targets and threats on that actor are dropped:
+//   tick() (the host's world only -- op 23's walk): every actor within 40 m of a figure is read (a level-wide entity walk: every 4 s, twice a
+//     second for 30 s after any story actor was seen); while a story actor is near, the figure carries the shield contexts; a figure a
+//     fighter is turned on (its opponent is the figure) leaves that skirmish (RemoveSoulFromSkirmish) and the mod's forced targets and threats
+//     on that actor are dropped (a relation-only, passive membership is counted, not removed: the engine re-adds it at once):
 //       WO176-ARRANGED skirmish=npc:<actor> quest=context ... figure=kcd2mp_<n> figure_kept_out=removed skirmish_leave=done|FAILED
 //
 // Pipe ops in the WO-163 family (0x2B -> 0xAC), main thread:
 //   22 Status -> text
-//   23 Config [on:1] -> [on:1]   (255 = unchanged; mp_arranged_guard)
+//   23 Config [on:1][walk:1]? -> [on:1][walk:1]   (255 = unchanged; on = mp_arranged_guard; walk = this machine is the host -- the figure
+//      check's level-wide walk runs only there: the agent sends it on every role change)
 #pragma once
 #include <cstddef>
 #include <cstdint>

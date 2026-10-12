@@ -33,6 +33,7 @@ struct Shield { bool on = false; bool wrote[kShieldContextCount]{}; double lastN
 struct Said { double at = 0; };
 
 std::atomic<bool> g_on{true};
+std::atomic<bool> g_walk{true};   // the figure check's world walk: the host's only (arranged fights run in the host's world); the agent says
 std::atomic<DWORD> g_mainTid{0};
 // Written on the main thread only; another thread reads a copy under the lock.
 SRWLOCK g_lock = SRWLOCK_INIT;
@@ -232,7 +233,7 @@ bool kept_out(uint32_t eid, const char* site) {
 
 void tick() {
     g_mainTid.store(GetCurrentThreadId());
-    if (!g_on.load()) {
+    if (!g_on.load() || !g_walk.load()) {
         for (auto& kv : g_shields) set_shield(kv.first, kv.second, false);   // mp_arranged_guard off: what this module set goes
         g_shields.clear();
         return;
@@ -245,8 +246,8 @@ void tick() {
 
 int status_text(char* out, int n) {
     return std::snprintf(out, n,
-        "wo176 arranged_guard=%s asked=%u kept_context=%u kept_aftermath=%u kept_name=%u reads=%u unreadable=%u off_thread=%u checks=%u arranged_seen=%u removed=%u remove_failed=%u passive_member=%u shield_on=%u shield_off=%u shield_failed=%u",
-        g_on.load() ? "on" : "off", c_asked.load(), c_keptContext.load(), c_keptAftermath.load(), c_keptName.load(), c_reads.load(), c_unreadable.load(),
+        "wo176 arranged_guard=%s walk=%s asked=%u kept_context=%u kept_aftermath=%u kept_name=%u reads=%u unreadable=%u off_thread=%u checks=%u arranged_seen=%u removed=%u remove_failed=%u passive_member=%u shield_on=%u shield_off=%u shield_failed=%u",
+        g_on.load() ? "on" : "off", g_walk.load() ? "host" : "off", c_asked.load(), c_keptContext.load(), c_keptAftermath.load(), c_keptName.load(), c_reads.load(), c_unreadable.load(),
         c_offThread.load(), c_ticks.load(), c_seen.load(), c_removed.load(), c_removeFail.load(), c_passive.load(), c_shieldOn.load(), c_shieldOff.load(), c_shieldFail.load());
 }
 
@@ -258,11 +259,15 @@ uint8_t handle(uint8_t op, const uint8_t* body, size_t len, uint8_t* out, size_t
             *outLen = n <= 0 || cap == 0 ? 0 : (static_cast<size_t>(n) < cap ? static_cast<size_t>(n) : cap - 1);
             return wo163::kROk;
         }
-        case kOpConfig: {
-            if (len != 2 || cap < 1) return wo163::kRBadRequest;
+        case kOpConfig: {   // [on:1] or [on:1][walk:1] (255 = unchanged); walk = this machine is the host (the agent's role)
+            if ((len != 2 && len != 3) || cap < 2) return wo163::kRBadRequest;
             if (body[1] != 255) { const bool was = g_on.exchange(body[1] != 0); if (was != g_on.load()) logf("WO176-CFG mp_arranged_guard %s", g_on.load() ? "on" : "off"); }
-            out[0] = g_on.load() ? 1 : 0;
-            *outLen = 1;
+            if (len == 3 && body[2] != 255) {
+                const bool was = g_walk.exchange(body[2] != 0);
+                if (was != g_walk.load()) logf("WO176-CFG the figure check %s -- %s", g_walk.load() ? "on" : "off", g_walk.load() ? "the host" : "a joiner (no arranged fight runs in this world)");
+            }
+            out[0] = g_on.load() ? 1 : 0; out[1] = g_walk.load() ? 1 : 0;
+            *outLen = 2;
             return wo163::kROk;
         }
         default:
