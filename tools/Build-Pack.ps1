@@ -100,6 +100,8 @@ $packJson = [ordered]@{
         startGameDisarm     = 'KCD2MP_W159Disarm'
         joinFlowLoad        = 'KCD2MP_Wo124LoadGame'
         menuRequest         = 'KCD2MP_MenuRequest'
+        helperFlag          = '--w159'   # the agent's one-shot helper for the menu's worlds and start saves, and the tag of its answer
+        helperTag           = 'W159'
     }
     replacesFolders = @('cairn')   # the earlier Cairn mod's folder: the launcher removes it when it is provably ours (two mods would load twice)
 }
