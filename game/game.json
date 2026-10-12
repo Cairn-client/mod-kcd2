@@ -10,7 +10,7 @@
   "description": "Explore Bohemia side by side. The host's world is shared with a friend: the same NPCs, weather, doors and fights.",
   "accent": "#E8C872",
   "options": [
-    { "id": "dlss5", "title": "DLSS 5 (RTX cards)", "requires": "nvidia-rtx" }
+    { "id": "dlss5", "title": "DLSS 5", "requires": "nvidia-rtx", "hint": "Adds NVIDIA DLSS 5 upscaling to the game through DLSS 5 Autopilot and OptiScaler. It needs an NVIDIA RTX graphics card (the 50 series gets the most from it). Ticking it installs it in the game's folder, unticking removes it. Close the game first." }
   ],
   "images": {
     "background": "kcd2.jpg",
@@ -62,7 +62,7 @@
     { "title": "Menu and tools", "items": [
       { "name": "In-game mod menu", "detail": "Insert opens the mod's menu, drawn by the launcher: name badges, partner on the map, friendly fire, crime, leash, sleep vote, connection and more.", "status": "inTest" },
       { "name": "Collect everyone's logs", "detail": "The host can collect every player's logs into one folder with one button; the joiners are told when this happens.", "status": "inTest" },
-      { "name": "DLSS 5 (RTX cards)", "detail": "A tick in the game's settings puts DLSS 5 into the game through DLSS 5 Autopilot and OptiScaler, and takes it out again.", "status": "inTest" }
+      { "name": "DLSS 5", "detail": "A tick in the game's settings puts DLSS 5 into the game through DLSS 5 Autopilot and OptiScaler, and takes it out again.", "status": "inTest" }
     ] }
   ]
 }
