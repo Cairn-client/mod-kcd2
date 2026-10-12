@@ -91,6 +91,16 @@ $packJson = [ordered]@{
     brandPak    = 'bin/kdcmp_brand.pak'
     agentConfig = 'kcdmp-client.json'
     launcherMin = '0.1.0'
+    lua         = [ordered]@{   # how the launcher talks to the mod through the game's console and log
+        eventPrefix         = '[KCD2-MP-EVT] v1 '
+        startGameEvent      = 'w159'
+        startGameModel      = 'KCD2MP_W159Model'
+        startGameTick       = 'KCD2MP_W159Tick'
+        startGameRecapStart = 'KCD2MP_W159RecapStart'
+        startGameDisarm     = 'KCD2MP_W159Disarm'
+        joinFlowLoad        = 'KCD2MP_Wo124LoadGame'
+        menuRequest         = 'KCD2MP_MenuRequest'
+    }
     replacesFolders = @('cairn')   # the earlier Cairn mod's folder: the launcher removes it when it is provably ours (two mods would load twice)
 }
 [IO.File]::WriteAllText((Join-Path $stage 'pack.json'), (($packJson | ConvertTo-Json) + "`n"), (New-Object System.Text.UTF8Encoding($false)))
