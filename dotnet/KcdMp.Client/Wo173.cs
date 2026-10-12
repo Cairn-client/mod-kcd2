@@ -30,7 +30,9 @@ public static class Wo173Rules
     /// mp_real_hits. WO-173 shipped it OFF (its public-release rule: the block-rate check could not be staged unattended, findings C1);
     /// WO-174 D (0.49.1, for the maintainer and one partner to test) is ON by the maintainer's choice. The capped raw path stays the per-blow fallback.
     /// </summary>
-    public const bool DefaultRealHits = true;
+    // WO-176 B1: OFF again in 0.50.0 -- the WO: "on stays only if it passes"; the block-rate check could not be staged (a camp bandit never
+    // fought the partner's figure: the figure's body is a villager's soul to the engine). The capped raw fallback is the default.
+    public const bool DefaultRealHits = false;
 
     /// <summary>The joiner's last swing row is the one a hit belongs to when it is at most this old (a swing's start + hit is under 1.3 s).</summary>
     public const long RowFreshMs = 2_500;
@@ -50,7 +52,9 @@ public static class Wo173Rules
     public static string FallbackName(byte f) => f switch
     {
         0 => "-", 1 => "mp_real_hits-off", 2 => "switched-off-by-a-fault", 3 => "processor-not-armed", 4 => "no-swing-row", 5 => "no-swing-window",
-        6 => "no-victim", 7 => "victim-dead", 8 => "replay-refused", 9 => "engine-filtered", 10 => "engine-core-not-run", _ => $"f{f}",
+        6 => "no-victim", 7 => "victim-dead", 8 => "replay-refused", 9 => "engine-filtered", 10 => "engine-core-not-run",
+        11 => "arranged-fight",   // WO-176 (A1): neither path ran -- the victim is in a quest's arranged fight
+        _ => $"f{f}",
     };
 
     public static string ReactName(byte r) => r switch

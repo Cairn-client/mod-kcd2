@@ -51,6 +51,9 @@ public static partial class Protocol
 
     // ---- kinds (APPEND-ONLY) ----
     public const byte W164MarkPing = 1, W164Torch = 2, W164Escort = 3, W164HitOutcome = 4, W164Weather = 5, W164Travel = 6, W164RealHit = 7, W164NpcDown = 8;
+    /// <summary>WO-176 (A1), host -> joiner: "&lt;npc&gt;" -- the joiner's blow hit an actor of a quest's arranged fight; it was not routed into
+    /// that fight (the story's), and the joiner is told once.</summary>
+    public const byte W164StoryFight = 9;
 
     /// <summary>While the torch is out, the side-channel repeats it this often (a lost edge recovers).</summary>
     public const int W164TorchRepeatMs = 10_000;
@@ -58,7 +61,7 @@ public static partial class Protocol
     public static string W164KindName(byte k) => k switch
     {
         W164MarkPing => "mark-ping", W164Torch => "torch", W164Escort => "escort", W164HitOutcome => "hit-outcome", W164Weather => "weather",
-        W164Travel => "travel", W164RealHit => "real-hit", W164NpcDown => "npc-down", _ => $"unknown-{k}",
+        W164Travel => "travel", W164RealHit => "real-hit", W164NpcDown => "npc-down", W164StoryFight => "story-fight", _ => $"unknown-{k}",
     };
 }
 

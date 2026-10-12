@@ -87,7 +87,7 @@ bool vcall0(void* obj, uint8_t slot) {
 }
 
 // ---- state ----
-std::atomic<bool> g_on{true};          // mp_real_hits (the agent's switch; on since 0.49.1, WO-174 D; it was off in 0.49.0: findings C1)
+std::atomic<bool> g_on{false};         // mp_real_hits (the agent's switch; off in 0.49.0, on in 0.49.1-0.49.2 (WO-174 D), off again in 0.50.0: WO-176 B1)
 std::atomic<bool> g_threat{true};      // WO-136's avatar-hit threat on engine-processed blows (C3 decides)
 std::atomic<bool> g_reactOn{true};     // the reaction tail (a sub-switch: mp_real_hits_react)
 std::atomic<bool> g_faulted{false};    // the whole path switched off by a fault this session
@@ -112,6 +112,7 @@ struct Pending {
 std::vector<Pending> g_pending;                       // main thread only
 std::unordered_map<uint32_t, float> g_stMaxSeen;      // NPC entity id -> highest stamina seen (main thread)
 
+std::atomic<uint32_t> c_kept{0};   // WO-176 (A1): blows refused because the victim is in a quest's arranged fight
 std::atomic<uint32_t> c_requests{0}, c_engine{0}, c_fallback{0}, c_hit{0}, c_blocked{0}, c_pb{0}, c_broken{0}, c_reactQueued{0}, c_reactOther{0},
     c_corrected{0}, c_raised{0}, c_koAfter{0}, c_koFullStamina{0}, c_capped{0}, c_unmeasured{0}, c_stateHit{0}, c_faults{0};
 uint32_t c_fb[16]{};
@@ -273,6 +274,7 @@ uint8_t do_real_hit(const uint8_t* body, size_t len, uint8_t* out, size_t cap, s
     pre.victimFound = veid != 0 && vsoul != nullptr;
     pre.victimDead = veid != 0 && wo172::copy_dead(veid);
     pre.striking = avatarEid != 0 && wo166::striking_recently(avatarEid);
+    pre.arranged = veid != 0 && hits::scene_owned_eid(veid, "wo173-real-hit");   // WO-176 (A1): a quest's arranged fight takes no figure's blow
     Fallback fb = precondition(pre);
     wo165::Result rr{};
     if (fb == Fallback::None) {
@@ -306,6 +308,8 @@ uint8_t do_real_hit(const uint8_t* body, size_t len, uint8_t* out, size_t cap, s
         }
         (rr.react == static_cast<uint8_t>(React::Queued) ? c_reactQueued : c_reactOther).fetch_add(1);
         p.engine = true; p.seq = rr.seq; p.outcome = static_cast<uint8_t>(rr.outcome); p.react = rr.react; p.reactKind = rr.reactKind;
+    } else if (routes_nowhere(fb)) {
+        c_kept.fetch_add(1);   // WO-176 (A1): no engine, no raw blow -- the agent tells the joiner the fight is the story's
     } else {
         const float capSt = cap_stamina(st, p.stMax);
         if (capSt < st) c_capped.fetch_add(1);
@@ -479,7 +483,7 @@ int status_text(char* out, int n) {
     return std::snprintf(out, n,
         "wo173 real_hits=%s faulted=%s react=%s(%s) threat=%s requests=%u engine=%u hit=%u blocked=%u pb=%u broken=%u react_queued=%u react_other=%u "
         "fallback=%u [off=%u no_row=%u no_window=%u no_victim=%u dead=%u replay=%u filtered=%u core=%u not_armed=%u] capped=%u corrected=%u raised=%u "
-        "state_hit=%u ko_after=%u ko_full_stamina=%u unmeasured=%u faults=%u pending=%zu",
+        "state_hit=%u ko_after=%u ko_full_stamina=%u unmeasured=%u faults=%u pending=%zu arranged_kept=%u",
         g_on.load() ? "on" : "off", g_faulted.load() ? "yes" : "no", g_reactOn.load() ? (g_reactFaulted.load() ? "OFF(fault)" : "on") : "off",
         g_reactResolved ? g_reactWhy : "unresolved", g_threat.load() ? "on" : "off", c_requests.load(), c_engine.load(), c_hit.load(), c_blocked.load(),
         c_pb.load(), c_broken.load(), c_reactQueued.load(), c_reactOther.load(), c_fallback.load(),
@@ -487,7 +491,7 @@ int status_text(char* out, int n) {
         c_fb[static_cast<int>(Fallback::NoVictim)], c_fb[static_cast<int>(Fallback::VictimDead)], c_fb[static_cast<int>(Fallback::Replay)],
         c_fb[static_cast<int>(Fallback::Filtered)], c_fb[static_cast<int>(Fallback::CoreNotRun)], c_fb[static_cast<int>(Fallback::NotArmed)],
         c_capped.load(), c_corrected.load(), c_raised.load(), c_stateHit.load(), c_koAfter.load(), c_koFullStamina.load(), c_unmeasured.load(),
-        c_faults.load(), g_pending.size());
+        c_faults.load(), g_pending.size(), c_kept.load());
 }
 
 }   // namespace kcdmp::wo173

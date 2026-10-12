@@ -134,6 +134,14 @@ public partial class GameBridge
             return null;
         }
         var x = h.Value;
+        if (x.Fallback == Wo176Rules.FallbackArranged)
+        {
+            // WO-176 A1: the victim is in a quest's arranged fight -- neither the engine nor the raw path ran; nothing else may run either
+            Console.WriteLine(FormattableString.Invariant(
+                $"MP-W173 hit npc={npc} by_ghost={source} applied=none verdict=- fallback={Wo173Rules.FallbackName(x.Fallback)} joiner_said=st{stamina:F1}/hp{health:F1} seq={x.Seq}"));
+            await Wo176KeptAsync(source, npc, "real-hit");
+            return (false, 0, 0, 0, x.Fallback);
+        }
         _w173Touched[npc] = now;
         if (x.ByEngine) Interlocked.Increment(ref _w173Engine);
         else if (x.AppliedAny) Interlocked.Increment(ref _w173Raw);
@@ -217,10 +225,10 @@ public partial class GameBridge
             _ => "none",
         };
         bool down = _w173CopyDown.TryGetValue(npc, out byte ds) && ds == 1;
+        if (!down && byEngine) await Wo176CopyBlockAsync(npc, verdict, react);   // WO-176 B3a: its own block row when the host sends no reaction
         if (n <= 400 || n % 50 == 0)
             Console.WriteLine(FormattableString.Invariant(
                 $"WO173-OUTCOME npc={npc} verdict={(verdict == HitVerdict.None ? "none" : HitVerdictMsg.VerdictName(verdict))} reaction={Wo173Rules.ReactName(react)} by={(byEngine ? "engine" : "raw")} down={(down ? "yes" : "no")} applied_on_copy={applied} joiner_said=hp{hp:F1}/st{st:F1}"));
-        await Task.CompletedTask;
     }
 
     private async Task Wo173OnNpcDownInAsync(string text)
