@@ -295,6 +295,9 @@ public partial class GameBridge
             case Protocol.LogDown:          // CAIRN: the host collects everyone's logs
                 await CairnLogsOnFrameAsync(src, body);
                 return;
+            case Protocol.HenryBackupDown:  // CAIRN: the host keeps every joiner's character
+                await CairnHenryBackupOnFrameAsync(src, body);
+                return;
             case Protocol.WorldOfferDown:
                 await OnWorldOfferInAsync(src, joinId, body, ct);
                 return;
@@ -481,6 +484,7 @@ public partial class GameBridge
             // ---- 3. offer + windowed chunks
             j.Phase = "sending";
             await TrySendStatusAsync(j, Protocol.JoinStateSending, "none");
+            await CairnHenryBackupPushAsync(j.Joiner, force: true, "pre-offer");   // CAIRN: the host sends the player's kept character before the offer
             await Wo125SendBranchReplayAsync(j.JoinId);   // WO-125: the joiner picks the snapshot paired with this branch
             await WriteJoinAsync(sender.BuildOfferPacket());
             var sendT0 = DateTime.UtcNow;

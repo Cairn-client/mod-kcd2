@@ -350,6 +350,7 @@ public partial class GameBridge
         _firstChoice = c;
         _firstChoiceTag = _peerTag;
         _chooseAsked = false;
+        if (c == "fresh") CairnHenryBackupForget("Start fresh chosen");   // CAIRN: the host drops the old character
         Console.WriteLine($"MP-HENRY joiner: first join to world {_peerTag ?? "?"}: the player chose '{(c == "bring" ? "Bring my character" : "Start fresh")}' (launcher)");
         _autoNextUtc = DateTime.UtcNow;
     }
@@ -361,6 +362,7 @@ public partial class GameBridge
         _firstChoice = v == "auto" ? "bring" : v;
         _firstChoiceTag = _peerTag;
         _chooseAsked = false;
+        if (_firstChoice == "fresh") CairnHenryBackupForget("Start fresh chosen (console)");   // CAIRN: the host drops the old character
         Console.WriteLine($"MP-HENRY joiner: first-join answer '{_firstChoice}' (mp_join_henry) for world {_peerTag ?? "the next host world"}");
         _autoNextUtc = DateTime.UtcNow;
     }
@@ -726,6 +728,7 @@ public partial class GameBridge
             parts.Origin = WhsSave.HenryParts.OriginSnapshot;
             var joinSnap = _henry.Store(tag, parts, Convert.ToHexString(offerMd5), mode == "restore" ? HenryStore.SourceJoin : mode, $"the join save (seq {seq})");
             Wo134OnSnapshotStored(joinSnap);   // WO-134: the chest ledger pairs with it
+            CairnHenryBackupUpload(joinSnap, "the join save");   // CAIRN: the host keeps a copy
             _henry.MarkJoined(tag);
             Wo157ClaimJoinedWorld(tag);   // WO-157: this folder is this host's world from now on
             if (_firstChoiceTag == tag || _firstChoiceTag is null) { _firstChoice = null; _firstChoiceTag = null; }
@@ -807,6 +810,7 @@ public partial class GameBridge
             {
                 var snap = _henry.Store(_joinedTag!, parts!, md5, HenryStore.SourceSnapshot, $"host {Protocol.SaveKindName(w.Kind)} playline{w.Playline}/{w.FileName} seq={w.Seq}");
                 Wo134OnSnapshotStored(snap);   // WO-134: the chest ledger pairs with it
+                CairnHenryBackupUpload(snap, "host save snapshot");   // CAIRN: the host keeps a copy
                 Console.WriteLine(FormattableString.Invariant(
                     $"MP-HENRY joiner: PAIRED host save seq={w.Seq} md5={md5[..8]} with snapshot {snap.Short}: host-save-in -> request {lagS:F2} s, -> file verified {(tFile - tReq).TotalSeconds:F2} s ({SaveDisplay(path)}, {bytes.Length} B)"));
                 Wo157TellCharacterSaved();   // WO-157 3b.8: "does my inventory save?" -- said on screen
@@ -997,6 +1001,7 @@ public partial class GameBridge
             {
                 if (_peerTag is not string tag) { Console.WriteLine("MP-HENRY mp_henry_reset: the host's world is not known (no host, or it has not identified its world)"); _ = Wo125ToastAsync("mp_henry_reset: no host world known yet."); return; }
                 bool had = _henry.DeleteWorld(tag, "mp_henry_reset (the player starts over in this host's world)");
+                CairnHenryBackupForget("mp_henry_reset");   // CAIRN: the host drops its copy too
                 _firstChoice = null; _firstChoiceTag = null; _chooseAsked = false;
                 if (_joinedWorld && _joinedTag == tag) _resetTag = tag;
                 Console.WriteLine($"MP-HENRY mp_henry_reset world {tag}: {(had ? "Henry files deleted" : "there were none")}; the next join asks Bring / Fresh again{(_resetTag == tag ? " (no snapshots for it this session)" : "")}");

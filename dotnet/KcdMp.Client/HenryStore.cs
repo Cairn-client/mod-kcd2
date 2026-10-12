@@ -29,7 +29,7 @@ namespace KcdMp.Client;
 /// parse). A snapshot that does not parse is skipped and logged, and the next
 /// older one is used.
 /// </summary>
-public sealed class HenryStore
+public sealed partial class HenryStore   // CAIRN: partial (HenryStore.Cairn.cs)
 {
     /// <summary>
     /// Snapshots kept per world. 100 = the host's autosave rotation (100 slots per

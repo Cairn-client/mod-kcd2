@@ -105,6 +105,8 @@ public static partial class Protocol
         (W164Up,        W164Down,        "w164",         JoinHeaderLen + LootFixedLen + 1, JoinHeaderLen + LootFixedLen + W164TextMax, JoinFrom.Either),
         // CAIRN: the host collects everyone's logs (ProtocolCairnLogs.cs) -- a request to one joiner, a joiner's bundle to the host
         (LogUp,         LogDown,         "logs",         JoinHeaderLen + LogFixedLen, JoinHeaderLen + LogBodyMax, JoinFrom.Either),
+        // CAIRN: the host keeps every joiner's character (ProtocolCairnHenry.cs) -- a joiner's snapshot to the host, the host's to one joiner
+        (HenryBackupUp, HenryBackupDown, "henry-backup", JoinHeaderLen + HenryFixedLen + 1, JoinHeaderLen + HenryBodyMax, JoinFrom.Either),
     };
 
     /// <summary>The JoinWire row for an up type, or null.</summary>
