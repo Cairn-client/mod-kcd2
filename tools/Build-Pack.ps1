@@ -102,6 +102,7 @@ $packJson = [ordered]@{
         menuRequest         = 'KCD2MP_MenuRequest'
         helperFlag          = '--w159'   # the agent's one-shot helper for the menu's worlds and start saves, and the tag of its answer
         helperTag           = 'W159'
+        nativeLog           = 'kcdmp-native.log'   # the plugin's own log beside its DLL: the launcher reads it to see the plugin attached
     }
     replacesFolders = @('cairn')   # the earlier Cairn mod's folder: the launcher removes it when it is provably ours (two mods would load twice)
 }
