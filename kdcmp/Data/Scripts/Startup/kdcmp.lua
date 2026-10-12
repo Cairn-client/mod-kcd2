@@ -3734,6 +3734,8 @@ end
 -- Phase 3/4. The agent asks; the engine writes the save when it can.
 function KCD2MP_HostWorldSave(why, attempt)
     local w = KCD2MP.w122
+    if KCD2MP_W175SaveAllowed and not KCD2MP_W175SaveAllowed("world-save:" .. tostring(why)) then return false end   -- WO-175 S3
+    if KCD2MP_W175BeforeSave then pcall(KCD2MP_W175BeforeSave, why) end
     if KCD2MP_W174Clean then pcall(KCD2MP_W174Clean, "save") end   -- WO-174: partner-figure fight records out before the save
     if not (Game and Game.SaveGameViaResting) then
         mp_log("MP-WORLDSAVE Game.SaveGameViaResting not registered on this build -- no world save")
@@ -6760,6 +6762,7 @@ function KCD2MP_W136Hold(on, ttlS, why)
     if KCD2MP_W147ReannouncePuppets then KCD2MP_W147ReannouncePuppets("load " .. tostring(why or "?")) end   -- WO-147
     if tostring(why) == "gameplay+settle" and KCD2MP_W174Clean then pcall(KCD2MP_W174Clean, "load") end   -- WO-174: once after every load
     if tostring(why) == "gameplay+settle" and KCD2MP_W174AfterLoad then pcall(KCD2MP_W174AfterLoad, "settle") end
+    if tostring(why) == "gameplay+settle" and KCD2MP_W175AfterLoad then pcall(KCD2MP_W175AfterLoad, "settle") end   -- WO-175
     return true
 end
 
@@ -16014,6 +16017,7 @@ function KCD2MP_ItemSyncTick()
             end
             mp_log("ITEM-SYNC restart sweep: reload detected, re-baselined")
             if KCD2MP_W174AfterLoad then pcall(KCD2MP_W174AfterLoad, "reload") end   -- WO-174: Lua's own load detector (no agent needed)
+            if KCD2MP_W175AfterLoad then pcall(KCD2MP_W175AfterLoad, "reload") end   -- WO-175: the save-lock chain restarts, the agent checks the file
         end
         -- else: a menu/pause gap -- the world is intact, prev counts are
         -- still valid, and a drop made INSIDE the inventory screen is about
@@ -21663,6 +21667,7 @@ function KCD2MP_W174Repair(arg)
     end
     w.busy = true
     w.stats.repairs = w.stats.repairs + 1
+    KCD2MP_EmitEvent("w175_check", "repair")   -- WO-175: the stuck quest fight (the 0.49 lock) lives in the save; the agent checks it
     local function say(text)
         mp_log("WO174-SAY " .. text)
         pcall(KCD2MP_ShowNativeToast, text)
@@ -21835,6 +21840,211 @@ function KCD2MP_W174SetAutoclean(arg)
     return true
 end
 end   -- WO-174's do-block
+
+do   -- WO-175's do-block
+    -- ===== WO-175: save safety ==============================================================================================
+    -- The cause of the 0.49.x weapon lock (docs/WO-175-findings.md): a quest fistfight (konecZabomysichValek's field fight)
+    -- keeps the game's own "unarmed only" rule (EnableAllowedWeaponsInQAM) while its saved result says Started; that fight
+    -- ended without a verdict, the rule stayed, and every later save carried it. The mod's part: its scheduled world save was
+    -- queued during the quest's dialogue and the engine wrote it on the first frame of the scripted fight (mid-fight saves).
+    --
+    --   S3  no save while the mod is mid-change: the mod's own world save is not requested during a dialogue, a scene, a
+    --       fight, a quest's arranged fight or one of the mod's own transactions (the agent asks again 5 s later); the game's
+    --       autosave and manual saves wait under a script save lock while a mod transaction is in flight (max 10 s, then the
+    --       transaction is rolled back where the mod can, and the lock goes). WO175-SAVE deferred reason=...
+    --   S4  a health check before saves and after loads: the agent reads the save file (Wo175SaveHealth); this side asks for
+    --       it (w175_check), tells the player, and mp_repair_combat gains the quest-fight step.
+    -- Switches: mp_save_guard (S3), mp_save_health (S4); both default ON.
+    KCD2MP.w175 = KCD2MP.w175 or {
+        guard = true, health = true,
+        lockName = "kcdmp_w175_change", lockText = "Saving waits a moment: the co-op mod is finishing a change.",
+        lockHeld = false, lockSince = nil, lockReason = nil, maxLockS = 10.0, tickAt = -1e9, tickMs = 500,
+        deferN = 0, deferLoggedAt = -1e9, toldAt = -1e9, checkAsks = 0,
+        stats = { deferred = 0, locks = 0, maxWaits = 0, checks = 0, repaired = 0, failed = 0 },
+    }
+    W175 = W175 or {}
+
+    local function w175_soulFlag(fn)
+        local v = false
+        pcall(function() local s = player and player.soul; if s and s[fn] then v = s[fn](s) == true end end)
+        return v
+    end
+
+    local function w175_context(name)
+        local v = false
+        pcall(function() local s = player and player.soul; if s and s.HasScriptContext then v = s:HasScriptContext(name) == true end end)
+        return v
+    end
+
+    local function w175_anyKeys(t)
+        if type(t) ~= "table" then return false end
+        for _ in pairs(t) do return true end
+        return false
+    end
+
+    -- A mod transaction on the player's inventory, equipment or body still in flight: its name, or nil.
+    function W175.txnReason()
+        local w140 = KCD2MP.w140
+        if w140 and w140.held then return "sleep-hold" end
+        local w174 = KCD2MP.w174
+        if w174 and w174.busy then return "weapon-repair" end
+        local w134 = KCD2MP.w134
+        if w134 then
+            for _, s in pairs(w134.sessions or {}) do
+                if type(s) == "table" and (w175_anyKeys(s.pend) or w175_anyKeys(s.puts)) then return "loot-take" end
+            end
+            if w175_anyKeys(w134.itemReq) then return "item-take" end
+            if w175_anyKeys(w134.pendingOpen) then return "loot-open" end
+        end
+        return nil
+    end
+
+    -- (reason, isTxn): why the mod must not ask for a save now. A dialogue, a scene, a fight or a quest's arranged fight are
+    -- the game's own states (a save then can capture a scene half-applied: WO-175's mid-fight saves); a transaction is the mod's.
+    function W175.busyReason()
+        local t = W175.txnReason()
+        if t then return t, true end
+        local talking = false
+        local h = player and player.human
+        if h and h.IsInDialog then pcall(function() talking = h:IsInDialog() == true end) end
+        if talking then return "dialogue", false end
+        local w170 = KCD2MP.w170
+        if w170 and (tonumber(w170.sceneRunning) or 0) > 0 then return "scene", false end
+        if w175_soulFlag("IsInCombatDanger") or w175_soulFlag("IsInCombatMode") then return "combat", false end
+        if w175_context("combat_arrangedFight") or w175_context("combat_forceUnarmedWhileInUnarmedSkirmish") then return "arranged-fight", false end
+        return nil, false
+    end
+
+    -- The mod's own world save asks here first (KCD2MP_HostWorldSave). true = go ahead.
+    function KCD2MP_W175SaveAllowed(kind)
+        local w = KCD2MP.w175
+        if not w.guard then return true end
+        local r = W175.busyReason()
+        if not r then return true end
+        w.deferN = w.deferN + 1
+        w.stats.deferred = w.stats.deferred + 1
+        mp_log(string.format("WO175-SAVE deferred reason=%s kind=%s n=%d -- the mod's save waits; asked again in 5 s", r, tostring(kind or "mod-save"), w.deferN))
+        return false
+    end
+
+    -- The game's own saves (autosave, the menu's Save) wait under a script lock while a mod transaction is in flight.
+    local function w175_lock(on, reason)
+        local w = KCD2MP.w175
+        if not (Game and Game.AddSaveLock and Game.RemoveSaveLock) then return end
+        if on and not w.lockHeld then
+            local ok = pcall(Game.AddSaveLock, w.lockName, w.lockText)
+            w.lockHeld, w.lockSince, w.lockReason = ok, os.clock(), reason
+            w.stats.locks = w.stats.locks + 1
+            mp_log(string.format("WO175-SAVE deferred reason=%s kind=game-save lock=%s -- autosave and manual saves wait (max %.0f s)",
+                tostring(reason), ok and "on" or "refused", w.maxLockS))
+            if (os.clock() - w.toldAt) > 30 then w.toldAt = os.clock(); pcall(KCD2MP_ShowInteractionMsg, w.lockText) end
+        elseif not on and w.lockHeld then
+            pcall(Game.RemoveSaveLock, w.lockName)
+            mp_log(string.format("WO175-SAVE resumed reason=%s after_s=%.1f -- saving allowed again", tostring(w.lockReason), os.clock() - (w.lockSince or os.clock())))
+            w.lockHeld, w.lockSince, w.lockReason = false, nil, nil
+        end
+    end
+
+    -- Past the limit: the mod rolls its own change back where it can (a held bed goes back to the game's own use), then saving is free again.
+    local function w175_rollback(reason)
+        if reason == "sleep-hold" and KCD2MP_W140Drop then pcall(KCD2MP_W140Drop, "wo175-max-wait") end
+    end
+
+    function KCD2MP_W175Tick()
+        local w = KCD2MP.w175
+        local now = os.clock()
+        if now - w.tickAt < 0.2 then return end   -- one chain (a load restarts it)
+        w.tickAt = now
+        local r = w.guard and W175.txnReason() or nil
+        if r and not w.lockHeld then
+            w175_lock(true, r)
+        elseif r and w.lockHeld and (now - (w.lockSince or now)) > w.maxLockS then
+            w.stats.maxWaits = w.stats.maxWaits + 1
+            mp_log(string.format("WO175-SAVE max-wait reason=%s after_s=%.1f -- rolled back where the mod can; saving allowed", tostring(r), now - w.lockSince))
+            w175_rollback(r)
+            w175_lock(false)
+            w.lockSince = now + 1e6   -- not again for this transaction
+        elseif not r and w.lockHeld then
+            w175_lock(false)
+        end
+        Script.SetTimer(w.tickMs, KCD2MP_W175Tick)
+    end
+
+    -- After a load (the agent's settle and Lua's own reload detector): the chain restarts, the agent reads the loaded file.
+    function KCD2MP_W175AfterLoad(why)
+        local w = KCD2MP.w175
+        w.lockHeld = false   -- a load wipes every script lock
+        w.tickAt = -1e9
+        KCD2MP_W175Tick()
+        if w.health then KCD2MP_EmitEvent("w175_check", "load") end
+    end
+
+    -- Before a save (the mod's own, and the game's InitiateSaveGame line through the agent): partner-figure records out
+    -- (WO-174), and the agent checks the file the engine writes.
+    function KCD2MP_W175BeforeSave(why)
+        local w = KCD2MP.w175
+        if not w.health then return end
+        w.stats.checks = w.stats.checks + 1
+        KCD2MP_EmitEvent("w175_check", "save")
+    end
+
+    -- The agent's verdict on a save file. result: ok|repaired|failed; what: the finding; file: the repaired copy (playlineN/x.whs).
+    function KCD2MP_W175Health(when, result, what, file, loading)
+        local w = KCD2MP.w175
+        mp_log(string.format("WO175-HEALTH when=%s result=%s what=%s%s", tostring(when), tostring(result), tostring(what),
+            (file and file ~= "") and (" file=" .. tostring(file)) or ""))
+        if result == "repaired" then
+            w.stats.repaired = w.stats.repaired + 1
+            local text = loading
+                and "A quest fight in this save never finished, so your weapons were locked. The mod made a repaired copy (your original is untouched) and loads it now."
+                or "A quest fight in your last save never finished (your weapons would stay locked). The mod made a repaired copy next to it; the next load uses it."
+            pcall(KCD2MP_ShowNativeToast, text)
+        elseif result == "failed" then
+            w.stats.failed = w.stats.failed + 1
+            pcall(KCD2MP_ShowNativeToast, "Your save has a problem the mod could not repair (" .. tostring(what) .. "). Your backups are in the launcher: Restore my saves.")
+        end
+    end
+
+    local function w175_toggle(field, label, help)
+        return function(arg)
+            local v = KCD2MP_Wo122ParseBool(arg)
+            if v == "bad" then mp_log(label .. ": expected on|off"); return false end
+            if v ~= nil then KCD2MP.w175[field] = v end
+            local s = KCD2MP.w175.stats
+            mp_log(string.format("WO175-TOGGLE %s %s -- %s (deferred=%d locks=%d max_waits=%d checks=%d repaired=%d failed=%d)",
+                label, KCD2MP.w175[field] and "on" or "off", help, s.deferred, s.locks, s.maxWaits, s.checks, s.repaired, s.failed))
+            KCD2MP_EmitEvent("w175_cfg", label .. "=" .. (KCD2MP.w175[field] and "on" or "off"))
+            if field == "guard" and not KCD2MP.w175.guard then w175_lock(false) end
+            return true
+        end
+    end
+    local w175_setGuard = w175_toggle("guard", "mp_save_guard", "no save while a dialogue, scene, fight or a mod change is in progress")
+    function KCD2MP_W175SetGuard(arg) return w175_setGuard(arg) end
+    local w175_setHealth = w175_toggle("health", "mp_save_health", "every save and load is checked; a save with a stuck quest fight gets a repaired copy")
+    function KCD2MP_W175SetHealth(arg) return w175_setHealth(arg) end
+
+    -- WO-175 S1: co-op plays in a copy of the world (a save slot of its own), never in the player's own saves.
+    -- Remembered in mod-settings.json (CoopPlayline) by the agent in a world, by the launcher at the main menu.
+    function KCD2MP_W175SetCoopPlayline(arg)
+        local v = KCD2MP_Wo122ParseBool(arg)
+        if v == "bad" then mp_log("mp_coop_playline: expected on|off, got '" .. tostring(arg) .. "'"); return false end
+        if v == nil then
+            mp_log("WO175-TOGGLE mp_coop_playline=" .. tostring(KCD2MP.w175CoopState or "?") .. " (asking the agent)")
+            KCD2MP_EmitEvent("w175_coop", "status")
+            return true
+        end
+        KCD2MP.w175CoopState = v and "on" or "off"
+        mp_log("WO175-TOGGLE mp_coop_playline=" .. KCD2MP.w175CoopState .. " -- " .. (v and "co-op plays in a copy of the world (a save slot of its own)" or "co-op plays in the original world (your own saves)"))
+        KCD2MP_EmitEvent("w175_coop", KCD2MP.w175CoopState)
+        return true
+    end
+    -- the agent's answer after a change or a status ask
+    function KCD2MP_W175CoopState(state)
+        KCD2MP.w175CoopState = tostring(state)
+        mp_log("WO175-TOGGLE mp_coop_playline=" .. KCD2MP.w175CoopState .. " (remembered)")
+        return true
+    end
+end   -- WO-175's do-block
 
 function KCD2MP_W166SetTalkResumeFirst(arg)
     local v = KCD2MP_Wo122ParseBool(arg)
@@ -26585,6 +26795,10 @@ local ok, err = pcall(function()
     System.AddCCommand("mp_real_hits", 'KCD2MP_W173SetRealHits(%line)', "WO-173: (host) your partner's blows are real hits in your world: the enemy blocks, parries, staggers and fights back by its own rules, the same on both screens; off = the old raw damage, never a knock-out from one blow (UNTESTED with two players; default ON since 0.49.1, the capped raw fallback stays per blow): mp_real_hits on|off")
     System.AddCCommand("mp_repair_combat", 'KCD2MP_W174Repair(%line)', "WO-174: frees stuck weapons -- clears partner-figure fight links, ends a stuck fight, re-equips a melee weapon -- and says so; on a save that was fine it changes nothing: mp_repair_combat")
     System.AddCCommand("mp_weapon_autofix", 'KCD2MP_W174SetAutofix(%line)', "WO-174: after mp_repair_combat freed your weapons, every later load in this game session equips that weapon again, because the lock returns on a reload (default on): mp_weapon_autofix on|off")
+    System.AddCCommand("mp_save_guard", 'KCD2MP_W175SetGuard(%line)', "WO-175: no save while a dialogue, a scene, a fight, a quest's arranged fight or one of the mod's own changes is in progress; the game's saves wait under a lock while the mod changes your inventory, equipment or body (max 10 s) (default on): mp_save_guard on|off")
+    System.AddCCommand("mp_coop_playline", 'KCD2MP_W175SetCoopPlayline(%line)', "WO-175: co-op plays in a copy of your world in a save slot of its own, never in your own single-player saves (default on; remembered in mod-settings.json): mp_coop_playline on|off; bare = report")
+    System.AddCCommand("mp_save_health", 'KCD2MP_W175SetHealth(%line)', "WO-175: every save and every load is checked; a save whose quest fight never finished (your weapons locked) gets a repaired copy next to it and the copy is loaded; the original is never changed (default on): mp_save_health on|off")
+    Script.SetTimer(5000, function() if KCD2MP_W175Tick then pcall(KCD2MP_W175Tick) end end)   -- WO-175's save-lock chain
     System.AddCCommand("mp_combat_autoclean", 'KCD2MP_W174SetAutoclean(%line)', "WO-174: before saves, when a partner leaves and after loads, the fight records between you and a partner's figure are cleared (default on): mp_combat_autoclean on|off")
     System.AddCCommand("mp_w173_status", 'KCD2MP_W173Status()', "WO-173: real-hit counters (WO173-STATUS here; MP-WO173-STATS in agent.log)")
     System.AddCCommand("mp_copy_strikes", 'KCD2MP_W166SetCopyStrikes(%line)', "WO-166: (joiner) an enemy swinging at you counts as a real strike on your screen: the game's own block and riposte prompts; the host still decides the damage (UNTESTED with two players; default on): mp_copy_strikes on|off")
@@ -28215,6 +28429,7 @@ local ok2, err2 = pcall(function()
         if origOnInit then origOnInit(self) end
         System.LogAlways("[KCD2-MP] Player loaded!")
         KCD2MP_GetPos()
+        if KCD2MP_W175AfterLoad then pcall(KCD2MP_W175AfterLoad, "oninit") end   -- WO-175: every load (no agent needed): the save-lock chain
 
         -- Re-install OnAction hooks here (after player fully initialized).
         -- Player.Client.OnAction may be reset during game load; re-hooking in OnInit

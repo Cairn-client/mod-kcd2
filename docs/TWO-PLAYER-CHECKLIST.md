@@ -1205,6 +1205,28 @@ a synthetic partner; none of it with two real players. **Type `mark_odd` at ever
 267. **The switches:** `mp_combat_autoclean on|off`, `mp_weapon_autofix on|off`, `mp_real_hits on|off` (on by default since 0.49.1; the WO-173
      items 253-260 apply again with it on). **Report a bug → Collect logs** afterwards (both machines).
 
+## WO-175 — save safety: your own save untouched, backups, weapons after sleep / pickpocket / looting / fights (0.49.2)
+
+Evidence: `docs/WO-175-findings.md`. The 0.49 weapon lock was a quest fistfight (the Tachov–Zelejov meadow fight) that ended without a
+verdict and left the game's "unarmed only" rule on; the mod's save had landed in the first second of that fight. **Type `mark_odd` at every miss.**
+
+268. **Host one of your worlds** (Start Game → your world), play a little, save, quit. The menu next time shows **"Together: <your world>"**;
+     your **original playline's files are unchanged** (same sizes and times; `agent.log`: `WO175-COOP copy from=playline<a>/… to=playline<b>/…`).
+     The joiner's world (Bring my character) also lands in a co-op playline, never in the joiner's own.
+269. **No free save slot** (all five playlines hold your own worlds): hosting your world refuses with a plain message and loads nothing.
+270. **Before every session the launcher backs up your saves** (status line *Your saves are backed up (N files)*; launcher log `WO175-BACKUP
+     … verified=yes`). **RESTORE SAVES** (bottom bar) lists the backups; pick one, confirm, it restores (refused while the game runs); your
+     current saves are backed up first (`WO175-RESTORE … verified=yes`).
+271. **Sleep a night together, pickpocket someone, loot a chest together, save, reload** — your weapons draw with your own weapon key (1)
+     and the HUD shows the weapon.
+272. **A quest dialogue that leads into a fight** (or any dialogue/scene/fight) when the mod's 5-minute save is due: the save waits
+     (`WO175-SAVE deferred reason=dialogue|scene|combat|arranged-fight`) and happens afterwards, never mid-scene.
+273. **While your partner takes from a body or chest you share**, try to save from the menu: saving waits a moment (*"Saving waits a moment:
+     the co-op mod is finishing a change"*), max 10 s.
+274. **Load an old save with the weapon lock** (if you still have one from 0.49.x): the mod says it made a repaired copy and loads it; your
+     weapons draw; the original file is still there unchanged (`WO175-HEALTH when=load result=repaired`).
+275. **The switches:** `mp_coop_playline`, `mp_save_guard`, `mp_save_health` (all on). **Report a bug → Collect logs** afterwards (both machines).
+
 ## Logs to send afterwards
 
 Both machines: Report a bug in the launcher. Since 0.48.9 it collects the current launch by default as a small file (or a few numbered

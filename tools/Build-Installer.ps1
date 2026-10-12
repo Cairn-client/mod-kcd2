@@ -188,6 +188,18 @@ if (-not $SkipPublish) {
         if ($LASTEXITCODE -ne 0) { throw "$static FAILED. Not shipping." }
     }
 
+    # WO-175 S5: the save round trip. Synthetic: Test-WO175Synthetic.ps1 (the glob above), the agent's Wo175 tests (the agent
+    # suite above) and the save repair tool's own tests here; live: a game with a throwaway playline4 save -- skipped with a
+    # logged reason when no game runs, never silently.
+    Write-Host "Save repair tool tests (tools\savegame) ..."
+    & python (Join-Path $PSScriptRoot "savegame\test_whs_repair.py")
+    if ($LASTEXITCODE -ne 0) { throw "tools\savegame\test_whs_repair.py FAILED. Not shipping." }
+    & python (Join-Path $PSScriptRoot "savegame\test_whs_dump.py")
+    if ($LASTEXITCODE -ne 0) { throw "tools\savegame\test_whs_dump.py FAILED. Not shipping." }
+    Write-Host "Save round trip, live part (WO-175 S5) ..."
+    & python (Join-Path $PSScriptRoot "Test-WO175SaveRoundTrip.py")
+    if ($LASTEXITCODE -ne 0) { throw "the live save round trip FAILED. Not shipping." }
+
     & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "Publish-Release.ps1")
     if ($LASTEXITCODE -ne 0) { throw "Publish-Release.ps1 failed" }
 
@@ -252,6 +264,13 @@ if ($LASTEXITCODE -ne 0) { throw "Test-InstallerDetect.ps1 FAILED. Not shipping.
 & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "wo150\Test-SetupCases.ps1") `
     -WorkDir (Join-Path $root "release\wo150-setup-cases") -HelperExe $helper
 if ($LASTEXITCODE -ne 0) { throw "tools\wo150\Test-SetupCases.ps1 FAILED. Not shipping." }
+
+# WO-175 (input policy rule 6): nothing that can inject or capture keyboard / mouse input ships. Every file of the
+# payload (the staged mod included) is scanned; our own files get no exemption, Microsoft's .NET Desktop runtime files are
+# listed by name as reviewed exemptions. Any hit stops the build.
+Write-Host "No-input-tooling gate (WO-175) ..."
+& python (Join-Path $PSScriptRoot "Test-NoInputTooling.py") $payload
+if ($LASTEXITCODE -ne 0) { throw "no-input-tooling gate FAILED: a shipped file contains input injection or capture. Not shipping." }
 
 # WO-32 follow-up, rewritten in WO-74: write a manifest of everything this
 # Setup carries so the installer can prove, after installing, that every file

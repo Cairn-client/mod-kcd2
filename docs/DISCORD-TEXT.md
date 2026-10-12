@@ -189,3 +189,13 @@ Kingdom Come: Together 0.49.1 (a release candidate for the host and one partner)
 - mp_real_hits is now ON by default: your partner's blows are real hits in the host's game (the enemy blocks, parries, reacts). mp_real_hits off turns it off. Not tested with two real players yet.
 ```
 
+## Version 0.49.2 — your saves are safe (WO-175)
+
+```
+Kingdom Come: Together 0.49.2 (a release candidate for the host and one partner).
+- Co-op now plays in its own copy of your world. When you host one of your worlds, the mod copies it into a free save slot and you play and save there; your own single-player saves are never written. Next time the menu shows it as "Together: <your world>". The same for the joiner's world. If all five save slots are full, hosting tells you and loads nothing. Switch: mp_coop_playline.
+- Before every session the launcher backs up your whole saves folder (the last 10 are kept). RESTORE SAVES in the launcher brings one back; your current saves are backed up first.
+- The weapons bug is found and fixed. It was a quest fist fight (the Tachov and Zelejov meadow fight) that ended without a winner, so the game's own "fists only" rule stayed on forever. The mod's 5-minute save had landed in the first second of that fight. Now the mod never saves during a conversation, a scene or a fight, and the game's own saves wait a moment while the mod is changing your inventory.
+- Saves that already have the lock are repaired: when you load one, the mod writes a repaired copy next to it (your original stays as it was) and loads that copy. Your weapons come back. mp_repair_combat does the same check.
+- Every save and every load is checked from now on (mp_save_health).
+```
