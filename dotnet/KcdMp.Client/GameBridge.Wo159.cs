@@ -36,9 +36,17 @@ public partial class GameBridge
     {
         why = "";
         if (_w159FreshStyle is not string style) return null;
-        if (Wo159Rules.StartSaveRoot() is not string root || Wo159.StyleFile(root, style) is not string file)
+        string? file = Wo159Rules.StartSaveRoot() is string root ? Wo159.StyleFile(root, style) : null;
+        file ??= CairnHostFreshFile(style);   // CAIRN: the host's own copy, sent earlier
+        if (file is null)
         {
-            why = $"the {style} start save is not installed";
+            // CAIRN: none here: the host is asked for its own (CairnHenry); the join waits for the answer
+            if (!_freshHostHasNone && CairnFreshAsk(style))
+            {
+                why = $"waiting for your host's {style} start save";
+                return null;
+            }
+            why = _freshHostHasNone ? $"your host has no {style} start save either" : $"the {style} start save is not installed";
             Console.WriteLine($"MP-HENRY joiner: a new character: {why} -- the saves on this computer are tried instead");
             return null;
         }

@@ -346,6 +346,7 @@ public partial class GameBridge
         if (!Wo159Rules.TryParseJoinChoice(c, out string parsed, out string? style)) { Console.WriteLine($"MP-HENRY joiner: the launcher sent an unknown choice '{c}' -- ignored"); return; }
         c = parsed;
         _w159FreshStyle = style;   // WO-159: "fresh:<playstyle>" = that bundled start save's Henry
+        _freshAwaitingHost = false; _freshHostHasNone = false; _freshAskedStyle = null;   // CAIRN: a new answer asks the host again if it has to
         if (style is not null) Console.WriteLine($"MP-HENRY joiner: a new character with the {style} playstyle (the bundled start save)");
         _firstChoice = c;
         _firstChoiceTag = _peerTag;
@@ -415,6 +416,13 @@ public partial class GameBridge
             return false;
         }
         var src = Wo125SourceFor(choice, out string swhy);
+        if (src is null && choice == "fresh" && _freshAwaitingHost && !_freshHostHasNone)
+        {
+            // CAIRN: the host's start save is on its way: nothing is asked and nothing is asked again
+            why = "waiting for the host's start save";
+            SetJoinUi("waiting", "Your host is preparing your new character...");
+            return false;
+        }
         if (src is null)
         {
             // The chosen source does not exist: nothing is asked of the host; the question is asked again.

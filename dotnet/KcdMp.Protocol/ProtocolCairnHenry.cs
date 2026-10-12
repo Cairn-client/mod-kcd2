@@ -24,7 +24,11 @@ namespace KcdMp.Wire;
 //   1 Offer   (either)          [seed:4][size:4][chunkCount:4][sha256:32][name:1..HenryNameMax]   one snapshot follows
 //   2 Chunk   (either)          [index:4][data:1..HenryChunkMax]                                  in index order (TCP)
 //   3 Forget  (joiner -> host)  [seed:4]     the player starts a new character in that world: drop the backup
-//   4 Stored  (host -> joiner)  [result:1]   0 kept, 1 refused
+//   4 Stored  (host -> joiner)  [result:1]   0 kept, 1 refused, 2 the host has no start save of that playstyle (the answer to a FreshAsk)
+//   5 FreshAsk (joiner -> host) [styleLen:1][style ASCII: soldier|adviser|scout]   a new character with that playstyle, built from the host's own start save
+//       The host answers with ONE Offer/Chunk transfer whose name is snap-<time>-<md5>-fresh.hblk and whose seed is Protocol.HenryFreshSeed(style):
+//       the bytes are the start save file itself ([hblkLen:4][the .whs][no chest ledger]); the joiner keeps it as that playstyle's start save and
+//       joins from it, so a joiner needs no start saves of its own. Or with a Stored result 2.
 // The transferred bytes: [hblkLen:4][hblk][chest ledger json, UTF-8, may be empty]. The name is the snapshot's own
 // file name (snap-<yyyyMMddHHmmssfff>-<md5>-<source>.hblk), kept as is on both sides so a pair never changes.
 // ---------------------------------------------------------------------------
@@ -40,8 +44,16 @@ public static partial class Protocol
     /// <summary>A pause between chunks: the relay's per-client queue holds 512 KB.</summary>
     public const int HenryChunkPauseMs = 15;
 
-    public const byte HenryOffer = 1, HenryChunk = 2, HenryForget = 3, HenryStored = 4;
-    public const byte HenryStoredOk = 0, HenryStoredRefused = 1;
+    public const byte HenryOffer = 1, HenryChunk = 2, HenryForget = 3, HenryStored = 4, HenryFreshAsk = 5;
+    public const byte HenryStoredOk = 0, HenryStoredRefused = 1, HenryStoredNoStartSave = 2;
+
+    /// <summary>The playstyles of a start save, in the order a Fresh transfer's seed numbers them.</summary>
+    public static readonly string[] HenryFreshStyles = { "soldier", "adviser", "scout" };
+    private const uint HenryFreshSeedBase = 0xCA1B0000;
+    /// <summary>The seed field of a Fresh transfer: a marker and the playstyle (never a world's real seed).</summary>
+    public static uint HenryFreshSeed(string style) => HenryFreshSeedBase + (uint)(Array.IndexOf(HenryFreshStyles, style) + 1);
+    /// <summary>The playstyle a Fresh transfer's seed names, or null when the seed is a world's.</summary>
+    public static string? HenryFreshStyleOf(uint seed) => seed > HenryFreshSeedBase && seed <= HenryFreshSeedBase + HenryFreshStyles.Length ? HenryFreshStyles[seed - HenryFreshSeedBase - 1] : null;
 
     public const int HenryFixedLen = 1 + 4;                               // [kind][xfer]
     public const int HenryOfferFixedLen = HenryFixedLen + 4 + 4 + 4 + 32; // + the name
@@ -49,7 +61,7 @@ public static partial class Protocol
 
     public static string HenryKindName(byte k) => k switch
     {
-        HenryOffer => "offer", HenryChunk => "chunk", HenryForget => "forget", HenryStored => "stored", _ => $"unknown-{k}",
+        HenryOffer => "offer", HenryChunk => "chunk", HenryForget => "forget", HenryStored => "stored", HenryFreshAsk => "fresh-ask", _ => $"unknown-{k}",
     };
 }
 
@@ -131,6 +143,30 @@ public readonly record struct HenryBackupMsg(byte Kind, uint Xfer, byte[] Data)
         BinaryPrimitives.WriteUInt32LittleEndian(d, seed);
         return new HenryBackupMsg(Protocol.HenryForget, 0, d);
     }
+
+    public static HenryBackupMsg FreshAsk(string style)
+    {
+        if (Array.IndexOf(Protocol.HenryFreshStyles, style) < 0) throw new ArgumentException("not a playstyle: " + style, nameof(style));
+        var sb = Encoding.ASCII.GetBytes(style);
+        var d = new byte[1 + sb.Length];
+        d[0] = (byte)sb.Length;
+        sb.CopyTo(d, 1);
+        return new HenryBackupMsg(Protocol.HenryFreshAsk, 0, d);
+    }
+
+    public static bool TryFreshAsk(byte[] data, out string style)
+    {
+        style = "";
+        if (data.Length < 2 || data[0] != data.Length - 1) return false;
+        string s = Encoding.ASCII.GetString(data, 1, data.Length - 1);
+        if (Array.IndexOf(Protocol.HenryFreshStyles, s) < 0) return false;
+        style = s;
+        return true;
+    }
+
+    /// <summary>The name of a Fresh transfer (it must pass <see cref="ValidName"/>): the time, the start save's md5, and the source "fresh".</summary>
+    public static string FreshName(DateTime utc, ReadOnlySpan<byte> md5) =>
+        $"snap-{utc:yyyyMMddHHmmssfff}-{Convert.ToHexString(md5).ToLowerInvariant()}-fresh.hblk";
 
     /// <summary>The transferred bytes: [hblkLen:4][hblk][chest ledger json].</summary>
     public static byte[] Pack(byte[] hblk, string? chestJson)
