@@ -54,6 +54,11 @@ if (Test-Path $bridge) {
         $end = @($parsed | Where-Object { $_.done })
         if ($steps.Count -lt 5 -or $end.Count -ne 1) { throw "the setup program did not give a checklist: $($lines -join ' | ')" }
         Write-Host "setup: $($steps.Count) steps, ready=$($end[0].ready)"
+
+        # and the game's connection (pack.json "session": true): it says hello, then ends when told to (nothing is started without settings)
+        $hello = '{"t":"stop"}' | & $bridge session | Select-Object -First 1
+        if (-not $hello -or ($hello | ConvertFrom-Json).t -ne 'hello') { throw "the session program did not say hello: $hello" }
+        Write-Host "session: says hello ($hello)"
     } finally { Remove-Item $empty -Recurse -Force -ErrorAction SilentlyContinue }
 }
 Write-Host 'pack smoke test: OK'
