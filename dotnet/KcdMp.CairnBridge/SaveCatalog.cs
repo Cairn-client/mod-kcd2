@@ -50,8 +50,8 @@ public sealed class SaveCatalog
                     foreach (var f in Directory.EnumerateFiles(line, "*.whs").OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
                     {
                         var fi = new FileInfo(f);
-                        slots.Add(new SaveSlot(IdOf("w", _savesRoot, f), $"{System.IO.Path.GetFileName(line)}: {System.IO.Path.GetFileNameWithoutExtension(f)}",
-                            Size(fi.Length), "world", fi.LastWriteTimeUtc, f, false));
+                        slots.Add(new SaveSlot(IdOf("w", _savesRoot, f), FriendlyName(System.IO.Path.GetFileNameWithoutExtension(f)),
+                            $"{FriendlyLine(System.IO.Path.GetFileName(line))}, {Size(fi.Length)}", "world", fi.LastWriteTimeUtc, f, false));
                     }
             foreach (var root in _dataRoots.Where(Directory.Exists))
             {
@@ -63,12 +63,13 @@ public sealed class SaveCatalog
                         var files = new DirectoryInfo(world).EnumerateFiles("*", SearchOption.AllDirectories).ToList();
                         if (files.Count == 0) continue;
                         slots.Add(new SaveSlot(IdOf("c", hosted, world), $"{System.IO.Path.GetFileName(player)}'s character",
-                            $"world {System.IO.Path.GetFileName(world)}, {Size(files.Sum(f => f.Length))}", "character", files.Max(f => f.LastWriteTimeUtc), world, true));
+                            $"kept for when they join again, {Size(files.Sum(f => f.Length))}", "character", files.Max(f => f.LastWriteTimeUtc), world, true));
                     }
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* what could not be read is not listed */ }
-        return slots;
+        // worlds first, then the characters kept for joiners; the newest of each first (the list is long: KCD2 rotates its autosaves)
+        return slots.OrderBy(s => s.Kind == "world" ? 0 : 1).ThenByDescending(s => s.WhenUtc).ToList();
     }
 
     /// <summary>Deletes one listed save. False with the reason, in plain words, when it cannot be: unknown, in use, or not deletable now.</summary>
@@ -133,6 +134,20 @@ public sealed class SaveCatalog
     // the id comes from where the save is (relative to its root), so it is the same on the next listing, and is plain letters and digits
     private static string IdOf(string prefix, string root, string path) =>
         prefix + "-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(System.IO.Path.GetRelativePath(root, path).ToLowerInvariant())))[..12].ToLowerInvariant();
+
+    // "autosave023" is the 23rd autosave: said that way ("Autosave 23"); a name that is not one of the game's own is kept as it is
+    private static readonly System.Text.RegularExpressions.Regex Own = new(@"^(autosave|quicksave|permanent|exit)(\d*)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    public static string FriendlyName(string file)
+    {
+        var m = Own.Match(file);
+        if (!m.Success) return file;
+        string kind = m.Groups[1].Value.ToLowerInvariant() switch { "autosave" => "Autosave", "quicksave" => "Quicksave", "permanent" => "Permanent save", _ => "Exit save" };
+        return m.Groups[2].Value.Length > 0 && int.TryParse(m.Groups[2].Value, out int n) ? $"{kind} {n}" : kind;
+    }
+
+    // "playline0" is "Playline 0"
+    public static string FriendlyLine(string folder) =>
+        folder.StartsWith("playline", StringComparison.OrdinalIgnoreCase) && folder.Length > 8 ? "Playline " + folder[8..] : folder;
 
     private static string Size(long bytes) => bytes >= 1024 * 1024 ? $"{bytes / 1048576.0:0.#} MB" : $"{Math.Max(1, bytes / 1024)} KB";
 }
