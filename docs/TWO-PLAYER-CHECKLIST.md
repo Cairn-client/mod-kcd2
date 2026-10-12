@@ -1227,6 +1227,26 @@ verdict and left the game's "unarmed only" rule on; the mod's save had landed in
      weapons draw; the original file is still there unchanged (`WO175-HEALTH when=load result=repaired`).
 275. **The switches:** `mp_coop_playline`, `mp_save_guard`, `mp_save_health` (all on). **Report a bug → Collect logs** afterwards (both machines).
 
+## WO-176 — a quest's own fights stay the story's, fighting an armed enemy together, your own block (0.50.0)
+
+Evidence: `docs/WO-176-findings.md`. **Type `mark_odd` at every miss.**
+
+276. **The joiner fights an armed bandit with the host** (a camp or roadside bandit with a sword or axe). The bandit blocks and parries the
+     joiner's blows about as often as the host's, and both screens show the same thing: a blow it blocks or parries shows its block on the
+     joiner's screen too (the host's `agent.log`: `MP-W173 hit … verdict=blocked|pb`; the joiner's: `WO173-OUTCOME … verdict=blocked`, and
+     when the host sent no reaction of its own `WO176-COPYBLOCK … row="…"`).
+277. **The joiner blocks an enemy's blow themselves** (hold the block button as the enemy swings): it counts as blocked on their own screen —
+     stamina, not health (`WO165-REPLAY … engine=blocked`). With `mp_victim_decides` on, a well-timed block is a perfect block
+     (`engine=pb`) and the enemy recoils (`WO165-RECOIL … recoil="…"`). They are never knocked down by an NPC's blow.
+278. **A quest's arranged fight with the partner nearby** (e.g. the Tachov–Zelejov meadow fight, or any quest fistfight): the partner is
+     kept out of it — their blows do nothing to the fighters and they are told once *"This fight belongs to the story — your partner fights it."*;
+     the fight ends the way the story says; afterwards both players' weapons draw with their weapon key (1) and the HUD shows the weapon.
+     The host's `kcdmp-native.log`: `WO176-ARRANGED … quest=context`, `WO176-SHIELD figure=… on`; `kcd.log`: `WO176-PAUSE figure=… on`.
+279. **Play your real world** (Start Game → your world) and save: afterwards **your original save files are untouched**; the menu offers
+     **"Together: <your world>"** for the next session.
+280. **The switches:** `mp_arranged_guard`, `mp_copy_blocks` (both on), `mp_victim_decides`, `mp_real_hits` (see the findings for their
+     defaults in 0.50.0). **Report a bug → Collect logs** afterwards (both machines).
+
 ## Logs to send afterwards
 
 Both machines: Report a bug in the launcher. Since 0.48.9 it collects the current launch by default as a small file (or a few numbered
