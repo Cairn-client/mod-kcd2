@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  version-policy:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Versioning policy
+        shell: pwsh
+        run: ./tools/Test-VersionPolicy.ps1
+
+  dotnet:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: 8.0.x }
+      - name: Build solution
+        run: dotnet build dotnet/KcdMp.sln -c Release --nologo -v q
+      - name: Unit tests
+        shell: pwsh
+        run: |
+          foreach ($p in 'Client.Tests', 'Setup.Tests', 'Relay.Tests', 'Farkle.Tests') {
+            dotnet test "dotnet/KcdMp.$p/KcdMp.$p.csproj" -c Release --nologo -v q
+            if ($LASTEXITCODE -ne 0) { throw "$p failed" }
+          }
+
+  native:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build native plugin and tests
+        shell: pwsh
+        run: ./native/Build-Native.ps1
+      - name: Native unit tests
+        shell: pwsh
+        run: ./native/build/tests/KCDMP_NativeTests.exe
