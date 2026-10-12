@@ -4797,6 +4797,7 @@ public partial class GameBridge(ClientConfig config)
                     Wo154ForgetPeer(ghostId);           // WO-154 2: a rejoin starts from up
                     _peerLastSeenUtc.TryRemove(ghostId, out _);
                     _peerCutscene.TryRemove(ghostId, out _);   // WO-98 Phase 5
+                    CairnShareHostCutscene(false, "Ingame", "");   // CAIRN: never leave the input held for a partner who is gone
                     RefreshDiscordPeerCount();
                     _voice?.RemovePlayer(ghostId);
                     _ghostAppearance.TryRemove(ghostId, out _);
@@ -5319,6 +5320,7 @@ public partial class GameBridge(ClientConfig config)
                             string csWho = _ghostNames.TryGetValue(sbSource, out var csDn) ? csDn : $"player {sbSource}";
                             Console.WriteLine($"MP-CUTSCENE side=peer ghost={sbSource} who=\"{csWho}\" state={csParts[0]} type={csParts[1]} name={csParts[2]} local={(_localCutsceneActive ? 1 : 0)}");
                             _ = ExecLuaAsync($"if KCD2MP_SetPeerCutscene then KCD2MP_SetPeerCutscene(\"{sbSource}\", {(csActive ? "true" : "false")}, \"{EscapeLua(csParts[2])}\") end");
+                            CairnShareHostCutscene(csActive, csParts[1], csParts[2]);   // CAIRN: the joiner follows the host's cutscene
                         }
                         else Console.WriteLine($"[quest] ghost {sbSource} sent a malformed cutscene edge; dropped");
                     }
