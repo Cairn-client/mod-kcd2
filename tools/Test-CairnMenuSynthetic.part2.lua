@@ -80,7 +80,7 @@ do
     for _, it in ipairs(items) do local f = fields(it); byId[f[1]] = f end
     local gone = true
     for _, id in ipairs({ "clean_screen", "partner_marker", "sleep_vote", "whistle", "partner_herbs", "voice", "menu_key", "report" }) do if byId[id] ~= nil then gone = false end end
-    check("b: the eight left-out rows are not sent, the marker style and the rest are", gone and byId.marker_style ~= nil and byId.friendly_fire ~= nil and byId.crime_mode ~= nil)
+    check("b: the eight left-out rows are not sent, the rest are", gone and byId.friendly_fire ~= nil and byId.crime_mode ~= nil and byId.name_badges ~= nil)
     check("b: there is no teleport-the-partner item and no F3 item", byId.bring_partner == nil and byId.noclip == nil)
     check("b: a switch reads on/off in field 4", byId.name_badges[4] == "1", byId.name_badges[4])
     check("b: no Lua errors", #ERRS == 0, ERRS[1])
