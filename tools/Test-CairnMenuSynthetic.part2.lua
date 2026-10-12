@@ -129,6 +129,23 @@ do
     check("f: detach", KCD2MP_MenuRequest("detach") == true and M.overlay == false and KCD2MP.launcherDraws == false)
 end
 
+do
+    local mark = #LOG
+    local it
+    for _, x in ipairs(M.ITEMS) do if x.id == "collect_logs" then it = x end end
+    check("g: the host's menu has a row for collecting everyone's logs", it ~= nil and it.kind == "action" and it.group == "Help")
+    check("g: and it is the console command's function too", it ~= nil and it.fn == "KCD2MP_CairnCollectLogs" and CCMDS.mp_collect_logs ~= nil
+        and CCMDS.mp_collect_logs.body:find("KCD2MP_CairnCollectLogs", 1, true) ~= nil)
+    check("g: there is no separate row for the joiner to share or hold back their logs", (function() for _, x in ipairs(M.ITEMS) do if x.id == "share_logs" then return false end end return true end)())
+    session("joiner", true, true, "joint", true)
+    check("g: a joiner cannot collect", KCD2MP_CairnCollectLogs() == false and #evts("cairn_logs_collect", mark) == 0)
+    session("host", true, true, "joint", true)
+    check("g: the host's asks the agent once", KCD2MP_CairnCollectLogs() == true and #evts("cairn_logs_collect", mark) == 1)
+    check("g: the agent's note is shown to the player", KCD2MP_CairnLogsNote("Asked 1 player(s) for their logs") == true and M.note ~= nil and M.note.text:find("Asked 1", 1, true) ~= nil)
+    check("g: an empty note says nothing", KCD2MP_CairnLogsNote("") == false)
+    check("g: no Lua errors", #ERRS == 0, ERRS[1])
+end
+
 local pass, fail = 0, 0
 for _, r in ipairs(RESULTS) do if r:sub(1, 4) == "PASS" then pass = pass + 1 else fail = fail + 1 end end
 OUT = table.concat(RESULTS, "\n") .. string.format("\n%d passed, %d failed", pass, fail)
