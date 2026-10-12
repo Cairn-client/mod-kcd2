@@ -140,7 +140,6 @@ uint8_t handle(const uint8_t* body, size_t len, uint8_t* out, size_t cap, size_t
         }
         bool tooFar = on && (dist < 0 || dist > kEngageRangeM);
         if (tooFar) { on = false; c_far.fetch_add(1); }
-        if (on && hits::scene_owned_eid(eid, "wo132-engage")) on = false;   // WO-174: a scripted brawl's copy never engages the player through the mod
         if (on) {
             if (!is_engaged(eid)) {
                 first = 1;

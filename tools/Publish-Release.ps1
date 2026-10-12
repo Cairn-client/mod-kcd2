@@ -138,20 +138,12 @@ $brandDds = Join-Path $root "docs\branding\pak-source\Libs\UI\Textures\KCDLogo.d
 if (-not (Test-Path $brandDds)) { throw "docs\branding\pak-source\Libs\UI\Textures\KCDLogo.dds missing (tools\Build-MenuLogo.py makes it)" }
 $brandPak = Join-Path $OutDir "kdcmp_brand.pak"
 if (Test-Path $brandPak) { Remove-Item $brandPak -Force }
-# WO-171: every .dds under pak-source goes in (the menu logo, and the partner map markers' pictures under
-# Libs\UI\Textures\Icons\Map\kct_*), each under its path relative to pak-source with forward slashes. Only our files:
-# nothing of the game's is in the source folder (tests pin it).
-$brandSrc = Join-Path $root "docs\branding\pak-source"
-$brandFiles = @(Get-ChildItem -Path $brandSrc -Recurse -File | Where-Object { $_.Extension -eq ".dds" })
 $bz = [System.IO.Compression.ZipFile]::Open($brandPak, [System.IO.Compression.ZipArchiveMode]::Create)
 try {
-    foreach ($bf in $brandFiles) {
-        $rel = $bf.FullName.Substring($brandSrc.Length).TrimStart([char]92, [char]47).Replace([string][char]92, "/")
-        $be = $bz.CreateEntry($rel, [System.IO.Compression.CompressionLevel]::NoCompression)
-        $bs = $be.Open(); $bb = [System.IO.File]::ReadAllBytes($bf.FullName); $bs.Write($bb, 0, $bb.Length); $bs.Close()
-    }
+    $be = $bz.CreateEntry("Libs/UI/Textures/KCDLogo.dds", [System.IO.Compression.CompressionLevel]::NoCompression)
+    $bs = $be.Open(); $bb = [System.IO.File]::ReadAllBytes($brandDds); $bs.Write($bb, 0, $bb.Length); $bs.Close()
 } finally { $bz.Dispose() }
-Write-Output "Brand pak: kdcmp_brand.pak ($((Get-Item $brandPak).Length) bytes, $($brandFiles.Count) files: the menu logo and the partner markers)"
+Write-Output "Menu logo pak: kdcmp_brand.pak ($((Get-Item $brandPak).Length) bytes)"
 
 # --- WO-159: the bundled start saves (a host's New adventure, a joiner's new character), one per playstyle: the
 #     maintainer supplies assets\start-save\<soldier|adviser|scout>\ (one save each, made where Hans and Henry part

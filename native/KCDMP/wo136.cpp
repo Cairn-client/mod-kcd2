@@ -3,7 +3,6 @@
 // content belong to Warhorse Studios and PLAION. Unofficial, free, not affiliated with or endorsed by them.
 // WO-136 -- see wo136.h.
 #include "wo136.h"
-#include "wo172.h"
 #include "wo165.h"
 #include "fault_guard.h"
 
@@ -176,7 +175,6 @@ bool shows(uint32_t npc, uint32_t to) {
 // queued for tick()'s read back; *asked false = the calls themselves failed.
 bool retarget(uint32_t npc, uint32_t to, void* targetSoul, bool* asked, bool forceIt = true) {
     *asked = false;
-    if (hits::scene_owned_eid(npc, "wo136-retarget")) return false;   // WO-174: a scripted brawl's actor keeps its own fight
     void* ns = hits::soul_of_eid(npc);
     if (!ns || !targetSoul) return false;
     if (forceIt) force(npc, to, ns, targetSoul, "retarget");
@@ -202,7 +200,6 @@ uint32_t current_opponent(const motion::NpcCombat& c) {
 }
 
 void decide(uint32_t npc, NpcThreat& t, double now, const char* why) {
-    if (wo172::skip_dead(npc, "retarget")) { t.evs.clear(); return; }   // WO-172 C1: a dead body is never put back into a fight
     for (auto it = t.evs.begin(); it != t.evs.end();) it = (now - it->t > wo136rules::kWindowS) ? t.evs.erase(it) : ++it;
     if (t.evs.empty()) return;
     motion::NpcCombat c{};
@@ -262,7 +259,6 @@ bool enabled() { return g_on.load(); }
 
 void note_threat(uint32_t npcEid, uint32_t srcEid, int weight, const char* why, float damage) {
     if (!g_on.load() || !npcEid) return;
-    if (srcEid != kPlayer && hits::scene_owned_eid(npcEid, "wo136-threat")) return;   // WO-174: no avatar is a threat to a scripted brawl's actor
     const bool host = srcEid == kPlayer;
     const bool hostTarget = host && g_hostTarget.load();
     // WO-154 3.1: the host's blow frees the NPC from the mod's own lock on an avatar
@@ -305,14 +301,8 @@ uint32_t avatar_swing(uint32_t avatarEid) {
     if (!pos_of(avatarEid, n.p)) return 0;
     n.reach = kSwingReachM; n.skip1 = avatarEid; n.skip2 = player_eid();
     engine::for_each_entity(&near_visit, &n);
-    // WO-172 (WO-171 F1): a swing only threatens whom it hits -- with no fighter in reach it threatens nobody. The old fallback took
-    // any NPC within 2.5 m that was NOT fighting, made it the figure's opponent and threatened it: a bystander pulled into a fight
-    // by a swing that hit no one.
-    if (!n.best) {
-        const uint32_t k = c_swingNone.fetch_add(1) + 1;
-        if (k <= 20 || k % 100 == 0) logf("WO136-SWING avatar eid=0x%X: no fighter within %.0f m -- the swing threatens nobody (a bystander is never pulled in) [n=%u]", avatarEid, kSwingReachM, k);
-        return 0;
-    }
+    if (!n.best) { n.needFight = false; n.reach = 2.5f; engine::for_each_entity(&near_visit, &n); }
+    if (!n.best) { c_swingNone.fetch_add(1); return 0; }
     // The avatar is a combatant in this fight: the NPC is ITS opponent.
     motion::NpcCombat ac{};
     const bool readA = motion::read_npc_combat(avatarEid, &ac);
@@ -422,7 +412,6 @@ void tick() {
     if (g_pending.empty()) return;
     for (auto it = g_pending.begin(); it != g_pending.end();) {
         if (now < it->next) { ++it; continue; }
-        if (wo172::skip_dead(it->npc, "retarget")) { it = g_pending.erase(it); continue; }   // WO-172 C1: no redo on a body that died meanwhile
         char nb[64], tb[24];
         name_of(it->npc, nb, sizeof nb);
         void* ns = engine::entity_by_id(it->npc) ? hits::soul_of_eid(it->npc) : nullptr;
@@ -486,20 +475,6 @@ int forget_avatar(uint32_t avatarEid, const char* why) {
         logf("WO136-FORGET avatar eid=0x%X: %d forced pair(s) cleared, %d threat(s) and %d queued switch(es) dropped -- %s",
              avatarEid, forced, threats, pending, why);
     return forced;
-}
-
-int forget_npc(uint32_t npcEid, const char* why) {
-    if (!npcEid) return 0;
-    int n = 0;
-    if (g_forced.count(npcEid)) { unforce(npcEid, why); ++n; }
-    auto t = g_threat.find(npcEid);
-    if (t != g_threat.end()) { n += static_cast<int>(t->second.evs.size()); g_threat.erase(t); }
-    for (auto it = g_pending.begin(); it != g_pending.end();) {
-        if (it->npc == npcEid) { it = g_pending.erase(it); ++n; }
-        else ++it;
-    }
-    if (n) logf("WO136-FORGET npc eid=0x%X: %d forced / threat / queued row(s) dropped -- %s", npcEid, n, why);
-    return n;
 }
 
 int status_text(char* out, int n) {

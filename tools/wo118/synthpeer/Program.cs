@@ -28,7 +28,6 @@
 //   timed <npc> <yaw> t0 x0 y0 z0 t1 x1 y1 z1 ...              (piecewise linear in time)
 //   fight <npc> <cx> <cy> <cz> <r> [phase]   (circles; flag 0x04 drawn, a 0x08 swing cue every 2.5 s; WO-165 phase in radians)
 //   ghost <x0> <y0> <z0> <ux> <uy> <len> <speed> [ms]          (a player position stream, ping-pong)
-//   gcircle <cx> <cy> <cz> <r> <period_s> [ms] / gspin <x> <y> <z> <period_s> [ms]   (WO-171: the ghost walks a circle / turns on the spot, clockwise)
 //   ride <t0_s> <t1_s>                                         (WO-124 6a: the ghost rides between t0 and t1)
 //   start <seconds>                                             (delay before streaming)
 //   die <t_s> <npc>                                             (WO-131: that mover streams dead, hp 0, from t on)
@@ -43,9 +42,6 @@
 //                                                                holds its figure in combat on the host)
 //   jattack <t_s> <rowGuid>                                    (WO-170: joiner role -- this peer's figure swings: an Attack action stamped when it is
 //                                                                sent, as the joiner's game sends one)
-//   jhit <t_s> <npc> <rowGuid> <lag_ms> <hp> <st> [every_s n]  (WO-173: joiner role -- a swing (jattack) and, lag_ms later, its attributed
-//                                                                hit on the host's NPC (avatarfight's packet); every_s/n repeat it n times)
-//   ko <t0_s> <t1_s> <npc>                                     (WO-173: that mover streams the knocked-out bit 0x02 between t0 and t1)
 //   raw <t_s> <typeHex> <payloadHex> [stampOffset]              (WO-131: send this packet as-is at stream time t;
 //                                                                 the 4 bytes at stampOffset are re-stamped with this
 //                                                                 peer's clock -- a recorded host stream replayed,
@@ -74,7 +70,6 @@ static class P
         public ushort Seq;
         public double LastSent = -1e9, LastSentX, LastSentY, LastSentZ;
         public bool SentDead; public float SentHp = 100f;   // WO-131
-        public bool SentKo;   // WO-173
         public double T0 = double.NegativeInfinity, T1 = double.PositiveInfinity;   // WO-167: `window` -- streamed only inside [T0, T1)
         public abstract (float x, float y, float z, float yaw) At(double t);
     }
@@ -94,18 +89,6 @@ static class P
             else if (s > Len) s = Len;
             float yaw = (float)Math.Atan2(-Ux * dir, Uy * dir);
             return ((float)(X0 + Ux * s), (float)(Y0 + Uy * s), Z0, yaw);
-        }
-    }
-    // WO-171: `gcircle <cx> <cy> <cz> <r> <period_s> [ms]` -- the ghost walks a circle clockwise (seen from above, compass heading =
-    // its position angle + 90 degrees); `gspin <x> <y> <z> <period_s> [ms]` -- it stands and turns clockwise through all 360 degrees.
-    sealed class Circle : Mover
-    {
-        public float Cx, Cy, Cz, R, Period; public bool Spin;
-        public override (float, float, float, float) At(double t)
-        {
-            double a = 2 * Math.PI * t / Math.Max(0.5, Period);                  // compass angle, clockwise from north
-            if (Spin) return (Cx, Cy, Cz, (float)(-a));                         // the engine's yaw is the negative of the compass heading
-            return ((float)(Cx + R * Math.Sin(a)), (float)(Cy + R * Math.Cos(a)), Cz, (float)(-(a + Math.PI / 2)));
         }
     }
     sealed class Hold : Mover
@@ -244,7 +227,7 @@ static class P
         if (a.Contains("--join")) return await JoinPeer.RunJoinerAsync(a, release);
         if (a.Contains("--join-host")) return await JoinPeer.RunHostAsync(a, release);
 
-        var movers = new List<Mover>(); double startDelay = 0; Mover? ghost = null; int ghostMs = 30;
+        var movers = new List<Mover>(); double startDelay = 0; Line? ghost = null; int ghostMs = 30;
         var rides = new List<(double T0, double T1)>();
         // WO-121: `row <t_s> <npc> <rowGuid>` -- the host NPC committed that
         // attack row at stream time t: an NpcAttack action event (v8).
@@ -262,11 +245,9 @@ static class P
         //         `window <npc> <t0> <t1>` -- a mover declared earlier is streamed only between t0 and t1 (a spawn that appears, then leaves)
         var joinMsgs = new List<(double T, byte[] Pkt, string Note)>();
         var jattacks = new List<(double T, Guid Row)>();   // WO-170
-        var jhits = new List<(double T, string Npc, float Hp, float St)>();   // WO-173: the swing's attributed hit
         uint joinTok = 0;
         var ncombats = new List<NCombat>();   // WO-132
         var dies = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);   // WO-131
-        var kos = new Dictionary<string, List<(double T0, double T1)>>(StringComparer.OrdinalIgnoreCase);   // WO-173
         var hps = new Dictionary<string, List<(double T, float Hp)>>(StringComparer.OrdinalIgnoreCase);   // WO-131
         var fights = new List<(double T0, double T1, string Npc, double Every, float Hp, float St)>();       // WO-165 avatarfight
         var lastFight = new Dictionary<int, double>();
@@ -301,14 +282,6 @@ static class P
                 case "ghost":
                     ghost = new Line { Name = "ghost", X0 = F(f[1]), Y0 = F(f[2]), Z0 = F(f[3]), Ux = F(f[4]), Uy = F(f[5]), Len = F(f[6]), Speed = F(f[7]), PingPong = true };
                     ghostMs = f.Length > 8 ? int.Parse(f[8]) : 30;
-                    break;
-                case "gcircle":
-                    ghost = new Circle { Name = "ghost", Cx = F(f[1]), Cy = F(f[2]), Cz = F(f[3]), R = F(f[4]), Period = F(f[5]) };
-                    ghostMs = f.Length > 6 ? int.Parse(f[6]) : 30;
-                    break;
-                case "gspin":
-                    ghost = new Circle { Name = "ghost", Cx = F(f[1]), Cy = F(f[2]), Cz = F(f[3]), Period = F(f[4]), Spin = true };
-                    ghostMs = f.Length > 5 ? int.Parse(f[5]) : 30;
                     break;
                 // WO-124 (6a): `ride <t0_s> <t1_s>` -- the ghost's Position carries the
                 // riding flag between t0 and t1 of the stream (mount, ride, dismount).
@@ -359,10 +332,6 @@ static class P
                     break;
                 case "saved": saves.Add((double.Parse(f[1], CultureInfo.InvariantCulture), byte.Parse(f[2]), byte.Parse(f[3]), ushort.Parse(f[4]))); break;
                 case "die": dies[f[2]] = double.Parse(f[1], CultureInfo.InvariantCulture); break;
-                case "ko":   // WO-173: ko <t0> <t1> <npc> -- that mover streams the knocked-out bit (0x02) between t0 and t1
-                    if (!kos.TryGetValue(f[3], out var kl)) kos[f[3]] = kl = new();
-                    kl.Add((double.Parse(f[1], CultureInfo.InvariantCulture), double.Parse(f[2], CultureInfo.InvariantCulture)));
-                    break;
                 case "hp":
                     if (!hps.TryGetValue(f[2], out var hl2)) hps[f[2]] = hl2 = new();
                     hl2.Add((double.Parse(f[1], CultureInfo.InvariantCulture), F(f[3]))); break;
@@ -424,18 +393,6 @@ static class P
                                   $"W164->host kind={f[2]} {string.Join(' ', f.Skip(3))}"));
                     break;
                 case "jattack": jattacks.Add((double.Parse(f[1], CultureInfo.InvariantCulture), Guid.Parse(f[2]))); break;   // WO-170
-                case "jhit":   // WO-173: jhit <t> <npc> <row> <lag_ms> <hp> <st> [every_s n]
-                {
-                    double t0 = Wo165Verbs.D(f[1]), lag = Wo165Verbs.D(f[4]) / 1000.0;
-                    double every = f.Length > 7 ? Wo165Verbs.D(f[7]) : 1.0;
-                    int reps = f.Length > 8 ? int.Parse(f[8], CultureInfo.InvariantCulture) : 1;
-                    for (int ri = 0; ri < reps; ri++)
-                    {
-                        jattacks.Add((t0 + ri * every, Guid.Parse(f[3])));
-                        jhits.Add((t0 + ri * every + lag, f[2], Wo165Verbs.F(f[5]), Wo165Verbs.F(f[6])));
-                    }
-                    break;
-                }
                 case "qcp":
                     joinMsgs.Add((double.Parse(f[1], CultureInfo.InvariantCulture),
                                   new LootMsg(Protocol.QuestHostCheckpoint, ++joinTok, $"1 1 {f[2]}:-:{f[3]}").BuildUp(Protocol.QuestHostUp, 1),
@@ -532,13 +489,6 @@ static class P
                     Console.WriteLine(FormattableString.Invariant($"SYNTH t={t:F1}s HVERDICT id={vd.Id} {vd.V} hp={vd.Hp} st={vd.St} npc={(vd.Npc.Length == 0 ? "-" : vd.Npc)} swing={vd.Swing} -> ghost {vd.Tgt}"));
                     verdicts.RemoveAt(vi);
                 }
-                for (int hi = jhits.Count - 1; hi >= 0; hi--)   // WO-173: a swing's attributed hit, its row's lag after the swing
-                {
-                    if (jhits[hi].T > t) continue;
-                    await st.WriteAsync(Wo165Verbs.AttributedHit(jhits[hi].Npc, jhits[hi].St, jhits[hi].Hp));
-                    Console.WriteLine(FormattableString.Invariant($"SYNTH t={t:F1}s JHIT npc={jhits[hi].Npc} hp={jhits[hi].Hp} st={jhits[hi].St} (attributed, after its swing)"));
-                    jhits.RemoveAt(hi);
-                }
                 for (int fi = 0; fi < fights.Count; fi++)   // WO-165: the avatar's attributed blows on a host NPC
                 {
                     var fg = fights[fi];
@@ -602,15 +552,13 @@ static class P
                     bool deadNow = dies.TryGetValue(m.Name, out double dieT) && t >= dieT;   // WO-131
                     float hpNow = 100f;
                     if (hps.TryGetValue(m.Name, out var hpl)) foreach (var (ht, hv) in hpl) if (t >= ht) hpNow = hv;
-                    bool koNow = kos.TryGetValue(m.Name, out var kwin) && kwin.Any(w => t >= w.T0 && t < w.T1);   // WO-173
-                    bool lifeChanged = deadNow != m.SentDead || Math.Abs(hpNow - m.SentHp) > 0.5f || koNow != m.SentKo;
+                    bool lifeChanged = deadNow != m.SentDead || Math.Abs(hpNow - m.SentHp) > 0.5f;
                     if (!moved && !lifeChanged && now - m.LastSent < 2000) continue;
-                    m.SentDead = deadNow; m.SentHp = hpNow; m.SentKo = koNow;
+                    m.SentDead = deadNow; m.SentHp = hpNow;
                     m.LastSent = now; m.LastSentX = x; m.LastSentY = y; m.LastSentZ = z;
                     m.Seq++;
                     byte fl = m is Fight fm ? fm.FlagsAt(t) : m is Hold { Dead: true } ? Protocol.NpcStateFlagDead : m is Hold { Drawn: true } ? (byte)0x04 : (byte)0;
                     if (deadNow) fl = Protocol.NpcStateFlagDead;
-                    else if (koNow) fl |= 0x02;   // WO-173: the knocked-out bit
                     uint sms = senderClock == "tick" ? unchecked((uint)Environment.TickCount64)
                              : unchecked((uint)(Stopwatch.GetTimestamp() * 1000 / Stopwatch.Frequency));
                     var pkt = BuildUp(m.Name, x, y, z, yaw, (fl & Protocol.NpcStateFlagDead) != 0 ? 0f : hpNow, fl, m.Seq, sms);

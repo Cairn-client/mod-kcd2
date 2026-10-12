@@ -2,7 +2,6 @@
 // GPLv3 section 7 additional terms: NOTICE. This project's own code only; Kingdom Come: Deliverance II and its
 // content belong to Warhorse Studios and PLAION. Unofficial, free, not affiliated with or endorsed by them.
 #include "wo141.h"
-#include "wo172.h"
 #include "fault_guard.h"
 #include "wo141_rules.h"
 #include "wo143_rules.h"
@@ -829,9 +828,6 @@ void reconcile_tick(double now) {
             d.eid = e ? engine::entity_id(e) : 0;
             if (!d.eid) { ++it; continue; }
         }
-        // WO-172 C1: a dead copy is never given an activity or a tool again (the field: a held sword asked back into a corpse's
-        // hand every 1.5 s -- the engine re-created the body standing)
-        if (wo172::skip_dead(d.eid, "activity")) { if (d.held) npcdrive::set_activity_hold(d.eid, false); it = g_desired.erase(it); continue; }
         // The writer stays off a body the game places (in step, or while it is tried). One the game keeps
         // refusing here is written again once the retries back off (WO-143 J1: held, it stood wherever the
         // stream had left it, and a forced look turned it bodily); each backed-off retry is held again.

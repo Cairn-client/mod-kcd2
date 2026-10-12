@@ -202,7 +202,6 @@ namespace KCDMP_launcher.Pages
             LoadFavorites();
             LoadSettings();
             LoadCustomServers();
-            Wo175FirstRunNotice();   // WO-175 S6: once
             StartSetupCheck();   // WO-150: in the background; replaces the old "open Settings when no game path" check
             CheckInstallIntegrity();
             Globals.OnStyleChanged += OnStyleChanged;
@@ -490,10 +489,6 @@ namespace KCDMP_launcher.Pages
             // finds wrong offers "Launch anyway" instead of a dead end.
             if (!await PreLaunchFilesOkAsync(GameRootOf(settings.GamePath), dllFullPath, agentPath, Path.ChangeExtension(agentPath, ".dll")))
                 return;
-
-            // WO-175 S2: the player's whole saves folder backed up first (before WO-159 stages a start save into it).
-            // A failure is logged and shown; the game starts anyway.
-            await Wo175BackupBeforeSessionAsync();
 
             // WO-159: the first-run pages (read only), the host's start save staged, the player's worlds listed
             if (!await Wo159BeforeLaunchAsync(hostedRelayProcess != null && !hostedRelayProcess.HasExited))

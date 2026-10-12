@@ -54,20 +54,6 @@ namespace KCDMP_launcher.Models
             return null;
         }
 
-        /// <summary>
-        /// WO-175 S1: the mod's "[KCD2-MP-EVT] v1 &lt;seq&gt; w175_coop on|off" (mp_coop_playline typed at the console): the
-        /// switch to remember, read by the launcher while the game sits at its main menu (a host has no agent there).
-        /// </summary>
-        public static (long Seq, bool On)? ParseCoopSwitch(string line)
-        {
-            const string pfx = "[KCD2-MP-EVT] v1 ";
-            int at = line.IndexOf(pfx, StringComparison.Ordinal);
-            if (at < 0) return null;
-            var p = line[(at + pfx.Length)..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (p.Length != 3 || p[1] != "w175_coop" || !long.TryParse(p[0], NumberStyles.None, CultureInfo.InvariantCulture, out long seq)) return null;
-            return p[2] switch { "on" => (seq, true), "off" => (seq, false), _ => null };
-        }
-
         /// <summary>An engine save name (no path, no extension): what wh_sys_LoadGame takes.</summary>
         public static bool IsSaveName(string s) => s.Length is > 0 and <= 40 && s.All(c => char.IsAsciiLetterOrDigit(c) || c == '_');
 

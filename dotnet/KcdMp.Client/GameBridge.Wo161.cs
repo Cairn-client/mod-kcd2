@@ -248,7 +248,5 @@ public partial class GameBridge
     {
         if (!_w161Stats.Quiet) Console.WriteLine(_w161Stats.Line());
         Wo165WriteStats();
-        if (Interlocked.Read(ref _w176Kept) + Interlocked.Read(ref _w176StoryIn) + Interlocked.Read(ref _w176BlockRows) + Interlocked.Read(ref _w176BlockNone) > 0)
-            Console.WriteLine(Wo176StatusLine());   // WO-176
     }
 }

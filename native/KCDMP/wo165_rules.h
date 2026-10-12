@@ -120,21 +120,6 @@ inline bool victim_blocking_state(int32_t state, bool stateValid) {
     return stateValid && (state & (kStatePreparingToParry | kStateParryInPlace)) != 0;
 }
 
-// WO-176 (B2): since WO-166 C3 a copy reads Striking (8) inside its swing's window -- then the engine itself judges the player's held
-// block (the victim's own State, zone and perfect-block window) and the referral is not needed. referUnlessStriking = the request asks for
-// that (flag 0x80); a copy outside its window is referred as before.
-constexpr int32_t kStateStriking = 0x8;
-// Live (WO-176 B2): a joiner holding block against a striking copy reaches ParryInPlace (0x100) every time, but his block zone stays
-// unset (-1: the copy is never his Opponent), so the engine's zone test fails and every blow lands as a full hit. A blocking victim
-// whose block zone is unset is therefore still referred to the host's verdict -- "on" never makes a held block worse than 0.47.x.
-inline bool refer_blocking(bool flagRefer, bool flagUnlessStriking, bool victimBlocking, int32_t attackerState, bool attackerStateValid,
-                           int32_t victimBlockZone = 0, bool victimBlockZoneValid = true) {
-    if (!flagRefer || !victimBlocking) return false;
-    if (flagUnlessStriking && attackerStateValid && (attackerState & kStateStriking) != 0 && victimBlockZoneValid && victimBlockZone >= 0)
-        return false;
-    return true;
-}
-
 // The engine's outcome, from what it wrote (flags) and the record it built (captured in the slot hook).
 enum class Outcome : uint8_t { None = 0, Hit = 1, Blocked = 2, PerfectBlock = 3, Broken = 4, Filtered = 5 };
 inline const char* outcome_name(Outcome o) {

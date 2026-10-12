@@ -7,8 +7,8 @@
 <strong>Not affiliated with or endorsed by Warhorse Studios or PLAION.</strong></p>
 
 <p align="center">
-  <a href="docs/releases/RELEASE-NOTES-0.49.2.md"><img alt="main" src="https://img.shields.io/badge/main-0.49.2-b8860b?style=flat-square"></a>
-  <a href="https://github.com/DeepFriedDepp/KingdomCome-Together/releases/latest"><img alt="latest release" src="https://img.shields.io/badge/latest%20release-v0.48.6-8a3324?style=flat-square"></a>
+  <a href="docs/releases/RELEASE-NOTES-0.48.6.md"><img alt="main" src="https://img.shields.io/badge/main-0.48.6-b8860b?style=flat-square"></a>
+  <a href="https://github.com/DeepFriedDepp/KingdomCome-Together/releases/latest"><img alt="latest release" src="https://img.shields.io/github/v/release/DeepFriedDepp/KingdomCome-Together?label=latest%20release&color=8a3324&style=flat-square"></a>
   <a href="LICENSE"><img alt="License: GPLv3" src="https://img.shields.io/badge/license-GPLv3-2c3e50?style=flat-square"></a>
   <a href="docs/LAUNCHING.md"><img alt="Platform" src="https://img.shields.io/badge/platform-Windows-555555?style=flat-square"></a>
   <a href="https://dsc.gg/kcd2-together"><img alt="Discord" src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white&style=flat-square"></a>
@@ -28,7 +28,7 @@ against each other from inside the game itself.
 > Kingdom Come: Deliverance II, its assets and its content belong to Warhorse
 > Studios and PLAION; this is a free, non-commercial fan project.
 
-> **The current version is 0.50.0**, a release candidate for the maintainer and one tester (not on the releases
+> **The current version is 0.48.6**, a release candidate for the maintainer and one tester (not on the releases
 > page). `main` (this repo's source) is ahead of the last published installer; the feature list below describes
 > `main`. Installing from the
 > [releases page](https://github.com/DeepFriedDepp/KingdomCome-Together/releases)
@@ -38,30 +38,6 @@ against each other from inside the game itself.
 >
 > **What 0.48.5 is, in plain words**
 >
-> - **0.50.0 (after 0.49.2): a quest's own fights stay the story's.** When a quest arranges a fight (the Tachov–Zelejov meadow fight,
->   quest fist fights), the partner's figure is kept out of it by the fight's own marks: none of the partner's blows count in it and they
->   are told so once; the fight ends the way the story says and weapons draw afterwards. A save with the old weapon lock is repaired
->   the moment it loads (checked in the game). An enemy that blocks or parries the joiner's blow shows its block on the joiner's
->   screen. `mp_real_hits` is **off** again by default (it could not be tested against a bandit that fights the partner). Not played by
->   two people yet.
-> - **0.49.2 (after 0.49.1): your saves are safe.** Co-op plays in its own copy of your world (a free save slot; your own saves are never written),
->   the launcher backs up your saves before every session (RESTORE SAVES brings one back), and the weapon lock is found: a quest fist fight that ended
->   without a winner left the game's "fists only" rule on; the mod no longer saves during a conversation, scene or fight, and a locked save gets a
->   repaired copy that loads with weapons. Not played by two people yet.
-> - **0.49.1 (after 0.49.0):** a Henry whose weapons will not draw although no fight is going on (the weapon icon is blank) has a repair:
->   `mp_repair_combat` in the console, or Insert, Help, "Fix my weapons / stuck fight" (guide: `docs/HOW-TO-REPAIR-WEAPONS.md`); the lock returns when
->   a save loads, so the mod puts the weapon back by itself after every load of that game session. A partner's figure is no longer left in a
->   fight when he leaves, when you punch him by accident or before a save, and it is kept out of scripted brawls. `mp_real_hits` is now **on** by default.
->   The cause of the lock itself was not found. Not played by two people yet.
-> - **0.49.0 (after 0.48.9's partner knight on the map):** one blow of the joiner never knocks an enemy out on the host any more (at most a
->   third of its stamina; the field's "guards fall over at once"), and a knock-out or get-up in the host's world shows on the joiner's screen
->   at once. New and **off**: `mp_real_hits` (host) makes the joiner's blows real hits in the host's game, so the enemy blocks, parries and
->   reacts by the game's own rules on both screens. Not played by two people yet.
-> - **A patch on 0.48.6 (0.48.8):** a dead enemy stays dead on the joiner's screen (`mp_dead_wins`); enemies turn to the player hitting
->   them, at most once every 4 s; riding stays right (a player's riding as the game says it, figures put back on their horses, no horse under
->   the ground: `mp_ride_repair`); no black screen after a quest's forced travel and the HUD comes back by itself; a trader stays for the
->   joiner's whole trade (`mp_trade_hold`); the joiner can pickpocket, every item asked of the host's world (`mp_joiner_pickpocket`); a mark
->   also saves a screenshot (`mp_mark_shot`). Weapons invisible on the host: not found yet. Not played by two people yet.
 > - **A patch on 0.48.5 (0.48.6):** the host's view of the partner's figure no longer fights on its own (its combat automation stays off and a
 >   blow of its that the partner did not send is put back: `mp_figure_guard`, on); a riding noble is put on his horse only when the horse is really there
 >   (the joiner's crash when one appeared); after a conversation with a scene the people in it are not put to sleep until the scene ends

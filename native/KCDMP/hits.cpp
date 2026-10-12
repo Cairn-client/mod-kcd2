@@ -5,8 +5,6 @@
 #include "hits.h"
 #include "wo166.h"
 #include "wo170_rules.h"
-#include "wo174_rules.h"
-#include "wo176.h"
 #include "fault_guard.h"
 
 #include <windows.h>
@@ -187,10 +185,7 @@ std::unordered_map<std::string, uint32_t> g_nameEids;
 
 std::atomic<uint32_t> c_melee{0}, c_missile{0}, c_avatarHits{0}, c_restored{0}, c_ffQueued{0}, c_marks{0},
     c_attrib{0}, c_attribHistory{0}, c_skirmish{0}, c_pvpIn{0}, c_faults{0},
-    c_npcAvatarHits{0}, c_npcHitsSent{0}, c_discardHits{0}, c_discarded{0}, c_skirmishKept{0}, c_skirmishRemove{0}, c_relationAsked{0}, c_sceneKept{0}, c_attribKept{0};
-std::atomic<uint32_t> c_hostBlows[5]{}, c_hitsOnMe{0};   // WO-176 (B1a): the host's own melee blows by the engine's verdict (1 hit, 2 blocked, 3 pb, 4 broken)
-// WO-174: actor eid -> when WO174-BRAWL was last said for it
-std::unordered_map<uint32_t, double> g_sceneSaid;
+    c_npcAvatarHits{0}, c_npcHitsSent{0}, c_discardHits{0}, c_discarded{0}, c_skirmishKept{0}, c_skirmishRemove{0}, c_relationAsked{0};
 
 double now_s() { LARGE_INTEGER q, f; QueryPerformanceCounter(&q); QueryPerformanceFrequency(&f); return double(q.QuadPart) / double(f.QuadPart); }
 
@@ -219,8 +214,6 @@ void* hit_common(bool missile, HitFn orig, void* self, void* out, const uint8_t*
         if (r0) {
             std::lock_guard<std::mutex> lock(g_qMutex);
             g_newWatches.push_back({vs, veid, hp0, st0, 0, mat, static_cast<uint8_t>(kWatchReplay), g_replay.seq});
-            // WO-173: a put-back watch of a dropped figure blow on this victim must not undo the engine's own blow
-            if (g_figureWatchesOpen.load(std::memory_order_relaxed) > 0 && g_cancelFigure.size() < 64) g_cancelFigure.push_back(veid);
         }
         return res;
     }
@@ -318,34 +311,9 @@ void* hit_common(bool missile, HitFn orig, void* self, void* out, const uint8_t*
         }
         return res;
     }
-    // WO-176 (B1): an NPC's blow on the local player (the host's own fight) -- the engine's verdict, for the attack-rate comparison. Read only.
-    if (!missile && veid && veid == g_playerEid.load(std::memory_order_relaxed) && aeid && aeid != veid) {
-        uint32_t v = 0;
-        if (rd(data, 0x54, &v)) {
-            const uint8_t blk = v & 0xFF, pb = (v >> 16) & 0xFF, broken = (v >> 24) & 0xFF;
-            const uint32_t n = c_hitsOnMe.fetch_add(1, std::memory_order_relaxed);
-            if (n < 400) logf("WO176-HITME attacker=0x%X outcome=%s -- an NPC's blow on the local player, the engine's verdict [n=%u]", aeid,
-                              broken ? "broken" : pb ? "pb" : blk ? "blocked" : "hit", n + 1);
-        }
-    }
     if (aw != 0 && aw == g_playerWuid.load(std::memory_order_relaxed) && veid) {
-        {
-            std::lock_guard<std::mutex> lock(g_qMutex);
-            if (g_marks.size() < 128) g_marks.push_back({veid, 0});
-        }
-        // WO-176 (B1a): the engine's own verdict on the host's real blow (the record it built: block +0x54, second +0x55, perfect +0x56,
-        // broken +0x57) -- the baseline the joiner's real hits are compared with. Read only, never changes the blow.
-        if (!missile) {
-            uint32_t v = 0;
-            if (rd(data, 0x54, &v)) {
-                const uint8_t blk = v & 0xFF, second = (v >> 8) & 0xFF, pb = (v >> 16) & 0xFF, broken = (v >> 24) & 0xFF;
-                const int k = broken ? 4 : pb ? 3 : blk ? 2 : 1;
-                static const char* const kNames[] = { "-", "hit", "blocked", "pb", "broken" };
-                const uint32_t n = c_hostBlows[k].fetch_add(1, std::memory_order_relaxed);
-                if (n < 400) logf("WO176-HOSTHIT victim=0x%X outcome=%s rec=[blk %u second %u pb %u broken %u] -- the host's own blow, the engine's verdict [n=%u]",
-                                  veid, kNames[k], blk, second, pb, broken, n + 1);
-            }
-        }
+        std::lock_guard<std::mutex> lock(g_qMutex);
+        if (g_marks.size() < 128) g_marks.push_back({veid, 0});
     }
     return orig(self, out, data);
 }
@@ -517,22 +485,13 @@ void note_avatar(uint32_t eid, void* soul, bool on) {
     }
 }
 
-AttribResult apply_attributed(const uint8_t* body, size_t len) { return apply_attributed_ex(body, len, true, -1.0f, true); }
-
-AttribResult apply_attributed_ex(const uint8_t* body, size_t len, bool rawDamage, float stCap, bool threat) {
+AttribResult apply_attributed(const uint8_t* body, size_t len) {
     AttribResult r{};
     if (len < 16 + 4 + 4 + 1 + 4 + 1 || len != static_cast<size_t>(30 + body[29])) { r.reason = 8; return r; }
     float st = 0, hp = 0; uint32_t avatarEid = 0;
     std::memcpy(&st, body + 16, 4); std::memcpy(&hp, body + 20, 4); std::memcpy(&avatarEid, body + 25, 4);
     std::string name(reinterpret_cast<const char*>(body + 30), body[29]);
     if (!std::isfinite(st) || !std::isfinite(hp)) { r.reason = 8; return r; }
-    if (stCap >= 0.0f && st > stCap) st = stCap;   // WO-173: the capped fallback
-    // WO-176 (A1): a quest's arranged fight (by its context; WO-174's name list is the second net) never takes a figure's blow -- nothing of
-    // it is routed into that fight (no damage, no history, no skirmish, no threat); reason 9 tells the agent, which tells the joiner once
-    {
-        const uint32_t keid = name.empty() ? 0 : eid_by_name(name);
-        if (keid && scene_owned_eid(keid, "wo121-attributed")) { r.reason = 9; c_attribKept.fetch_add(1); return r; }
-    }
     void* victimSoulR = rttr::find_soul_by_guid(body);   // the RTTR Soul (TakeDamage)
     void* avatarActor = actor_by_eid(avatarEid);
     void* avatarSoul = soul_of_actor(avatarActor);
@@ -540,11 +499,8 @@ AttribResult apply_attributed_ex(const uint8_t* body, size_t len, bool rawDamage
     if (!avatarSoul) { r.reason = 4; return r; }
     void* avatarEnt = engine::entity_by_id(avatarEid);
     r.attackerWuid = avatarEnt ? actions::entity_wuid(avatarEnt) : 0;
-    // 1. damage with the avatar as the attacker (WO-173: skipped when the engine's hit processor already applied this blow)
-    if (!rawDamage) {
-        r.steps |= 1;
-        rttr::note_remote_damage(body, hp);   // the LocalHit observer must not report the engine's drop as ours either
-    } else if (rttr::apply_damage_soul(victimSoulR, st, hp, buffs::as_c_soul(avatarSoul) ? buffs::as_c_soul(avatarSoul) : avatarSoul)) {
+    // 1. damage with the avatar as the attacker
+    if (rttr::apply_damage_soul(victimSoulR, st, hp, buffs::as_c_soul(avatarSoul) ? buffs::as_c_soul(avatarSoul) : avatarSoul)) {
         r.steps |= 1;
         if (!name.empty()) note_applied_damage(eid_by_name(name), st, hp);   // WO-170: never put back with a dropped figure blow
         // The plain path's echo guard: without it the LocalHit observer
@@ -571,7 +527,7 @@ AttribResult apply_attributed_ex(const uint8_t* body, size_t len, bool rawDamage
             else c_faults.fetch_add(1);
         }
     }
-    // 3. skirmish, once per engagement (WO-174: never a scripted brawl's -- its actors keep their fight, the avatar stays out of it)
+    // 3. skirmish, once per engagement
     if (victimSoulA && veid) {
         const uint64_t key = (static_cast<uint64_t>(veid) << 32) | avatarEid;
         const double now = now_s();
@@ -601,7 +557,7 @@ AttribResult apply_attributed_ex(const uint8_t* body, size_t len, bool rawDamage
         }
         // WO-136: the hit the engine cannot perceive (no hit volume) counts as the
         // avatar's threat; the NPC turns to it the way it would to a real attacker.
-        if (threat) kcdmp::wo136::note_threat(veid, avatarEid, 2, "avatar-hit", hp);   // WO-163 (A6): the hit's own measured damage
+        kcdmp::wo136::note_threat(veid, avatarEid, 2, "avatar-hit", hp);   // WO-163 (A6): the hit's own measured damage
     }
     r.ok = (r.steps & 1) != 0;
     return r;
@@ -666,25 +622,6 @@ bool discard_from(uint32_t eid, bool on) {
 int discard_count() { int n = 0; for (auto& d : g_discard) if (d.load()) ++n; return n; }
 
 bool skirmish_ready() { return g_attribArmed && g_fnSkirmishGetter && g_vftSkirmish; }
-
-bool scene_owned_eid(uint32_t eid, const char* site) {
-    if (!eid) return false;
-    // WO-176 (A1): the fight's own context first (a quest's arranged fight marks its souls); WO-174's name list below is the second net
-    if (kcdmp::wo176::arranged_context(eid) == 1) { c_sceneKept.fetch_add(1); return kcdmp::wo176::kept_out(eid, site); }
-    char nm[64]{};
-    copy_name(eid, nm, sizeof nm);
-    if (!wo174rules::scene_owned(nm)) return false;
-    c_sceneKept.fetch_add(1);
-    const double now = now_s();
-    auto it = g_sceneSaid.find(eid);
-    if (it == g_sceneSaid.end() || now - it->second >= wo174rules::kBrawlLogEveryS) {
-        g_sceneSaid[eid] = now;
-        logf("WO174-BRAWL skirmish=scripted quest=by-actor-name npc=%s site=%s figure_kept_out=yes -- a scripted brawl is the game's own: no partner's figure joins its skirmish, no threat, no forced target, no lock", nm, site ? site : "?");
-    }
-    return true;
-}
-
-uint32_t scene_kept_count() { return c_sceneKept.load(); }
 
 bool skirmish_add(void* soul, void* reference, uint8_t ovr, uint64_t* rv) {
     if (!skirmish_ready() || !soul || !reference) return false;
@@ -949,13 +886,13 @@ int status_text(char* out, int n) {
         "hit_slot=%s attribution=%s ff=%d attrib_cfg=%d melee=%u missile=%u avatar_hits=%u restored=%u ff_sent=%u player_marks=%u "
         "attributed=%u history=%u skirmish=%u pvp_in=%u hit_faults=%u npc_watch=%s npc_avatar_hits=%u npc_hits_sent=%u "
         "discard_hits=%u discarded=%u discard_eids=%d skirmish_kept_host=%u skirmish_remove=%u skirmish_relation=%s relation_asked=%u "
-        "scene_kept=%u blows_kept_out=%u figure_guard=%s fig_seen=%u fig_relayed=%u fig_dropped=%u fig_put_back=%u fig_fatal=%u fig_cancelled=%u fig_unread=%u fig_missile_passed=%u",
+        "figure_guard=%s fig_seen=%u fig_relayed=%u fig_dropped=%u fig_put_back=%u fig_fatal=%u fig_cancelled=%u fig_unread=%u fig_missile_passed=%u",
         g_hookArmed ? "armed" : "off", g_attribArmed ? "armed" : "off", g_ff.load() ? 1 : 0, g_attribution.load() ? 1 : 0,
         c_melee.load(), c_missile.load(), c_avatarHits.load(), c_restored.load(), c_ffQueued.load(), c_marks.load(),
         c_attrib.load(), c_attribHistory.load(), c_skirmish.load(), c_pvpIn.load(), c_faults.load(),
         (g_hookArmed && g_npcWatch.load()) ? "armed" : "off", c_npcAvatarHits.load(), c_npcHitsSent.load(),
         c_discardHits.load(), c_discarded.load(), discard_count(), c_skirmishKept.load(), c_skirmishRemove.load(),
-        skirmish_relation_armed() ? "armed" : "off", c_relationAsked.load(), c_sceneKept.load(), c_attribKept.load(),
+        skirmish_relation_armed() ? "armed" : "off", c_relationAsked.load(),
         g_figureGuard.load() ? "on" : "off", c_figSeen.load(), c_figRelayed.load(), c_figDropped.load(), c_figPutBack.load(), c_figFatal.load(),
         c_figCancelled.load(), c_figUnread.load(), c_figMissile.load());
 }

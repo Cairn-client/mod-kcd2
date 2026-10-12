@@ -382,7 +382,6 @@ public partial class GameBridge
             {
                 if (!AttackEvent.TryFromBytes(a.Payload, out var ae)) { Console.WriteLine($"MP-ACTION section=inbound ghost={a.SourceGhostId} kind=Attack dispatch=dropped-malformed len={a.Payload.Length}"); return true; }
                 _peerV8AttackAt[a.SourceGhostId] = DateTime.UtcNow;
-                Wo173OnAvatarAttack(a.SourceGhostId, ae.Row, catalog, ct);   // WO-173 C1: the row his next hit belongs to; his figure strikes for its window
                 await PlayAvatarRowAsync(a, ae.Row, catalog, ae.ToString(), ct);
                 Wo136OnAvatarAttack(a.SourceGhostId);   // WO-136 Phase 4: the avatar fights what it swings at; the swing threatens it
                 return true;
@@ -418,7 +417,6 @@ public partial class GameBridge
                 _npcRowAt[ne.Name] = DateTime.UtcNow;
                 Wo161NoteRowIn(ne.Name);   // WO-161: a row of this NPC came in (the victim's check of the next hit)
                 if (!_npcRows) { Wo161NoteRowRefused(ne.Name, "rows-off"); return true; }
-                if (Wo172RowOnDead(ne.Name)) { Wo161NoteRowRefused(ne.Name, "dead"); return true; }   // WO-172 C1: no row on a corpse
                 if (catalog is null || !catalog.TryGet(ne.Row, out var row)) { _w121EvNoRow++; Wo161NoteRowRefused(ne.Name, "unknown-row"); Console.WriteLine($"MP-ACTION section=inbound kind=NpcAttack npc={ne.Name} row={ne.Row} dispatch=dropped-unknown-row"); return true; }
                 if (!_npcEntityIds.TryGetValue(ne.Name, out uint neid))
                 {
@@ -535,32 +533,17 @@ public partial class GameBridge
     {
         if (!_npcAttribution || !_isDamageAuthority || (flags & Protocol.NpcDamageFlagAttributed) == 0) return null;
         if (!_ghostEntityIds.TryGetValue(source.ToString(), out uint avatarEid)) return null;
-        // WO-173 C1: a real hit through the engine (or the capped raw path); an older DLL -> WO-121's path as before
-        var r = await Wo173AttributedAsync(source, npcName, localGuid, stamina, health, flags, avatarEid, ct)
-                ?? await _combat.AttributedDamageAsync(localGuid, stamina, health, flags, avatarEid, npcName, ct);
+        var r = await _combat.AttributedDamageAsync(localGuid, stamina, health, flags, avatarEid, npcName, ct);
         _w121AttribIn++;
-        if (Wo176Rules.KeptOut(r.Reason) && !r.Ok)
-        {
-            // WO-176 A1: a quest's arranged fight -- the DLL routed nothing into it (no damage, history, skirmish or threat); no engage, no
-            // brain message, nothing for the crime and fight watchers. The real-hit path already told the joiner; the older path tells him here.
-            if (r.Reason == Wo176Rules.AttribReasonKept) await Wo176KeptAsync(source, npcName, "wo121");
-            Console.WriteLine(FormattableString.Invariant(
-                $"MP-ATTRIB npc={npcName} attacker_ghost={source} attacker_eid=0x{avatarEid:X} hp={health:F1} st={stamina:F1} result=kept-out(arranged-fight) damage=0 history=0 skirmish=0 brain_msg=0 reason={r.Reason}"));
-            return false;
-        }
         string steps = $"damage={((r.Steps & 1) != 0 ? 1 : 0)} history={((r.Steps & 2) != 0 ? 1 : 0)} skirmish={((r.Steps & 4) != 0 ? 1 : 0)}";
         bool brain = false;
-        // WO-174: a scripted brawl's actor keeps its own fight -- the blow's damage stands (the DLL applied it), but the avatar is not engaged
-        // against anyone and the actor gets no hit-reaction brain message about him (the DLL says WO174-BRAWL ... figure_kept_out=yes)
-        bool scene = Wo174Rules.SceneOwned(npcName);
-        if (scene) Interlocked.Increment(ref _w174SceneKept);
-        if (!scene && r.Ok && (r.Steps & 1) != 0)
+        if (r.Ok && (r.Steps & 1) != 0)
         {
             bool fresh = !_w121Engaged.ContainsKey(source);
             _w121Engaged[source] = DateTime.UtcNow + Wo121EngagementHold;
             if (fresh) await Wo121EngageAsync(source, true);
         }
-        if (!scene && r.Ok && r.AttackerWuid != 0)
+        if (r.Ok && r.AttackerWuid != 0)
         {
             // The brain's hit-reaction message, in the engine's own format
             // (WHGame CGameRules::SendAISignal: "attacker(%lld),hitStrength(%d),
