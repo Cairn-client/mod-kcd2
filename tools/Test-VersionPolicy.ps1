@@ -19,8 +19,8 @@ function Fail($m) { Write-Host "VERSION POLICY: $m" -ForegroundColor Red; exit 1
 $version = (Get-Content (Join-Path $root "VERSION") -TotalCount 1).Trim()
 if ($version -cnotmatch $strict) { Fail "VERSION '$version' is not strict MAJOR.MINOR.PATCH" }
 
-$tags = @(& git -C $root tag --list | Where-Object { $_ -cmatch $strict -and $_ -ne $Tag } |
-    Sort-Object { [version]$_ })
+. (Join-Path $PSScriptRoot "CairnTags.ps1")
+$tags = Get-CairnReleaseTags $root $Tag
 $latest = if ($tags.Count) { $tags[-1] } else { $null }
 
 if ($Tag) {
