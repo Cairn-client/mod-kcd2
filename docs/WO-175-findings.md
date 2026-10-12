@@ -128,4 +128,4 @@ own `r_GetScreenShot`. Between tests the game was minimised.
 
 ## 8. Gates and the installer
 
-See the installer record (`docs/WO-175-installer.md`, written with the build).
+See the installer record: `docs/WO-175-installer.md`. In short: `releaseKingdomComeTogether-Setup-0.49.2.exe`, 106,875,381 bytes, sha256 `1472d041…0217`, header 0.49.2, unsigned, soak waived; agent 1,503 · native 9,318 · 60 Lua suites / 4,017 checks · relay 63 · setup 77 · logpack 14 · save tools 7 + 14 · no-input gate 0 hits · installer cases 26/26, 41/41; the live round trip SKIPPED during the build (no game running).
