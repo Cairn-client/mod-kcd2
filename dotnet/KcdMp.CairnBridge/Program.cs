@@ -47,6 +47,15 @@ public static class Program
         using var cts = new CancellationTokenSource();
         using var console = new GameConsole();
         var tail = new LogTail(gameDir, start);
+        var saves = SaveCatalog.Default();
+        string lastSaves = "";
+        async Task SendSaves(bool force)
+        {
+            string json = SaveCatalog.ToJson(await Task.Run(saves.List));
+            if (!force && json == lastSaves) return;   // sent again only when something changed
+            lastSaves = json;
+            await Send(json);
+        }
 
         // the launcher's requests, in order, one console call at a time
         var reader = Task.Run(async () =>
@@ -63,6 +72,15 @@ public static class Program
                         using var doc = JsonDocument.Parse(line);
                         if (doc.RootElement.ValueKind != JsonValueKind.Object) continue;
                         if (doc.RootElement.TryGetProperty("t", out var t) && t.GetString() == "bye") break;
+                        if (t.ValueKind == JsonValueKind.String && t.GetString() == "saves_ask") { await SendSaves(force: true); continue; }
+                        if (t.ValueKind == JsonValueKind.String && t.GetString() == "save_delete")
+                        {
+                            string id = doc.RootElement.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.String ? idEl.GetString() ?? "" : "";
+                            var (ok, message) = id.Length is > 0 and <= 60 ? await Task.Run(() => saves.Delete(id, DateTime.UtcNow)) : (false, "That save is not there any more.");
+                            await Send(SaveCatalog.ToastJson(message, error: !ok));
+                            await SendSaves(force: true);
+                            continue;
+                        }
                         if (Translator.ToLua(function, doc.RootElement) is { } lua) await console.LuaAsync(lua, cts.Token);
                     }
                     catch (JsonException) { }
@@ -74,8 +92,10 @@ public static class Program
 
         try
         {
+            int tick = 0;
             while (!cts.IsCancellationRequested && !gameGone && game is not { HasExited: true })
             {
+                if (++tick % 300 == 0) await SendSaves(force: false);   // every 30 s, when something changed (the game saves, a joiner's character is kept)
                 var lines = new List<string>();
                 tail.Poll(lines.Add);
                 foreach (var l in lines)
