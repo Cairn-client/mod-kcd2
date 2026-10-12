@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Kingdom Come: Deliverance II's bridge to the Cairn launcher (docs/BRIDGE.md in the launcher repository): it reads the mod's menu,
+    notices and spoken lines from the game's kcd.log and sends them over the launcher's pipe, and turns what the player does with the
+    menu into console calls. The launcher is then the same for every game; what is particular to this game lives here, in the pack.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>CairnBridgeKcd2</AssemblyName>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+</Project>

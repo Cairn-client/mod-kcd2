@@ -25,3 +25,11 @@ Beside the pack and `pack-index.json`, every release carries `game.json` and its
 name, Steam ids, what it requires, the "What the mod does" card (`docs/CATALOG.md` in the launcher repository). Change the card by editing `game/game.json`;
 `tools/Test-GameJson.ps1` checks it (CI runs it). `RELEASE_CHANNEL` (`stable` or `beta`) says how the next tagged release is published: `beta` makes it
 a GitHub pre-release, which only players who chose the beta channel are offered. Set it back to `stable` for the release after.
+
+## The menu bridge (optional)
+
+`dotnet/KcdMp.CairnBridge` builds `CairnBridgeKcd2.exe`, the mod's bridge to the Cairn launcher (the protocol is `docs/BRIDGE.md` in the
+launcher repository). It reads the mod's menu, notice and spoken-line events from `kcd.log` and sends them to the launcher over its pipe,
+and runs what the player does with the menu through the game's console. `tools/Build-Pack.ps1 -Bridge` puts it in the pack and names it
+as the pack's `companion`; such a pack needs launcher 0.3.10 or newer. Without `-Bridge` the pack is as before and the launcher reads the
+log itself. With it, a bridge that does not connect within 25 seconds makes the launcher fall back to reading the log.

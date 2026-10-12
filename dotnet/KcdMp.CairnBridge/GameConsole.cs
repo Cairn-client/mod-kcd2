@@ -1,0 +1,35 @@
+// Copyright (C) 2026 the Cairn contributors (AUTHORS.md). SPDX-License-Identifier: GPL-3.0-only
+// GPLv3 section 7 additional terms: AUTHORS.md. Unofficial, free, not affiliated with or endorsed by the studios or publishers
+// of the games it supports. Portions derive from Kingdom Come: Together and kcd2-multiplayer (AUTHORS.md).
+using System.Net;
+
+namespace KcdMp.CairnBridge;
+
+/// <summary>The game's console through the Modding Tools' local API (localhost:1403). Lua is sent with the console's '#' prefix; the game answers 503 while it is busy, so a call is retried briefly.</summary>
+public sealed class GameConsole : IDisposable
+{
+    /// <summary>The console's own limit (past about 2,100 encoded characters the rest is cut, silently).</summary>
+    public const int MaxEncoded = 1900;
+
+    private readonly HttpClient _http = new() { BaseAddress = new Uri("http://127.0.0.1:1403"), Timeout = TimeSpan.FromSeconds(5) };
+
+    public async Task<bool> LuaAsync(string lua, CancellationToken ct = default)
+    {
+        string enc = Uri.EscapeDataString("#" + lua);
+        if (enc.Length > MaxEncoded) return false;
+        for (int attempt = 0; attempt < 8 && !ct.IsCancellationRequested; attempt++)
+        {
+            try
+            {
+                using var r = await _http.GetAsync("/api/System/Console/ExecuteString?command=" + enc, ct);
+                if (r.StatusCode == HttpStatusCode.ServiceUnavailable) { await Task.Delay(50 + 50 * attempt, ct); continue; }
+                return r.IsSuccessStatusCode;
+            }
+            catch (HttpRequestException) { return false; }
+            catch (TaskCanceledException) when (!ct.IsCancellationRequested) { return false; }
+        }
+        return false;
+    }
+
+    public void Dispose() => _http.Dispose();
+}

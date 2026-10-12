@@ -18,11 +18,15 @@
 
     The version is the VERSION file (strict X.Y.Z); the upstream version this tree is based on is UPSTREAM.md's first line.
 
+.PARAMETER Bridge
+    Also build the menu bridge (CairnBridgeKcd2.exe, dotnet\KcdMp.CairnBridge) into the pack and name it as the pack's companion. The launcher then draws the
+    mod menu from the bridge (docs/BRIDGE.md in the launcher repository) and falls back to the log and console if it does not connect. Off by default.
+
 .PARAMETER SkipBuild
     Pack what release\pack-stage already holds (iterating on this script only).
 #>
 [CmdletBinding()]
-param([switch] $SkipBuild)
+param([switch] $SkipBuild, [switch] $Bridge)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
@@ -45,7 +49,9 @@ if (-not $SkipBuild) {
     Copy-Item (Join-Path $root 'kdcmp\Data\kdcmp.pak') (Join-Path $stage 'mod\Data\kdcmp.pak')
 
     # the agent and the relay, self-contained, into one folder (a later publish overwrites shared dlls with identical copies)
-    foreach ($p in @('dotnet\KcdMp.Client\KcdMp.Client.csproj', 'dotnet\KcdMp.Server\KcdMp.Server.csproj')) {
+    $projects = @('dotnet\KcdMp.Client\KcdMp.Client.csproj', 'dotnet\KcdMp.Server\KcdMp.Server.csproj')
+    if ($Bridge) { $projects += 'dotnet\KcdMp.CairnBridge\KcdMp.CairnBridge.csproj' }
+    foreach ($p in $projects) {
         & dotnet publish (Join-Path $root $p) -c Release -p:PublishProfile=FolderProfile --nologo -v q
         if ($LASTEXITCODE -ne 0) { throw "publish failed: $p" }
         Copy-Item (Join-Path (Split-Path (Join-Path $root $p) -Parent) 'bin\Release\net8.0\publish\*') (Join-Path $stage 'bin') -Recurse -Force
@@ -76,6 +82,11 @@ foreach ($n in @("bin\$agentName", "bin\$relayName", "bin\$nativeName", 'mod\mod
     if (-not (Test-Path (Join-Path $stage $n))) { throw "the pack is missing $n" }
 }
 
+# the menu bridge, when this pack carries one (-Bridge, or a stage built with it): the launcher then talks to the mod's menu through it and needs a launcher that speaks the bridge
+$bridgeName = 'CairnBridgeKcd2.exe'
+$hasBridge = Test-Path (Join-Path $stage "bin\$bridgeName")
+$launcherMin = if ($hasBridge) { '0.3.10' } else { '0.3.7' }
+
 # the launcher's contract with this mod. The compatibility rule: two players need the same MAJOR.MINOR of the pack.
 $packJson = [ordered]@{
     schema      = 2
@@ -90,7 +101,7 @@ $packJson = [ordered]@{
     native      = "bin/$nativeName"
     brandPak    = 'bin/kdcmp_brand.pak'
     agentConfig = 'kcdmp-client.json'
-    launcherMin = '0.3.7'
+    launcherMin = $launcherMin
     lua         = [ordered]@{   # how the launcher talks to the mod through the game's console and log
         eventPrefix         = '[KCD2-MP-EVT] v1 '
         startGameEvent      = 'w159'
@@ -106,6 +117,7 @@ $packJson = [ordered]@{
     }
     replacesFolders = @('cairn')   # the earlier Cairn mod's folder: the launcher removes it when it is provably ours (two mods would load twice)
 }
+if ($hasBridge) { $packJson.companion = "bin/$bridgeName" }
 [IO.File]::WriteAllText((Join-Path $stage 'pack.json'), (($packJson | ConvertTo-Json) + "`n"), (New-Object System.Text.UTF8Encoding($false)))
 
 $lines = New-Object System.Collections.Generic.List[string]
@@ -141,7 +153,7 @@ $index = [ordered]@{
     file     = $zipName
     sha256   = Get-Sha256 $zipPath
     size     = (Get-Item $zipPath).Length
-    launcherMin = '0.3.7'
+    launcherMin = $launcherMin
 }
 [IO.File]::WriteAllText((Join-Path $release 'pack-index.json'), (($index | ConvertTo-Json) + "`n"), (New-Object System.Text.UTF8Encoding($false)))
 Write-Host "pack: $zipPath ($([math]::Round((Get-Item $zipPath).Length / 1MB, 1)) MB), version $version, based on upstream $upstream"
