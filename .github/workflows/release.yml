@@ -38,8 +38,18 @@ jobs:
         shell: pwsh
         run: ./tools/New-ReleaseNotes.ps1 -OutFile notes.md -Tag $env:GITHUB_REF_NAME
 
+      - name: Check game.json and the release channel
+        shell: pwsh
+        run: ./tools/Test-GameJson.ps1
+
       - name: Publish release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create $env:GITHUB_REF_NAME "release/Cairn-Pack-kcd2-$env:GITHUB_REF_NAME.zip" release/pack-index.json --title $env:GITHUB_REF_NAME --notes-file notes.md --verify-tag
+        run: |
+          # beside the pack: game.json and its pictures (the launcher reads what this game is from the latest release), flat
+          $assets = @("release/Cairn-Pack-kcd2-$env:GITHUB_REF_NAME.zip", 'release/pack-index.json') + (Get-ChildItem game -File | ForEach-Object { $_.FullName })
+          # RELEASE_CHANNEL=beta publishes a pre-release: only players who chose the beta channel are offered it
+          $flags = @()
+          if ((Get-Content RELEASE_CHANNEL -Raw).Trim() -eq 'beta') { $flags += '--prerelease' }
+          gh release create $env:GITHUB_REF_NAME @assets --title $env:GITHUB_REF_NAME --notes-file notes.md --verify-tag @flags

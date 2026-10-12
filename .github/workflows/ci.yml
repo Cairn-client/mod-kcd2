@@ -23,6 +23,14 @@ jobs:
         shell: pwsh
         run: ./tools/Test-VersionPolicy.ps1
 
+  game-json:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: game.json and the release channel
+        shell: pwsh
+        run: ./tools/Test-GameJson.ps1
+
   dotnet:
     runs-on: windows-latest
     steps:
